@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<div class="svg-container">
+  <svg id="svg">
+    <g class="full-network-graph" :data-dummy="update()"></g>
+  </svg>
+  <div id="tooltip"></div>
+  <div id="thumb-preview" aria-hidden="true">
+    <div class="thumb-header">
+      <div class="thumb-title" id="thumb-title"></div>
+      <button class="thumb-close" id="thumb-close" type="button" aria-label="Close preview">×</button>
+    </div>
+    <img id="thumb-img" alt="" />
+    <div class="thumb-actions">
+      <a id="thumb-open" href="#" target="_blank" rel="noopener noreferrer">Open original</a>
+    </div>
+  </div>
+</div>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  .svg-container {
+    width: 100%;
+    height: 100%;
+  }
+  #svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  div#tooltip {
+    position: fixed;
+    text-align: left;
+    font: 12px sans-serif;
+    background: white;
+    border: 1px solid #e3e3e3;
+    border-radius: 5px;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  div#tooltip.visible {
+    visibility: visible;
+  }
+  #thumb-preview {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    width: 260px;
+    max-width: calc(100vw - 24px);
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e3e3e3;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.15);
+    padding: 8px;
+    display: none;
+    pointer-events: auto;
+  }
+  #thumb-preview.visible {
+    display: block;
+  }
+  #thumb-preview .thumb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  #thumb-preview .thumb-title {
+    font: 12px sans-serif;
+    color: #222;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  #thumb-preview .thumb-close {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 6px;
+    background: #f1f1f1;
+    color: #222;
+    font: 18px/28px sans-serif;
+    cursor: pointer;
+  }
+  #thumb-preview .thumb-close:active {
+    background: #e7e7e7;
+  }
+  #thumb-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 6px;
+    background: #f3f3f3;
+    max-height: 55vh;
+    object-fit: contain;
+  }
+  #thumb-preview .thumb-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  #thumb-preview .thumb-actions a {
+    font: 12px sans-serif;
+    color: #1565c0;
+    text-decoration: none;
+    background: #e3f2fd;
+    border: 1px solid #bbdefb;
+    padding: 6px 10px;
+    border-radius: 999px;
+  }
+  #thumb-preview .thumb-actions a:active {
+    background: #d6ecfb;
+  }
+
+  @media (pointer: coarse), (max-width: 640px) {
+    #thumb-preview {
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      top: auto;
+      width: auto;
+      max-width: none;
+      padding: 10px;
+      display: none;
+      max-height: 40vh;
+    }
+    #thumb-preview.visible {
+      display: flex;
+      flex-direction: column;
+    }
+    #thumb-img {
+      flex: 1 1 auto;
+      width: 100%;
+      max-height: none;
+      min-height: 0;
+    }
+    #thumb-preview .thumb-title {
+      font-size: 13px;
+    }
+  }
+</style>
+
+<body>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+
+    const update = () => null,
+      width = 1200,
+      height = 500,
+      linkedByIndex = {},
+      options = {
+        linkStrokeWidth: (l) => 2 * l.weight,
+        linkStroke: "#999",
+        nodeStrokeOpacity: 1,
+        linkStrokeOpacity: 1,
+        linkStrokeLinecap: "butt",
+        nodeFill: "#000",
+        nodeStrokeWidth: 1,
+        nodeStroke: "#fff",
+      }
+
+    const invalidation = null;
+
+    const nodeId = (d) => d.key;
+    const linkSource = (d) => d.source;
+    const linkTarget = (d) => d.target;
+
+    Promise.all([d3.json("dataset.json"), d3.json("image_data.json")]).then(function ([data, imageData]) {
+
+      function intern(value) {
+        return value !== null && typeof value === "object"
+          ? value.valueOf()
+          : value;
+      }
+
+      // dataset.json: nodes have key, label, size, cluster; edges are [[srcKey, tgtKey], ...]
+      const clusterColorById = (data.clusters || []).reduce((acc, c) => {
+        acc[c.key] = c.color;
+        return acc;
+      }, {});
+
+      const networkData = {
+        nodes: data.nodes,
+        links: (data.edges || []).map((e) => ({ source: e[0], target: e[1], weight: e[2] })),
+      };
+      const textScaling = 0.7;
+      const nodeScaling = 2;
+
+      function isConnected(a, b) {
+        return (
+          linkedByIndex[`${a.id},${b.id}`] ||
+          linkedByIndex[`${b.id},${a.id}`] ||
+          a.id === b.id
+        );
+      }
+
+      function fade(trueOpacity, falseOpacity, nodeColor, linkColor) {
+        return function (event, d) {
+          node.attr("stroke", function (o) {
+            const thisColor = isConnected(d, o)
+              ? nodeColor
+              : options.nodeStroke;
+            return thisColor;
+          });
+
+          linkLayer
+            .attr("stroke", (o) =>
+              o.source === d || o.target === d
+                ? linkColor
+                : options.linkStroke
+            )
+            .attr("stroke-opacity", (o) =>
+              o.source === d || o.target === d ? trueOpacity : falseOpacity
+            );
+        };
+      }
+
+      const formatViews = (n) => {
+        if (n == null || Number.isNaN(n)) return "—";
+        return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 0 }).format(n);
+      };
+
+      function createTooltip() {
+        return function (event, d) {
+          var matrix = this.getScreenCTM().translate(
+            +this.getAttribute("cx"),
+            +this.getAttribute("cy")
+          );
+          const label = d.label != null ? d.label : "Node " + d.id;
+          const cluster = d.cluster != null ? d.cluster : "—";
+          const viewsStr = formatViews(d.degree);
+          tooltipDiv.html(
+            `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif"; margin-bottom: 4px>${label}</div><div style="padding: 10px">` +
+              `Cluster: <b>${cluster}</b>` +
+              `<br/>Photos: <b>${viewsStr}</b></div>`
+          );
+
+          // Show first so we can measure width/height, then place it.
+          tooltipDiv.classed("visible", true);
+          const tipEl = tooltipDiv.node();
+          const tipRect = tipEl ? tipEl.getBoundingClientRect() : { width: 0, height: 0 };
+
+          const margin = 12;
+          const offsetX = 15;
+          const desiredTop = matrix.f - 30;
+
+          const placeRightX = matrix.e + offsetX;
+          const placeLeftX = matrix.e - offsetX - tipRect.width;
+
+          // Flip left if too close to right edge.
+          const wouldOverflowRight = placeRightX + tipRect.width + margin > window.innerWidth;
+          let left = wouldOverflowRight ? placeLeftX : placeRightX;
+
+          // Clamp inside viewport.
+          left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+          let top = Math.max(margin, Math.min(desiredTop, window.innerHeight - tipRect.height - margin));
+
+          tooltipDiv.style("left", `${left}px`).style("top", `${top}px`);
+        };
+      }
+
+      const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
+
+      const previewEl = document.getElementById("thumb-preview");
+      const previewImgEl = document.getElementById("thumb-img");
+      const previewTitleEl = document.getElementById("thumb-title");
+      const previewOpenEl = document.getElementById("thumb-open");
+      const previewCloseEl = document.getElementById("thumb-close");
+
+      const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
+
+      const isCoarsePointer =
+        (typeof window !== "undefined" &&
+          window.matchMedia &&
+          window.matchMedia("(pointer: coarse)").matches) ||
+        (typeof window !== "undefined" && "ontouchstart" in window);
+
+      function toWebpThumbPath(filename) {
+        if (!filename) return null;
+        const base = String(filename).split("/").pop();
+        const stem = base.replace(/\.[^.]+$/, "");
+        return `${SPACES_CDN_BASE}/thumbnails/${encodeURIComponent(stem)}.webp`;
+      }
+
+      function toOriginalImageUrl(filename) {
+        if (!filename) return null;
+        const base = String(filename).split("/").pop();
+        return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
+      }
+
+      function showPreview(title, filename) {
+        const src = toWebpThumbPath(filename);
+        if (!src) return;
+        const origUrl = toOriginalImageUrl(filename);
+        if (origUrl) previewOpenEl.href = origUrl;
+        previewTitleEl.textContent = title || "";
+        previewImgEl.src = src;
+        previewImgEl.alt = title || "";
+        previewEl.classList.add("visible");
+        previewEl.setAttribute("aria-hidden", "false");
+      }
+
+      function hidePreview() {
+        previewEl.classList.remove("visible");
+        previewEl.setAttribute("aria-hidden", "true");
+      }
+
+      function openOriginalImage(filename) {
+        const url = toOriginalImageUrl(filename);
+        if (!url) return;
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+
+      function clearEdgeHighlight() {
+        node.attr("stroke", options.nodeStroke);
+        linkLayer
+          .attr("stroke", options.linkStroke)
+          .attr("stroke-opacity", options.linkStrokeOpacity);
+      }
+
+      function highlightEdge(d) {
+        const s = getNodeFromLinkEnd(d.source);
+        const t = getNodeFromLinkEnd(d.target);
+
+        node.attr("stroke", (o) => (o === s || o === t ? "#f00" : options.nodeStroke));
+        linkLayer
+          .attr("stroke", (o) => (o === d ? "#f00" : options.linkStroke))
+          .attr("stroke-opacity", (o) => (o === d ? 1 : 0.15));
+      }
+
+      previewCloseEl.addEventListener("click", (e) => {
+        e.preventDefault();
+        hidePreview();
+        clearEdgeHighlight();
+      });
+
+      const N = d3.map(networkData.nodes, nodeId).map(intern);
+      const LS = d3.map(networkData.links, linkSource).map(intern);
+      const LT = d3.map(networkData.links, linkTarget).map(intern);
+      const nodeTitle = (_, i) => N[i];
+      const T = d3.map(networkData.nodes, nodeTitle);
+      const W =
+        typeof options.linkStrokeWidth !== "function"
+          ? null
+          : d3.map(networkData.links, options.linkStrokeWidth);
+      const L =
+        typeof options.linkStroke !== "function"
+          ? null
+          : d3.map(networkData.links, options.linkStroke);
+      const R =
+        typeof nodeRadius !== "function"
+          ? null
+          : d3.map(networkData.nodes, nodeRadius);
+
+      // Replace the input nodes and links with mutable objects; use fixed x,y from dataset.
+      const nodes = d3.map(networkData.nodes, (_, i) => {
+        const raw = networkData.nodes[i];
+        const x = raw.x != null ? +raw.x : 0;
+        const y = raw.y != null ? -raw.y : 0; // flip y axis for consistency with Gephi orientation
+        return {
+          id: N[i],
+          radius: R[i],
+          label: raw.label,
+          cluster: raw.category,
+          degree: raw.degree,
+          x,
+          y,
+          fx: x,
+          fy: y,
+        };
+      });
+      const links = d3.map(networkData.links, (_, i) => ({
+        source: LS[i],
+        target: LT[i],
+        weight: networkData.links[i].weight,
+      }));
+
+      const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+      function getNodeFromLinkEnd(end) {
+        // d3.forceLink mutates link endpoints to node objects.
+        if (end && typeof end === "object") return end;
+        return nodeById.get(end) || null;
+      }
+
+      function lookupEdgeFilename(labelA, labelB) {
+        const a = labelA ?? "";
+        const b = labelB ?? "";
+        const sortedKey = [a, b].sort().join("-");
+        const unsortedKey = `${a}-${b}`;
+        const reverseKey = `${b}-${a}`;
+        return (
+          (imageData && imageData.edges && (imageData.edges[sortedKey] || imageData.edges[unsortedKey] || imageData.edges[reverseKey])) ||
+          null
+        );
+      }
+
+      links.forEach((d) => {
+        linkedByIndex[`${d.source},${d.target}`] = 1;
+      });
+
+      // Construct the forces.
+      const forceNode = d3.forceManyBody();
+      const forceLink = d3
+        .forceLink(links)
+        .id((d) => d.id)
+        .strength(0.1);
+      const forceCollide = d3
+        .forceCollide()
+        .radius((d) => d.radius + 1)
+        .iterations(3);
+
+      // Tight viewBox so the graph fills the iframe (data is in [-800,800]).
+      const isMobile = typeof window !== "undefined" && window.innerWidth < 1280;
+      const vb = isMobile ? 800 : 850; // 850 = slight margin on desktop; 800 = tight on mobile
+      d3.select("#svg")
+        .attr("viewBox", `${-vb} ${-vb} ${2 * vb} ${2 * vb}`)
+        .attr("preserveAspectRatio", "xMidYMid meet")
+      parent = d3.select(".full-network-graph")
+
+      const tooltipDiv = d3.select("#tooltip").attr("class", "tooltip");
+
+      const linkLayer = parent
+        .append("g")
+        .attr(
+          "stroke",
+          typeof options.linkStroke !== "function"
+            ? options.linkStroke
+            : null
+        )
+        .attr("stroke-opacity", options.linkStrokeOpacity)
+        .attr(
+          "stroke-width",
+          typeof options.linkStrokeWidth !== "function"
+            ? options.linkStrokeWidth
+            : null
+        )
+        .attr("stroke-linecap", options.linkStrokeLinecap)
+        .attr("class", "links")
+        .attr("marker-end", "url(#arrow)")
+        .selectAll("line")
+        .data(links)
+        .join("line");
+
+      // Easier edge hover: invisible thicker hitbox layer above links.
+      const linkHitbox = parent
+        .append("g")
+        .attr("class", "links-hitbox")
+        .attr("stroke", "transparent")
+        .attr("stroke-opacity", 1)
+        .attr("stroke-linecap", options.linkStrokeLinecap)
+        .style("pointer-events", "stroke")
+        .style("cursor", "pointer")
+        .selectAll("line")
+        .data(links)
+        .join("line")
+        .attr("stroke-width", (d) => Math.max(10, (options.linkStrokeWidth?.(d) ?? 1) + 8))
+        .on("mouseover.preview", function (event, d) {
+          if (isCoarsePointer) return;
+          const s = getNodeFromLinkEnd(d.source);
+          const t = getNodeFromLinkEnd(d.target);
+          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
+          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+          const filename = lookupEdgeFilename(sLabel, tLabel);
+          if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+        })
+        .on("mouseover.highlight", function (event, d) {
+          if (isCoarsePointer) return;
+          highlightEdge(d);
+        })
+        .on("mouseout.preview", function () {
+          if (isCoarsePointer) return;
+          hidePreview();
+        })
+        .on("mouseout.highlight", function () {
+          if (isCoarsePointer) return;
+          clearEdgeHighlight();
+        })
+        .on("touchstart.tap", function (event, d) {
+          if (!isCoarsePointer) return;
+          event.preventDefault();
+          highlightEdge(d);
+
+          const s = getNodeFromLinkEnd(d.source);
+          const t = getNodeFromLinkEnd(d.target);
+          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
+          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+          const filename = lookupEdgeFilename(sLabel, tLabel);
+          if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+        })
+        .on("click.open", function (event, d) {
+          event.preventDefault();
+          const s = getNodeFromLinkEnd(d.source);
+          const t = getNodeFromLinkEnd(d.target);
+          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
+          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+          const filename = lookupEdgeFilename(sLabel, tLabel);
+          if (isCoarsePointer) {
+            highlightEdge(d);
+            if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+            return;
+          }
+          openOriginalImage(filename);
+        });
+
+      const node = parent
+        .append("g")
+        .attr("stroke", options.nodeStroke)
+        .attr("stroke-opacity", options.nodeStrokeOpacity)
+        .attr("stroke-width", options.nodeStrokeWidth)
+        .attr("class", "nodes")
+        .selectAll("circle")
+        .data(nodes)
+        .join("circle")
+        .style("cursor", "pointer")
+        .attr("fill", (d) => (d && clusterColorById[d.cluster]) || options.nodeFill)
+        .attr("r", (d) => d.radius)
+        .on("mouseover.tooltip", createTooltip())
+        .on("mouseover.preview", function (event, d) {
+          if (isCoarsePointer) return;
+          const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
+          if (filename) showPreview(d.label, filename);
+        })
+        .on("click.open", function (event, d) {
+          event.preventDefault();
+          const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
+          if (isCoarsePointer) {
+            if (filename) showPreview(d.label, filename);
+            return;
+          }
+          openOriginalImage(filename);
+        })
+        .on(
+          "mouseover.fade",
+          fade(1, options.linkStrokeOpacity, "#f00", "#f00")
+        )
+        .on("mouseout.tooltip", function () {
+          tooltipDiv.classed("visible", false);
+        })
+        .on("mouseout.preview", function () {
+          if (isCoarsePointer) return;
+          hidePreview();
+        })
+        .on(
+          "mouseout.fade",
+          fade(
+            options.linkStrokeOpacity,
+            options.linkStrokeOpacity,
+            options.nodeStroke,
+            options.linkStroke
+          )
+        );
+
+      const label = parent
+        .append("g")
+        .attr("class", "labels")
+        .style("pointer-events", "none")
+        .selectAll("text")
+        .data(nodes)
+        .join("text")
+        .text((d) => d.label || "")
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle")
+        .attr("fill", "black")
+        .attr("font-family", "sans-serif")
+        .attr("font-size", (d) => `${Math.max(6, d.radius * textScaling)}px`);
+
+      const simulation = d3
+        .forceSimulation(nodes)
+        .force("link", forceLink)
+        .force("charge", forceNode)
+        .force("center", d3.forceCenter().strength(100))
+        .force("center", forceCollide)
+        .on("tick", ticked);
+
+      if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
+      if (L) linkLayer.attr("stroke", ({ index: i }) => L[i]);
+      if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
+      if (invalidation != null) invalidation.then(() => simulation.stop());
+
+      const LABEL_SIZE_THRESHOLD = 20;
+      let currentTransform = d3.zoomIdentity;
+
+      function updateLabelVisibility() {
+        const k = currentTransform.k;
+        label.attr(
+          "visibility",
+          (d) => (d.radius * k >= LABEL_SIZE_THRESHOLD ? "visible" : "hidden")
+        );
+      }
+
+      let zoom = d3
+        .zoom()
+        .on("zoom", (e) => {
+          currentTransform = e.transform;
+          d3.select("#svg g").attr("transform", e.transform);
+          updateLabelVisibility();
+        });
+
+      d3.select("#svg").call(zoom);
+      updateLabelVisibility();
+
+      function ticked() {
+        linkLayer
+          .attr("x1", (d) => d.source.x)
+          .attr("y1", (d) => d.source.y)
+          .attr("x2", (d) => d.target.x)
+          .attr("y2", (d) => d.target.y);
+        linkHitbox
+          .attr("x1", (d) => d.source.x)
+          .attr("y1", (d) => d.source.y)
+          .attr("x2", (d) => d.target.x)
+          .attr("y2", (d) => d.target.y);
+        node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+        label.attr("x", (d) => d.x).attr("y", (d) => d.y);
+      }
+    });
+
+  </script>
+</body>
