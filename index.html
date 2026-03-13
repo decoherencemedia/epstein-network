@@ -15,13 +15,20 @@
       <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
       <span class="thumb-meta-text" id="thumb-category-text"></span>
     </div>
+    <div class="thumb-total" id="thumb-total" style="display:none"></div>
     <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
-      <img id="thumb-img" alt="" />
+      <span class="thumb-img-wrapper">
+        <img id="thumb-img" alt="" />
+        <span class="thumb-img-external-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+        </span>
+      </span>
     </a>
     <div id="thumb-empty" style="display:none">No non-NSFW images available</div>
-    <div class="thumb-actions">
-      <a id="thumb-open" href="#" target="_blank" rel="noopener noreferrer">Open original</a>
-    </div>
   </div>
 </div>
 <style>
@@ -94,6 +101,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .thumb-total {
+    margin: 0 0 6px;
+    font: 11px sans-serif;
+    color: #666;
+  }
   #thumb-preview .thumb-title {
     font: 14px sans-serif;
     color: #222;
@@ -123,14 +135,35 @@
     border-radius: 6px;
   }
   #thumb-img-link:focus { outline: 2px solid #1565c0; outline-offset: 2px; }
+  .thumb-img-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+  }
   #thumb-img {
     width: 100%;
+    height: auto;
     height: auto;
     display: block;
     border-radius: 6px;
     background: #f3f3f3;
     max-height: 55vh;
     object-fit: contain;
+  }
+  .thumb-img-wrapper .thumb-img-external-icon {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #222;
+    pointer-events: none;
   }
   #thumb-empty {
     width: 100%;
@@ -299,11 +332,10 @@
           );
           const label = d.label != null ? d.label : "Node " + d.id;
           const cluster = d.cluster != null ? d.cluster : "—";
-          const viewsStr = formatViews(d.degree);
           tooltipDiv.html(
             `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif"; margin-bottom: 4px>${label}</div><div style="padding: 10px">` +
               `Cluster: <b>${cluster}</b>` +
-              `<br/>Photos: <b>${viewsStr}</b></div>`
+              `<br/>Photos: <b>${d.total}</b></div>`
           );
 
           // Show first so we can measure width/height, then place it.
@@ -340,7 +372,7 @@
       const previewMetaEl = document.getElementById("thumb-meta");
       const previewCategorySwatchEl = document.getElementById("thumb-category-swatch");
       const previewCategoryTextEl = document.getElementById("thumb-category-text");
-      const previewOpenEl = document.getElementById("thumb-open");
+      const previewTotalEl = document.getElementById("thumb-total");
       const previewCloseEl = document.getElementById("thumb-close");
 
       const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
@@ -364,16 +396,9 @@
         return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
       }
 
-      function showPreview(title, filename, categoryLabel, categoryColor) {
+      function showPreview(title, filename, categoryLabel, categoryColor, totalPhotos) {
         const src = toWebpThumbPath(filename);
         const origUrl = toOriginalImageUrl(filename);
-        if (origUrl) {
-          previewOpenEl.href = origUrl;
-          previewOpenEl.style.display = "";
-        } else {
-          previewOpenEl.removeAttribute("href");
-          previewOpenEl.style.display = "none";
-        }
         previewTitleEl.textContent = title || "";
         if (categoryLabel) {
           previewMetaEl.style.display = "flex";
@@ -382,6 +407,13 @@
         } else {
           previewMetaEl.style.display = "none";
           previewCategoryTextEl.textContent = "";
+        }
+        if (typeof totalPhotos === "number" && !Number.isNaN(totalPhotos)) {
+          previewTotalEl.style.display = "block";
+          previewTotalEl.textContent = `Photos: ${totalPhotos}`;
+        } else {
+          previewTotalEl.style.display = "none";
+          previewTotalEl.textContent = "";
         }
         if (src) {
           previewEmptyEl.style.display = "none";
@@ -414,7 +446,8 @@
         previewEmptyEl.style.display = "none";
         previewMetaEl.style.display = "none";
         previewCategoryTextEl.textContent = "";
-        previewOpenEl.style.display = "";
+        previewTotalEl.style.display = "none";
+        previewTotalEl.textContent = "";
       }
 
       function openOriginalImage(filename) {
@@ -476,7 +509,7 @@
           radius: R[i],
           label: raw.label,
           cluster: raw.category,
-          degree: raw.degree,
+          total: raw.total,
           x,
           y,
           fx: x,
@@ -588,7 +621,8 @@
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
-          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
+          const total = d.weight;
+          showPreview(`${[sLabel, tLabel].sort().join(" & ")}`, filename, null, null, total);
         })
         .on("mouseover.highlight", function (event, d) {
           if (isCoarsePointer) return;
@@ -612,7 +646,8 @@
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
-          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
+          const total = d.weight;
+          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null, total);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
@@ -621,9 +656,10 @@
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
+          const total = d.weight;
           if (isCoarsePointer) {
             highlightEdge(d);
-            showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
+            showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null, total);
             return;
           }
           openOriginalImage(filename);
@@ -647,7 +683,8 @@
           const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
           const category = d.cluster || "";
           const color = category ? clusterColorById[category] || options.nodeFill : null;
-          showPreview(d.label, filename, category, color);
+          const total = typeof d.total === "number" ? d.total : null;
+          showPreview(d.label, filename, category, color, total);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
@@ -655,7 +692,8 @@
           if (isCoarsePointer) {
             const category = d.cluster || "";
             const color = category ? clusterColorById[category] || options.nodeFill : null;
-            showPreview(d.label, filename, category, color);
+            const total = typeof d.total === "number" ? d.total : null;
+            showPreview(d.label, filename, category, color, total);
             return;
           }
           openOriginalImage(filename);

@@ -31,6 +31,8 @@ NUDE_LABELS = [
 ]
 NUDE_CONFIDENCE_THRESHOLD = 0.5
 
+OUTPUT_GRAPHML = SCRIPT_DIR.parent / "graphml" / "epstein_photo_people.graphml"
+
 
 def is_nude(filename: str, bad_photos: set[str] | None = None) -> bool:
     if bad_photos is not None and filename in bad_photos:
@@ -180,9 +182,15 @@ if __name__ == "__main__":
         else:
             node_images[label] = None
 
-    # Attach node attributes: degree_root_2 and category.
+    # Attach node attributes: degree_root_2, total image count, and category.
     degree_root_2 = {k: v ** 0.5 for k, v in dict(G.degree()).items()}
     nx.set_node_attributes(G=G, values=degree_root_2, name="degree_root_2")
+
+    # Total number of distinct images associated with each person/label.
+    total_images_by_label = (
+        df.groupby("label")["image_name"].nunique().to_dict()
+    )
+    nx.set_node_attributes(G=G, values=total_images_by_label, name="total")
 
     # Load categories.csv and map names -> category.
     if not CATEGORIES_CSV_PATH.is_file():
@@ -199,7 +207,7 @@ if __name__ == "__main__":
         )
 
     nx.set_node_attributes(G=G, values=name_to_category, name="category")
-    nx.write_graphml(G, "epstein_photo_people.graphml")
+    nx.write_graphml(G, OUTPUT_GRAPHML)
 
     # Edge images: per edge, ranked by product of areas desc; pick highest-res image that is not nude.
     edge_images = {}
