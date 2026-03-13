@@ -1,58 +1,24 @@
 import boto3
+import argparse
 import os
-import sqlite3
 import time
 from collections import defaultdict
+
+from faces_db import get_images_to_index, init_db, upsert_image_status
 
 # ---------------- CONFIG ----------------
 
 REGION = "us-east-1"
-COLLECTION_ID = "epstein-doj"
-IMAGE_DIR = "../../all_images_parallel"
+COLLECTION_ID = "epstein-doj-rerun"
+IMAGE_DIR = "../../../all_images"
 
 SIMILARITY_THRESHOLD = 99.0
 MAX_FACES_PER_SEARCH = 100
 API_DELAY_SECONDS = 0.2  # rate limiting
 
-DB_PATH = "faces.db"
-
 # --------------------------------------
 
 rekognition = boto3.client("rekognition", region_name=REGION)
-
-# ---------------- DATABASE ----------------
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS faces (
-            face_id TEXT PRIMARY KEY,
-            image_name TEXT,
-            left REAL,
-            top REAL,
-            width REAL,
-            height REAL,
-            searched INTEGER DEFAULT 0
-        )
-    """)
-
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS people (
-            person_id TEXT,
-            image_name TEXT,
-            face_id TEXT,
-            left REAL,
-            top REAL,
-            width REAL,
-            height REAL,
-            PRIMARY KEY (person_id, face_id)
-        )
-    """)
-
-    conn.commit()
-    return conn
 
 # ---------------- COLLECTION ----------------
 
@@ -96,23 +62,20 @@ def index_image(image_path, conn):
 
     conn.commit()
 
-def is_image_indexed(image_name, conn):
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM faces WHERE image_name = ?", (image_name,))
-    count = c.fetchone()[0]
-    return count > 0
 
 def index_all_images(conn):
-    for filename in os.listdir(IMAGE_DIR):
-        print(filename)
-        if not filename.lower().endswith((".jpg", ".jpeg", ".png")):
-            continue
+    # Get all images that have a face and are not yet sent to Rekognition (one DB query).
+    to_index = get_images_to_index(conn)
+    print(f"{len(to_index)} image(s) to index (has_face=1, not yet indexed)")
 
-        if is_image_indexed(filename, conn):
+    for image_name in to_index:
+        path = os.path.join(IMAGE_DIR, image_name)
+        if not os.path.isfile(path):
+            print(f"  Skipping (file missing): {image_name}")
             continue
-
-        path = os.path.join(IMAGE_DIR, filename)
+        print(image_name)
         index_image(path, conn)
+        upsert_image_status(conn, image_name, indexed=1)
         time.sleep(API_DELAY_SECONDS)
 
 # ---------------- UNION FIND ----------------
@@ -142,12 +105,11 @@ def cluster_faces(conn):
     for face_id in face_ids:
         uf.find(face_id)
 
-    # c.execute("SELECT face_id FROM faces WHERE searched = 0")
-    c.execute("SELECT face_id FROM faces")
-
-    unsearched = [row[0] for row in c.fetchall()]
-
-    for face_id in unsearched:
+    # Only search faces that haven't already been returned as a match (we already know their cluster).
+    matched = set()
+    for face_id in face_ids:
+        if face_id in matched:
+            continue
         response = rekognition.search_faces(
             CollectionId=COLLECTION_ID,
             FaceId=face_id,
@@ -158,13 +120,8 @@ def cluster_faces(conn):
         for match in response["FaceMatches"]:
             other = match["Face"]["FaceId"]
             uf.union(face_id, other)
+            matched.add(other)
 
-        c.execute(
-            "UPDATE faces SET searched = 1 WHERE face_id = ?",
-            (face_id,)
-        )
-
-        conn.commit()
         time.sleep(API_DELAY_SECONDS)
 
     clusters = defaultdict(list)
@@ -175,47 +132,52 @@ def cluster_faces(conn):
 
 # ---------------- OUTPUT ----------------
 
-def build_people_table(clusters, conn):
+def assign_person_ids(clusters, conn):
+    """Write person_id onto each face in faces (clears existing person_id first)."""
     c = conn.cursor()
-
-    # Clear existing people table
-    c.execute("DELETE FROM people")
-
+    c.execute("UPDATE faces SET person_id = NULL")
     for i, face_ids in enumerate(clusters.values(), start=1):
         person_id = f"person_{i}"
-
         for face_id in face_ids:
-            c.execute("""
-                SELECT image_name, left, top, width, height
-                FROM faces
-                WHERE face_id = ?
-            """, (face_id,))
-
-            row = c.fetchone()
-            if row:
-                image_name, left, top, width, height = row
-                c.execute("""
-                    INSERT INTO people
-                    (person_id, image_name, face_id, left, top, width, height)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (person_id, image_name, face_id, left, top, width, height))
-
+            c.execute(
+                "UPDATE faces SET person_id = ? WHERE face_id = ?",
+                (person_id, face_id),
+            )
     conn.commit()
 
 # ---------------- MAIN ----------------
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Index faces into a Rekognition collection, and optionally cluster (SearchFaces) once at the end."
+    )
+    parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="After indexing, run clustering (SearchFaces) and assign person_id on faces. This is the expensive step.",
+    )
+    parser.add_argument(
+        "--cluster-only",
+        action="store_true",
+        help="Skip indexing; only run clustering + assign person_id using already-indexed faces in faces.db.",
+    )
+    args = parser.parse_args()
+
     conn = init_db()
     ensure_collection()
 
-    # print("Indexing images...")
-    # index_all_images(conn)
+    if not args.cluster_only:
+        print("Indexing images...")
+        index_all_images(conn)
 
-    print("Clustering faces...")
-    clusters = cluster_faces(conn)
+    if args.cluster or args.cluster_only:
+        print("Clustering faces...")
+        clusters = cluster_faces(conn)
 
-    print("Building people table...")
-    build_people_table(clusters, conn)
+        print("Assigning person_id to faces...")
+        assign_person_ids(clusters, conn)
+    else:
+        print("Indexing complete. Run again with --cluster when you're ready to cluster once at the end.")
 
     print("Done!")
 

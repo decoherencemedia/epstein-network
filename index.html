@@ -11,7 +11,14 @@
       <div class="thumb-title" id="thumb-title"></div>
       <button class="thumb-close" id="thumb-close" type="button" aria-label="Close preview">×</button>
     </div>
-    <img id="thumb-img" alt="" />
+    <div class="thumb-meta" id="thumb-meta" style="display:none">
+      <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
+      <span class="thumb-meta-text" id="thumb-category-text"></span>
+    </div>
+    <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
+      <img id="thumb-img" alt="" />
+    </a>
+    <div id="thumb-empty" style="display:none">No non-NSFW images available</div>
     <div class="thumb-actions">
       <a id="thumb-open" href="#" target="_blank" rel="noopener noreferrer">Open original</a>
     </div>
@@ -45,7 +52,7 @@
     position: fixed;
     right: 12px;
     bottom: 12px;
-    width: 260px;
+    width: 520px;
     max-width: calc(100vw - 24px);
     background: rgba(255, 255, 255, 0.95);
     border: 1px solid #e3e3e3;
@@ -65,8 +72,30 @@
     gap: 8px;
     margin-bottom: 6px;
   }
+  .thumb-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 6px;
+    font: 11px sans-serif;
+    color: #444;
+  }
+  .thumb-meta-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: #ccc;
+    flex: 0 0 auto;
+  }
+  .thumb-meta-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   #thumb-preview .thumb-title {
-    font: 12px sans-serif;
+    font: 14px sans-serif;
     color: #222;
     white-space: nowrap;
     overflow: hidden;
@@ -88,6 +117,12 @@
   #thumb-preview .thumb-close:active {
     background: #e7e7e7;
   }
+  #thumb-img-link {
+    display: block;
+    text-decoration: none;
+    border-radius: 6px;
+  }
+  #thumb-img-link:focus { outline: 2px solid #1565c0; outline-offset: 2px; }
   #thumb-img {
     width: 100%;
     height: auto;
@@ -96,6 +131,16 @@
     background: #f3f3f3;
     max-height: 55vh;
     object-fit: contain;
+  }
+  #thumb-empty {
+    width: 100%;
+    border-radius: 6px;
+    background: #f3f3f3;
+    padding: 18px 12px;
+    color: #444;
+    font: 12px/1.3 sans-serif;
+    text-align: center;
+    box-sizing: border-box;
   }
   #thumb-preview .thumb-actions {
     margin-top: 8px;
@@ -152,7 +197,7 @@
       height = 500,
       linkedByIndex = {},
       options = {
-        linkStrokeWidth: (l) => 2 * l.weight,
+        linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
         linkStroke: "#999",
         nodeStrokeOpacity: 1,
         linkStrokeOpacity: 1,
@@ -197,6 +242,23 @@
         );
       }
 
+      function linkKey(l) {
+        const a = l.source?.id ?? l.source;
+        const b = l.target?.id ?? l.target;
+        return a <= b ? `${a},${b}` : `${b},${a}`;
+      }
+
+      function raiseHighlightedLinks(links, d) {
+        const sorted = [...links].sort((a, b) => {
+          const aConn = a.source === d || a.target === d;
+          const bConn = b.source === d || b.target === d;
+          if (aConn === bConn) return 0;
+          return aConn ? 1 : -1;
+        });
+        linkLayer.data(sorted, linkKey).order();
+        linkHitbox.data(sorted, linkKey).order();
+      }
+
       function fade(trueOpacity, falseOpacity, nodeColor, linkColor) {
         return function (event, d) {
           node.attr("stroke", function (o) {
@@ -206,6 +268,12 @@
             return thisColor;
           });
 
+          if (nodeColor !== options.nodeStroke) {
+            raiseHighlightedLinks(links, d);
+          } else {
+            linkLayer.data(links, linkKey).order();
+            linkHitbox.data(links, linkKey).order();
+          }
           linkLayer
             .attr("stroke", (o) =>
               o.source === d || o.target === d
@@ -265,8 +333,13 @@
       const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
 
       const previewEl = document.getElementById("thumb-preview");
+      const previewImgLinkEl = document.getElementById("thumb-img-link");
       const previewImgEl = document.getElementById("thumb-img");
+      const previewEmptyEl = document.getElementById("thumb-empty");
       const previewTitleEl = document.getElementById("thumb-title");
+      const previewMetaEl = document.getElementById("thumb-meta");
+      const previewCategorySwatchEl = document.getElementById("thumb-category-swatch");
+      const previewCategoryTextEl = document.getElementById("thumb-category-text");
       const previewOpenEl = document.getElementById("thumb-open");
       const previewCloseEl = document.getElementById("thumb-close");
 
@@ -291,14 +364,42 @@
         return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
       }
 
-      function showPreview(title, filename) {
+      function showPreview(title, filename, categoryLabel, categoryColor) {
         const src = toWebpThumbPath(filename);
-        if (!src) return;
         const origUrl = toOriginalImageUrl(filename);
-        if (origUrl) previewOpenEl.href = origUrl;
+        if (origUrl) {
+          previewOpenEl.href = origUrl;
+          previewOpenEl.style.display = "";
+        } else {
+          previewOpenEl.removeAttribute("href");
+          previewOpenEl.style.display = "none";
+        }
         previewTitleEl.textContent = title || "";
-        previewImgEl.src = src;
-        previewImgEl.alt = title || "";
+        if (categoryLabel) {
+          previewMetaEl.style.display = "flex";
+          previewCategoryTextEl.textContent = categoryLabel;
+          previewCategorySwatchEl.style.backgroundColor = categoryColor || "#ccc";
+        } else {
+          previewMetaEl.style.display = "none";
+          previewCategoryTextEl.textContent = "";
+        }
+        if (src) {
+          previewEmptyEl.style.display = "none";
+          previewImgLinkEl.style.display = "block";
+          if (origUrl) {
+            previewImgLinkEl.href = origUrl;
+          } else {
+            previewImgLinkEl.removeAttribute("href");
+          }
+          previewImgEl.src = src;
+          previewImgEl.alt = title || "";
+        } else {
+          previewImgLinkEl.style.display = "none";
+          previewImgLinkEl.removeAttribute("href");
+          previewImgEl.src = "";
+          previewImgEl.alt = "";
+          previewEmptyEl.style.display = "block";
+        }
         previewEl.classList.add("visible");
         previewEl.setAttribute("aria-hidden", "false");
       }
@@ -306,6 +407,14 @@
       function hidePreview() {
         previewEl.classList.remove("visible");
         previewEl.setAttribute("aria-hidden", "true");
+        previewImgEl.src = "";
+        previewImgEl.alt = "";
+        previewImgLinkEl.style.display = "none";
+        previewImgLinkEl.removeAttribute("href");
+        previewEmptyEl.style.display = "none";
+        previewMetaEl.style.display = "none";
+        previewCategoryTextEl.textContent = "";
+        previewOpenEl.style.display = "";
       }
 
       function openOriginalImage(filename) {
@@ -316,6 +425,8 @@
 
       function clearEdgeHighlight() {
         node.attr("stroke", options.nodeStroke);
+        linkLayer.data(links, linkKey).order();
+        linkHitbox.data(links, linkKey).order();
         linkLayer
           .attr("stroke", options.linkStroke)
           .attr("stroke-opacity", options.linkStrokeOpacity);
@@ -413,13 +524,25 @@
         .radius((d) => d.radius + 1)
         .iterations(3);
 
-      // Tight viewBox so the graph fills the iframe (data is in [-800,800]).
-      const isMobile = typeof window !== "undefined" && window.innerWidth < 1280;
-      const vb = isMobile ? 800 : 850; // 850 = slight margin on desktop; 800 = tight on mobile
-      d3.select("#svg")
-        .attr("viewBox", `${-vb} ${-vb} ${2 * vb} ${2 * vb}`)
-        .attr("preserveAspectRatio", "xMidYMid meet")
-      parent = d3.select(".full-network-graph")
+      parent = d3.select(".full-network-graph");
+
+      // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
+      const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
+      const MOBILE_VIEWBOX = { x: -100, y: -100, width: 200, height: 200 }; // different framing for small screens
+      const MOBILE_BREAKPOINT = 1280;
+      function isMobileView() {
+        return typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT;
+      }
+      function setViewBox() {
+        const vb = isMobileView() ? MOBILE_VIEWBOX : VIEWBOX;
+        d3.select("#svg")
+          .attr("viewBox", `${vb.x} ${vb.y} ${vb.width} ${vb.height}`)
+          .attr("preserveAspectRatio", "xMidYMid meet");
+      }
+      setViewBox();
+      if (typeof window !== "undefined") {
+        window.addEventListener("resize", setViewBox);
+      }
 
       const tooltipDiv = d3.select("#tooltip").attr("class", "tooltip");
 
@@ -457,7 +580,7 @@
         .selectAll("line")
         .data(links)
         .join("line")
-        .attr("stroke-width", (d) => Math.max(10, (options.linkStrokeWidth?.(d) ?? 1) + 8))
+        .attr("stroke-width", (d) => (options.linkStrokeWidth?.(d) ?? 1) + 1)
         .on("mouseover.preview", function (event, d) {
           if (isCoarsePointer) return;
           const s = getNodeFromLinkEnd(d.source);
@@ -465,7 +588,7 @@
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
-          if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
         })
         .on("mouseover.highlight", function (event, d) {
           if (isCoarsePointer) return;
@@ -489,7 +612,7 @@
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
-          if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
@@ -500,7 +623,7 @@
           const filename = lookupEdgeFilename(sLabel, tLabel);
           if (isCoarsePointer) {
             highlightEdge(d);
-            if (filename) showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename);
+            showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null);
             return;
           }
           openOriginalImage(filename);
@@ -522,13 +645,17 @@
         .on("mouseover.preview", function (event, d) {
           if (isCoarsePointer) return;
           const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
-          if (filename) showPreview(d.label, filename);
+          const category = d.cluster || "";
+          const color = category ? clusterColorById[category] || options.nodeFill : null;
+          showPreview(d.label, filename, category, color);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
           const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
           if (isCoarsePointer) {
-            if (filename) showPreview(d.label, filename);
+            const category = d.cluster || "";
+            const color = category ? clusterColorById[category] || options.nodeFill : null;
+            showPreview(d.label, filename, category, color);
             return;
           }
           openOriginalImage(filename);
@@ -566,7 +693,7 @@
         .attr("dominant-baseline", "middle")
         .attr("fill", "black")
         .attr("font-family", "sans-serif")
-        .attr("font-size", (d) => `${Math.max(6, d.radius * textScaling)}px`);
+        .attr("font-size", (d) => `${Math.max(4, d.radius * textScaling)}px`);
 
       const simulation = d3
         .forceSimulation(nodes)
@@ -581,7 +708,7 @@
       if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
       if (invalidation != null) invalidation.then(() => simulation.stop());
 
-      const LABEL_SIZE_THRESHOLD = 20;
+      const LABEL_SIZE_THRESHOLD = 15;
       let currentTransform = d3.zoomIdentity;
 
       function updateLabelVisibility() {

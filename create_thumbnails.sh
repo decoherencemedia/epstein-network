@@ -7,11 +7,18 @@ set -euo pipefail
 # Requires ImageMagick (magick) with WebP support.
 # Ubuntu: sudo apt-get update && sudo apt-get install -y imagemagick webp
 
-IN_DIR="${1:-filtered_images}"   # pass a different input dir as $1 if you want
+IN_DIR="${1:-images}"   # pass a different input dir as $1 if you want
 OUT_DIR="${2:-thumbnails}"       # pass a different output dir as $2 if you want
 MAX_PX="${MAX_PX:-500}"          # override: MAX_PX=500 ./make_thumbnails.sh
 QUALITY="${QUALITY:-82}"         # override: QUALITY=82 ./make_thumbnails.sh
 
+# Refuse to rm -rf obviously dangerous paths (default "thumbnails" is safe).
+case "$OUT_DIR" in
+  ''|.|..|/) echo "create_thumbnails.sh: refused to use OUT_DIR='$OUT_DIR'" >&2; exit 1 ;;
+  *) ;;
+esac
+
+rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # Find common image types (case-insensitive) and convert to WebP.

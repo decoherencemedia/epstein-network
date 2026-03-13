@@ -1,2 +1,7 @@
 images/
 thumbnails/
+jupyter/
+**/__pycache__
+*.db
+*.csv#
+*.graphml
