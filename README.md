@@ -11,4 +11,5 @@
 **05__recognize_celebrities.py**: Associate faces with "celebrities" using AWS Rekognition
 **06__extract_faces.py**: Write images of extracted faces to file
 **07__create_graph.py**: Build network graph based on face co-occurrence in photos, save as GraphML
-**08__visualize_graph.py**: Process laid-out graph data into data for D3 network visualization
+**08__visualize_graph.py**: Process laid-out graph data into data for D3 network visualization  
+**09__sheets_rekognition.py**: Google Sheet with columns Name, Person ID, Image Path, reference/archived URLs, Confidence, JSON Response, Notes; initializes sheet and fills Confidence via AWS Rekognition CompareFaces (see script docstring and `requirements-sheets.txt`)
