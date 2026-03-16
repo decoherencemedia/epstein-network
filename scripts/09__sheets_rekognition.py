@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+from urllib.parse import urlparse, parse_qs
 import time
 from pathlib import Path
 
@@ -51,6 +52,7 @@ COLUMNS = [
     "Archived Reference Image URL",
     "Confidence",
     "JSON Response",
+    "Victim",
     "Links",
     "Notes",
 ]
@@ -96,7 +98,7 @@ def init_spreadsheet(worksheet):
         textFormat=TextFormat(bold=True),
         backgroundColor=Color(0.95, 0.95, 0.95),
     )
-    format_cell_range(worksheet, "A1:I1", fmt)
+    format_cell_range(worksheet, "A1:J1", fmt)
 
 
 def get_or_create_sheet(gc):
@@ -114,9 +116,58 @@ def get_or_create_sheet(gc):
 # ----------------------------- Rekognition -----------------------------
 
 
-def download_image_bytes(url: str, session: requests.Session) -> bytes:
+def _normalize_reddit_url(url: str) -> str:
+    """
+    Reddit image links are sometimes indirect, e.g. `/media?url=...` which serves an HTML
+    landing page with the real `preview.redd.it` image in `og:image`. For Rekognition we
+    want the direct image URL, so unwrap those when possible.
+    """
+    parsed = urlparse(url)
+    if parsed.netloc.endswith("reddit.com") and parsed.path == "/media":
+        qs = parse_qs(parsed.query)
+        candidates = qs.get("url") or []
+        if candidates:
+            return candidates[0]
+    return url
+
+
+def download_image_bytes_reddit(url: str, session: requests.Session) -> bytes:
+    """
+    Download image bytes from Reddit-hosted URLs, handling indirection like `/media?url=...`
+    and making sure we end up with real image bytes (not HTML wrappers).
+    """
+    url = _normalize_reddit_url(url)
+    # Be defensive: this header might not exist if the session is reused elsewhere.
+    session.headers.pop("Accept-Language", None)
+
     r = session.get(url, timeout=30)
     r.raise_for_status()
+
+    content_type = (r.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    if content_type and not content_type.startswith("image/"):
+        raise ValueError(f"Reddit URL did not return an image (Content-Type={content_type!r})")
+
+    data = r.content
+    if len(data) > REKOGNITION_MAX_BYTES:
+        raise ValueError(f"Downloaded image too large for Rekognition: {len(data)} bytes")
+    return data
+
+
+def download_image_bytes(url: str, session: requests.Session) -> bytes:
+    """
+    Download image bytes from an arbitrary URL, enforcing a size limit suitable for
+    Rekognition. Reddit-specific quirks live in `download_image_bytes_reddit`.
+    """
+    if "reddit.com" in url:
+        return download_image_bytes_reddit(url, session)
+
+    r = session.get(url, timeout=30)
+    r.raise_for_status()
+
+    content_type = (r.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+    if content_type and not content_type.startswith("image/"):
+        raise ValueError(f"URL did not return an image (Content-Type={content_type!r})")
+
     data = r.content
     if len(data) > REKOGNITION_MAX_BYTES:
         raise ValueError(f"Downloaded image too large for Rekognition: {len(data)} bytes")
@@ -278,7 +329,7 @@ def show_bounding_boxes(image_bytes: bytes, box_sets: list, colors: list) -> Non
             top = image.height * box["Top"]
             right = (image.width * box["Width"]) + left
             bottom = (image.height * box["Height"]) + top
-            draw.rectangle([left, top, right, bottom], outline=color, width=3)
+            draw.rectangle([left, top, right, bottom], outline=color, width=4)
     image.show()
 
 
@@ -289,7 +340,11 @@ def show_match(
     source_face_box: dict | None = None,
     all_source_face_boxes: list | None = None,
 ) -> None:
-    """Display both images: reference with best face (green) / other faces (red); target with matches (green) / unmatched (red)."""
+    """Display both images: reference with best face (green/yellow) / other faces (red); target with matches (green/yellow) / unmatched (red)."""
+    # Choose highlight color based on similarity
+    similarity = _similarity_from_response(response)
+    highlight_color = "green" if similarity >= 99.0 else "yellow"
+
     # Reference/source image: best (highest-confidence) face in one color, other faces in red
     box = source_face_box
     if box is None:
@@ -302,17 +357,17 @@ def show_match(
             show_bounding_boxes(
                 source_bytes,
                 [[box], other_boxes],
-                ["green", "red"],
+                [highlight_color, "red"],
             )
         else:
             show_bounding_boxes(
                 source_bytes,
                 [[box]],
-                ["green"],
+                [highlight_color],
             )
     else:
         Image.open(io.BytesIO(source_bytes)).show()
-    # Target image: matched faces (green), unmatched faces (red)
+    # Target image: matched faces (green/yellow), unmatched faces (red)
     target_bytes = target_path.read_bytes()
     matches = response.get("FaceMatches") or []
     unmatched = response.get("UnmatchedFaces") or []
@@ -328,7 +383,7 @@ def show_match(
         show_bounding_boxes(
             target_bytes,
             [[best_match_box], non_match_boxes],
-            ["green", "red"],
+            [highlight_color, "red"],
         )
     else:
         show_bounding_boxes(
@@ -394,12 +449,13 @@ def main():
         return
 
     rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
+
     session = requests.Session()
-    # Browser-like User-Agent avoids 403 from sites (e.g. Wikimedia) that block script clients
-    session.headers.setdefault(
-        "User-Agent",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    )
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
 
     for row_1based, row, ref_url, archived_url, image_path_val in missing:
         name = row[idx_name] if idx_name < len(row) else ""

@@ -15,7 +15,6 @@
         "person_128": "Tsakhiagiin Elbegdorj",
         "person_175": "Igor Zinoviev",
         "person_902": "Stephen Hanson",
-        "person_1240": "Virginia Giuffre",
         "person_485": "Barry Josephson",
         "person_361": "Larry Visoski",
         "person_604": "Boris Nikolic",
@@ -43,7 +42,7 @@
         "person_910": "Seth Lloyd",
         "person_1635": "Melusine Ruspoli",
         "person_243": "Jojo Fontanilla",
-        "person_484": "Lundegiin Purevsuren",
+        "person_484": "Lundeg Purevsuren",
         "person_502": "Jason Gutman",
         "person_1714": "Jordan Feldman",
         "person_167": "Margherita Campello",
@@ -74,7 +73,6 @@
         "person_1116": "Mariana Idzkowska"
     },
     "ignore": [
-        [
             "person_251",
             "person_546",
             "person_33",
@@ -182,8 +180,12 @@
             "person_82",
             "person_1597",
             "person_1010",
-            "person_106"
-        ]
+            "person_106",
+            "person_1240",
+            "person_2179",
+            "person_286",
+            "person_2988",
+
     ],
     "unknowns": [
         "person_61",
