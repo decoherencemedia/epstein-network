@@ -49,6 +49,8 @@ if __name__ == "__main__":
     nodes_df["key"] = nodes_df["label"].map(label_to_index)
     nodes_df["size"] /= NODE_SCALING
 
+    nodes_df["category"] = nodes_df["category"].fillna("Unknown")
+
 
     nodes = nodes_df.to_dict(orient="records")
 
@@ -58,12 +60,13 @@ if __name__ == "__main__":
     ]
 
     clusters = [k for k, _ in Counter(nodes_df["category"]).most_common()]
+    category_colors = dict(zip(clusters, glasbey_dark[1:]))
 
     data = {
         "nodes": nodes,
         "edges": edges,
         "clusters": [
-            {"key": c, "color":CATEGORY_COLORS[c]}
+            {"key": c, "color":category_colors[c]}
             for c in clusters
         ],
     }

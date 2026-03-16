@@ -1,8 +1,8 @@
 import sqlite3
+import json
 from collections import defaultdict
 from pathlib import Path
 from functools import cache
-import json
 from shutil import copy, rmtree
 
 import pandas as pd
@@ -12,15 +12,16 @@ import networkx as nx
 from PIL import Image
 from nudenet import NudeDetector
 
+from sheets_common import get_sheet_client, load_categories, load_names, load_ignore
+
 
 SQLITE_DB = "faces.db"
-MAX_RANK = 239
+MAX_RANK = 292
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGE_DIR = SCRIPT_DIR.parent.parent.parent / "all_images"
 FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images"
 PEOPLE_JSON_PATH = SCRIPT_DIR / "data" / "people.json"
-CATEGORIES_CSV_PATH = SCRIPT_DIR / "data" / "categories.csv"
 
 NUDE_LABELS = [
     "BUTTOCKS_EXPOSED",
@@ -62,13 +63,17 @@ if __name__ == "__main__":
     if FILTERED_IMAGE_DIR.exists():
         rmtree(FILTERED_IMAGE_DIR)
 
-    # Load people metadata (names, ignore list, bad_photos) from people.json.
-    with open(PEOPLE_JSON_PATH, "r") as f:
-        people_meta = json.load(f)
-    PEOPLE_NAMES: dict[str, str] = people_meta.get("names", {})
-    ignore_groups = people_meta.get("ignore", [])
-    PEOPLE_TO_SKIP = set(pid for group in ignore_groups for pid in group)
-    BAD_PHOTOS = set(people_meta.get("bad_photos", []))
+    # Names and ignore list from the shared Google Spreadsheet (Matches / Ignore sheets).
+    gc = get_sheet_client()
+    PEOPLE_NAMES = load_names(gc)
+    PEOPLE_TO_SKIP = load_ignore(gc)
+
+    # Bad photos list still from people.json.
+    BAD_PHOTOS: set[str] = set()
+    if PEOPLE_JSON_PATH.is_file():
+        with open(PEOPLE_JSON_PATH, "r") as f:
+            people_meta = json.load(f)
+        BAD_PHOTOS = set(people_meta.get("bad_photos", []))
 
     con = sqlite3.connect(SQLITE_DB)
 
@@ -192,18 +197,15 @@ if __name__ == "__main__":
     )
     nx.set_node_attributes(G=G, values=total_images_by_label, name="total")
 
-    # Load categories.csv and map names -> category.
-    if not CATEGORIES_CSV_PATH.is_file():
-        raise SystemExit(f"Missing categories CSV: {CATEGORIES_CSV_PATH}")
-    cat_df = pd.read_csv(CATEGORIES_CSV_PATH)
-    if "name" not in cat_df.columns or "category" not in cat_df.columns:
-        raise SystemExit("categories.csv must have columns 'name' and 'category'")
-    name_to_category = dict(zip(cat_df["name"], cat_df["category"]))
+    # Categories from the Matches sheet (column H).
+    name_to_category = load_categories(gc)
 
-    missing = sorted(set(node_images.keys()) - set(name_to_category.keys()))
+    # Only require an explicit category for non-generic names.
+    required = {name for name in node_images.keys() if not name.startswith("person_")}
+    missing = sorted(required - set(name_to_category.keys()))
     if missing:
-        raise SystemExit(
-            f"The following node names are missing from categories.csv: {', '.join(missing)}"
+        raise RuntimeError(
+            f"The following node names are missing from the Matches sheet (category column): {', '.join(missing)}"
         )
 
     nx.set_node_attributes(G=G, values=name_to_category, name="category")

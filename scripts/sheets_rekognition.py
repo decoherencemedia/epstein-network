@@ -20,29 +20,23 @@ import boto3
 import gspread
 import requests
 from PIL import Image, ImageDraw
-from google.oauth2.credentials import Credentials
+from gspread_formatting import format_cell_range, set_frozen, CellFormat, TextFormat, Color
+
+from sheets_common import get_sheet_client, get_workbook
 
 try:
     import pillow_avif  # noqa: F401 — registers AVIF support with Pillow if installed
 except ImportError:
     pass
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from gspread_formatting import format_cell_range, set_frozen, CellFormat, TextFormat, Color
 
 # ----------------------------- Constants -----------------------------
 
-SPREADSHEET_ID_OR_TITLE = "1V4yiUKjhLq3r32_izswHUycMFvzCKUhhoTza6olORwo"  # spreadsheet title or ID
 INIT_ONLY = False   # if True, only set headers/format then exit
 DRY_RUN = False     # if True, only list rows missing Confidence, no API calls
 SHOW_MATCH = True  # if True, display target image with face bounding boxes (matches=green, unmatched=red)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGE_DIR = SCRIPT_DIR.parent.parent.parent / "all_images"
-
-CREDENTIALS_PATH = Path.home() / ".config" / "google-sheets-api" / "credentials.json"
-TOKEN_PATH = Path.home() / ".config" / "google-sheets-api" / "token.json"
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
 COLUMNS = [
     "Name",
@@ -63,29 +57,6 @@ REKOGNITION_MIN_DIM = 80  # minimum width/height in pixels
 API_DELAY_SECONDS = 0.3
 FACE_CROP_PADDING = 0.2  # add 20% on each side when cropping reference to a face
 
-# ----------------------------- Google Auth -----------------------------
-
-
-def get_google_credentials():
-    creds = None
-    if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_PATH), SCOPES)
-            creds = flow.run_local_server(port=0)
-        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(TOKEN_PATH, "w") as f:
-            f.write(creds.to_json())
-    return creds
-
-
-def get_sheet_client():
-    return gspread.authorize(get_google_credentials())
-
-
 # ----------------------------- Sheet -----------------------------
 
 
@@ -101,16 +72,9 @@ def init_spreadsheet(worksheet):
     format_cell_range(worksheet, "A1:J1", fmt)
 
 
-def get_or_create_sheet(gc):
-    id_or_title = SPREADSHEET_ID_OR_TITLE
-    if id_or_title.startswith("1") and len(id_or_title) > 20 and all(c.isalnum() or c in "-_" for c in id_or_title):
-        sh = gc.open_by_key(id_or_title)
-        return sh.sheet1
-    try:
-        sh = gc.open(id_or_title)
-    except gspread.SpreadsheetNotFound:
-        sh = gc.create(id_or_title)
-    return sh.sheet1
+def get_or_create_sheet(gc: gspread.Client):
+    """Return the first worksheet of the shared workbook (main Rekognition sheet)."""
+    return get_workbook(gc).sheet1
 
 
 # ----------------------------- Rekognition -----------------------------
