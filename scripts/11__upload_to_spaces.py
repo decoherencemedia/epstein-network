@@ -2,18 +2,18 @@
 """
 Upload selected graph images and thumbnails to DigitalOcean Spaces.
 
-- Reads image_data.json written by 07__create_graph.py:
+- Reads image_data.json written by 09__create_graph.py:
     {"nodes": {name: filename_or_null, ...}, "edges": {"A-B": filename_or_null, ...}}
 - Uploads originals from all_images/ to:   images/<filename>
 - Uploads thumbnails from thumbnails/ to:  thumbnails/<stem>.webp
 
 DigitalOcean Spaces is S3-compatible. Configure via environment variables:
 
-    SPACES_REGION   (e.g. "sfo3")
-    SPACES_ENDPOINT (e.g. "https://sfo3.digitaloceanspaces.com")
-    SPACES_BUCKET   (bucket name)
-    SPACES_KEY      (access key)
-    SPACES_SECRET   (secret key)
+    EPSTEIN_SPACES_REGION   (e.g. "sfo3")
+    EPSTEIN_SPACES_ENDPOINT (e.g. "https://sfo3.digitaloceanspaces.com")
+    EPSTEIN_SPACES_BUCKET   (bucket name)
+    EPSTEIN_SPACES_KEY      (access key)
+    EPSTEIN_SPACES_SECRET   (secret key)
 """
 
 from __future__ import annotations
@@ -75,9 +75,9 @@ def load_image_data():
     return sorted(filenames)
 
 
-def upload_file_if_exists(s3, bucket: str, local_path: Path, key: str) -> None:
+def upload_file(s3, bucket: str, local_path: Path, key: str) -> None:
     if not local_path.is_file():
-        return
+        raise FileNotFoundError(f"Required file missing for upload: {local_path}")
     print(f"Uploading {local_path} -> s3://{bucket}/{key}")
     s3.upload_file(
         Filename=str(local_path),
@@ -95,13 +95,13 @@ def main():
         # Original image
         orig_path = ALL_IMAGES_DIR / filename
         orig_key = f"images/{filename}"
-        upload_file_if_exists(s3, bucket, orig_path, orig_key)
+        upload_file(s3, bucket, orig_path, orig_key)
 
         # Thumbnail: thumbnails/<stem>.webp
         stem = Path(filename).stem
         thumb_path = THUMBS_DIR / f"{stem}.webp"
         thumb_key = f"thumbnails/{stem}.webp"
-        upload_file_if_exists(s3, bucket, thumb_path, thumb_key)
+        upload_file(s3, bucket, thumb_path, thumb_key)
 
     print("Done uploading originals and thumbnails to Spaces.")
 

@@ -22,11 +22,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import shutil
 
-# Default width for image index in output filenames (e.g. 5 -> -00000 to -99999).
-DEFAULT_INDEX_WIDTH = 5
-
 # Single SQLite DB in output_dir to track extracted PDFs (one file for any number of PDFs).
 EXTRACTED_DB = "_extracted.sqlite"
+
+# ---------------- CONFIG (defaults used by 00__extract_pdf_images.sh) ----------------
+
+DEFAULT_INDEX_WIDTH = 5
+PDFIMAGES_CMD = "pdfimages"
+DRY_RUN = False
+QUIET = False
+FORCE = False
+PROGRESS_EVERY = 100
+PROGRESS_INTERVAL = 10.0
 
 
 def sanitize_filename(filename):
@@ -343,271 +350,88 @@ def find_pdf_files(directory):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Recursively extract images from PDF files using pdfimages with GNU parallel support",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Sequential processing
-  %(prog)s /path/to/pdfs /path/to/output
-
-  # Process a single PDF file
-  %(prog)s /path/to/file.pdf /path/to/output
-
-  # Use with GNU parallel (recommended for many PDFs)
-  %(prog)s /path/to/pdfs /path/to/output --list-pdfs | \\
-    parallel -j $(nproc) %(prog)s {{}} /path/to/output
-
-  # Or generate GNU parallel command
-  %(prog)s /path/to/pdfs /path/to/output --gnu-parallel
-
-Output naming format:
-  {pdf_basename}-{image_index:0Nd}.{ext}  (N = --index-width, default 5)
-
-  Where:
-    - pdf_basename is the PDF filename (without extension, sanitized)
-    - image_index is zero-padded (e.g. 00000..99999 for width 5)
-    - ext is the image extension (.jpg, .png, etc.)
-
-  Example: "document-00000.jpg", "document-00001.jpg"
-        """
+        description="Extract images from PDFs using pdfimages. Use with 00__extract_pdf_images.sh (GNU parallel).",
     )
-
+    parser.add_argument("input_path", type=str, help="Input directory (recursive) or single PDF file")
+    parser.add_argument("output_dir", type=str, help="Output directory for extracted images")
     parser.add_argument(
-        'input_path',
-        type=str,
-        nargs='?',
-        help='Input directory containing PDF files (searched recursively) or a single PDF file path. Required unless --list-pdfs is used.'
+        "--list-pdfs",
+        action="store_true",
+        help="List PDFs (filtered by extracted DB if output_dir exists) and exit; for piping to parallel",
     )
-
-    parser.add_argument(
-        'output_dir',
-        type=str,
-        nargs='?',
-        help='Output directory for extracted images. Required unless --list-pdfs is used.'
-    )
-
-    parser.add_argument(
-        '--pdfimages-cmd',
-        type=str,
-        default='pdfimages',
-        help='Command to run pdfimages (default: pdfimages)'
-    )
-
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be processed without actually extracting'
-    )
-
-    parser.add_argument(
-        '--single-pdf',
-        type=str,
-        metavar='PDF_FILE',
-        help='[DEPRECATED] Process a single PDF file. Just pass the PDF file as the first argument instead.'
-    )
-
-    parser.add_argument(
-        '--list-pdfs',
-        action='store_true',
-        help='List all PDF files found and exit (for use with GNU parallel)'
-    )
-
-    parser.add_argument(
-        '--gnu-parallel',
-        action='store_true',
-        help='Generate GNU parallel command and exit'
-    )
-
-    parser.add_argument(
-        '--seed-db-from-output',
-        action='store_true',
-        help=f"Populate {EXTRACTED_DB} by scanning output_dir for '*-00000.*' files, then exit."
-    )
-
-    parser.add_argument(
-        '--quiet', '-q',
-        action='store_true',
-        help='Suppress per-PDF messages (skips and extraction counts). Summary still printed.'
-    )
-
-    parser.add_argument(
-        '--index-width',
-        type=int,
-        default=DEFAULT_INDEX_WIDTH,
-        metavar='N',
-        help=f'Width of zero-padded image index in output filenames (default: {DEFAULT_INDEX_WIDTH}). E.g. 5 -> -00000 to -99999.'
-    )
-
-    parser.add_argument(
-        '--force',
-        action='store_true',
-        help='Re-extract even if PDF is already in the extracted DB (clears DB entry for that PDF first).'
-    )
-
-    parser.add_argument(
-        '--progress-every',
-        type=int,
-        default=100,
-        metavar='N',
-        help='In directory mode: print progress at most every N PDFs (default: 100). Use 1 for every PDF, 0 to disable count-based throttle.',
-    )
-    parser.add_argument(
-        '--progress-interval',
-        type=float,
-        default=10.0,
-        metavar='SECS',
-        help='In directory mode: print progress at most every SECS seconds (default: 10). Use 0 to disable time-based throttle.',
-    )
-
     args = parser.parse_args()
 
-    # Handle deprecated --single-pdf flag (for backward compatibility)
-    if args.single_pdf:
-        if not args.output_dir:
-            print("Error: output_dir is required when using --single-pdf", file=sys.stderr)
-            sys.exit(1)
-        args.input_path = args.single_pdf
-
-    # Handle list PDFs mode
     if args.list_pdfs:
         if not args.input_path:
-            print("Error: input_path is required when using --list-pdfs", file=sys.stderr)
-            sys.exit(1)
+            raise RuntimeError("input_path required when using --list-pdfs")
+        pdf_files = find_pdf_files(args.input_path)
+        if args.output_dir:
+            output_dir = Path(args.output_dir)
+            done_basenames = _load_extracted_basenames(output_dir)
+            pdf_files = [p for p in pdf_files if sanitize_filename(Path(p).stem) not in done_basenames]
+        for pdf_file in pdf_files:
+            print(pdf_file, flush=True)
+        return
 
-        try:
-            pdf_files = find_pdf_files(args.input_path)
-            # If output_dir given, only list PDFs not yet in the skip DB (so parallel runs fewer jobs).
-            if args.output_dir:
-                output_dir = Path(args.output_dir)
-                done_basenames = _load_extracted_basenames(output_dir)
-                pdf_files = [p for p in pdf_files if sanitize_filename(Path(p).stem) not in done_basenames]
-            for pdf_file in pdf_files:
-                try:
-                    print(pdf_file, flush=True)
-                except BrokenPipeError:
-                    sys.exit(0)
-        except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
-        sys.exit(0)
-
-    # Handle GNU parallel command generation
-    if args.gnu_parallel:
-        if not args.input_path or not args.output_dir:
-            print("Error: input_path and output_dir are required when using --gnu-parallel", file=sys.stderr)
-            sys.exit(1)
-
-        script_path = Path(__file__).absolute()
-        input_root = Path(args.input_path).resolve()
-        print(f"# Run this command to process PDFs in parallel with GNU parallel:")
-        print(f"# (Only PDFs not already in {EXTRACTED_DB} are listed, so reruns skip done work.)")
-        print(f"export PDF_INPUT_ROOT='{input_root}'")
-        print(f"{script_path} {args.input_path} {args.output_dir} --list-pdfs | \\")
-        print(f"  parallel -j $(nproc) env PDF_INPUT_ROOT='{input_root}' {script_path} {{}} {args.output_dir} --quiet")
-        sys.exit(0)
-
-    # Normal mode requires both arguments
     if not args.input_path or not args.output_dir:
-        parser.print_help()
-        sys.exit(1)
+        raise RuntimeError("input_path and output_dir required (or use --list-pdfs with input_path)")
 
-    # Seed mode: scan output directory to populate skip DB, then exit.
-    if args.seed_db_from_output:
-        seed_db_from_output(args.output_dir, verbose=True)
-        sys.exit(0)
-
-    # Check if input_path is a single PDF file or a directory
     input_path = Path(args.input_path)
     if not input_path.exists():
-        print(f"Error: Path does not exist: {input_path}", file=sys.stderr)
-        sys.exit(1)
+        raise FileNotFoundError(f"Path does not exist: {input_path}")
 
-    # If it's a file (and looks like a PDF), process it as a single PDF
-    if input_path.is_file() and input_path.suffix.lower() == '.pdf':
-        output_dir = Path(args.output_dir)
-        # For single file mode, try to get input root from environment variable (set by GNU parallel)
-        # or try to detect it by looking for a parent directory with "DataSet" in subfolders
-        input_dir_root = os.environ.get('PDF_INPUT_ROOT')
+    output_dir = Path(args.output_dir)
+
+    # Single PDF (e.g. worker invoked by parallel)
+    if input_path.is_file() and input_path.suffix.lower() == ".pdf":
+        input_dir_root = os.environ.get("PDF_INPUT_ROOT")
         if input_dir_root:
             input_dir_root = Path(input_dir_root).resolve()
         else:
-            # Try to detect: walk up the directory tree looking for a folder that contains
-            # subfolders matching "DataSet*" pattern
-            current = input_path.parent.resolve()
-            found_root = None
-            for _ in range(10):  # Limit search depth
-                # Check if current directory has subfolders matching "DataSet*"
-                if current.exists() and current.is_dir():
-                    subdirs = [d.name for d in current.iterdir() if d.is_dir()]
-                    if any('dataset' in d.lower() for d in subdirs):
-                        found_root = current
-                        break
-                parent = current.parent
-                if parent == current:  # Reached filesystem root
-                    break
-                current = parent
-
-            input_dir_root = found_root if found_root else input_path.parent
-
-        result = extract_images_from_pdf(
+            input_dir_root = input_path.parent.resolve()
+        _, _, success = extract_images_from_pdf(
             input_path,
             output_dir,
-            args.pdfimages_cmd,
-            verbose=False,  # no per-PDF output when run by parallel (one PDF per process)
+            PDFIMAGES_CMD,
+            verbose=False,
             input_dir_root=input_dir_root,
-            index_width=args.index_width,
-            force=args.force,
+            index_width=DEFAULT_INDEX_WIDTH,
+            force=FORCE,
         )
-        pdf_path_str, count, success = result
-        sys.exit(0 if success else 1)
+        if not success:
+            raise RuntimeError(f"Extraction failed for {input_path}")
+        return
 
-    # Otherwise, treat it as a directory
-    input_dir = args.input_path
-    input_dir_root = Path(input_dir).resolve()
-
-    # Check if pdfimages is available
-    if not args.dry_run:
+    # Directory mode
+    input_dir_root = input_path.resolve()
+    if not DRY_RUN:
         try:
             subprocess.run(
-                [args.pdfimages_cmd, '-v'],
+                [PDFIMAGES_CMD, "-v"],
                 capture_output=True,
                 check=True,
-                timeout=5
+                timeout=5,
             )
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            print(f"Error: '{args.pdfimages_cmd}' command not found or not working.", file=sys.stderr)
-            print("Please install poppler-utils (which includes pdfimages):", file=sys.stderr)
-            print("  Ubuntu/Debian: sudo apt-get install poppler-utils", file=sys.stderr)
-            print("  macOS: brew install poppler", file=sys.stderr)
-            print("  Or specify the correct command with --pdfimages-cmd", file=sys.stderr)
-            sys.exit(1)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+            raise RuntimeError(
+                f"'{PDFIMAGES_CMD}' not found or not working. Install poppler-utils (apt install poppler-utils; macOS: brew install poppler)."
+            ) from e
 
-    # Find all PDF files
-    print(f"Searching for PDF files in: {input_dir}")
-    try:
-        pdf_files = find_pdf_files(input_dir)
-    except ValueError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-
+    print(f"Searching for PDF files in: {input_path}")
+    pdf_files = find_pdf_files(input_path)
     if not pdf_files:
-        print(f"No PDF files found in {input_dir}")
-        sys.exit(0)
-
+        print(f"No PDF files found in {input_path}")
+        return
     print(f"Found {len(pdf_files)} PDF file(s)")
     print()
 
-    if args.dry_run:
-        print("Dry run mode - would process:")
-        for pdf_file in pdf_files:
-            print(f"  {pdf_file}")
-        sys.exit(0)
+    if DRY_RUN:
+        print("Dry run - would process:")
+        for p in pdf_files:
+            print(f"  {p}")
+        return
 
-    # Process each PDF file sequentially
-    output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Only process PDFs not already in the skip DB (one DB read, then no per-PDF skip checks).
     done_basenames = _load_extracted_basenames(output_dir)
     todo = [p for p in pdf_files if sanitize_filename(p.stem) not in done_basenames]
     skipped_count = len(pdf_files) - len(todo)
@@ -625,24 +449,16 @@ Output naming format:
         left = total_todo - current
         now = time.monotonic()
 
-        # Throttle progress: first, last, every N PDFs, or every N seconds
-        progress_every = args.progress_every
-        progress_interval = args.progress_interval
-        if progress_every is None:
-            progress_every = 0
-        if progress_interval is None:
-            progress_interval = 0.0
         show_progress = False
-        if args.quiet:
-            show_progress = False
-        elif current == 1 or left == 0:
-            show_progress = True
-        elif progress_every and (current - 1) % progress_every == 0:
-            show_progress = True
-        elif progress_interval and (now - last_progress_time) >= progress_interval:
-            show_progress = True
+        if not QUIET:
+            if current == 1 or left == 0:
+                show_progress = True
+            elif PROGRESS_EVERY and (current - 1) % PROGRESS_EVERY == 0:
+                show_progress = True
+            elif PROGRESS_INTERVAL and (now - last_progress_time) >= PROGRESS_INTERVAL:
+                show_progress = True
 
-        if show_progress and not args.quiet:
+        if show_progress:
             last_progress_time = now
             eta_str = ""
             if done_so_far > 0 and left > 0:
@@ -657,27 +473,24 @@ Output naming format:
                     eta_str = f" [~{eta_seconds:.0f}s left]"
             print(f"Processing {current}/{total_todo} ({left} left){eta_str}")
 
-        pdf_path_str, count, success = extract_images_from_pdf(
+        _, count, success = extract_images_from_pdf(
             pdf_file,
             output_dir,
-            args.pdfimages_cmd,
+            PDFIMAGES_CMD,
             verbose=show_progress,
             input_dir_root=input_dir_root,
-            index_width=args.index_width,
-            force=args.force,
+            index_width=DEFAULT_INDEX_WIDTH,
+            force=FORCE,
         )
 
         if not success:
-            failed_pdfs += 1
-            print(f"Error: extraction failed for {pdf_file}", file=sys.stderr)
-            print("Halting on first failure (no further PDFs will be processed).", file=sys.stderr)
-            sys.exit(1)
+            raise RuntimeError(f"Extraction failed for {pdf_file} (halting on first failure)")
+
         successful_pdfs += 1
         total_images += count
         if show_progress:
             print()
 
-    # Print summary
     print("=" * 60)
     print("Extraction Summary")
     print("=" * 60)
@@ -686,22 +499,11 @@ Output naming format:
         print(f"Skipped (already in DB): {skipped_count}")
     print(f"Processed this run: {len(todo)}")
     print(f"Successful: {successful_pdfs}")
-    print(f"Failed/No images: {failed_pdfs}")
+    print(f"Failed: {failed_pdfs}")
     print(f"Total images extracted: {total_images}")
-    print(f"Output directory: {output_dir.absolute()}")
-
-    if failed_pdfs > 0:
-        sys.exit(1)
+    print(f"Output directory: {output_dir.resolve()}")
 
 
 if __name__ == "__main__":
-    # Handle broken pipe gracefully (common when piping to commands like head, parallel, etc.)
-    # Set SIGPIPE to SIG_DFL to avoid traceback when pipe closes
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-
-    try:
-        main()
-    except BrokenPipeError:
-        # Pipe was closed early (e.g., by GNU parallel)
-        # Exit cleanly without error
-        sys.exit(0)
+    main()

@@ -9,21 +9,23 @@ This script:
     image_name TEXT PRIMARY KEY,
     has_face   INTEGER  -- 1 if local detector saw at least one face, 0 if not
 
-It does NOT call AWS Rekognition. Run 01__cluster_faces.py afterwards to index with Rekognition
-and perform clustering using the precomputed `has_face` flags.
+It does NOT call AWS Rekognition. Run 04__index_faces.py then 05__cluster_faces.py to index and cluster.
 """
 
 import os
 import time
 
-import cv2  # pip install opencv-python
-from insightface.app import FaceAnalysis  # pip install insightface onnxruntime-gpu
+import cv2
+from insightface.app import FaceAnalysis
+import onnxruntime as ort
 
 from faces_db import get_already_has_face, init_db, upsert_image_status
 
 # ---------------- CONFIG ----------------
 
-IMAGE_DIR = "../../../all_images"
+from config import IMAGE_DIR
+
+IMAGE_DIR = str(IMAGE_DIR)  # os.listdir / os.path.join expect str in this script
 
 DETECTOR_CTX_ID = 0  # 0 = first CUDA GPU; set to -1 for CPU
 DETECTOR_INPUT_SIZE = (640, 640)
@@ -43,6 +45,16 @@ def _init_detector():
     global _detector
     if _detector is not None:
         return _detector
+
+    if DETECTOR_CTX_ID >= 0:
+        providers = ort.get_available_providers()
+        if "CUDAExecutionProvider" not in providers:
+            raise RuntimeError(
+                "GPU requested (DETECTOR_CTX_ID >= 0) but ONNXRuntime CUDA provider is not available.\n"
+                f"onnxruntime providers: {providers}\n"
+                "Fix: install a GPU build of onnxruntime (onnxruntime-gpu) and ensure CUDA libraries are installed.\n"
+                "If you want CPU, set DETECTOR_CTX_ID = -1."
+            )
 
     app = FaceAnalysis(name="buffalo_l")
     app.prepare(ctx_id=DETECTOR_CTX_ID, det_size=DETECTOR_INPUT_SIZE)
@@ -76,10 +88,14 @@ def _format_eta(sec):
 
 
 def preprocess_all_images(conn):
-    entries = os.listdir(IMAGE_DIR)
-    print(f"{len(entries)} files found in {IMAGE_DIR}")
+    # 01__dedup_images.py is expected to populate `images` table (and duplicate_of).
+    # Preprocess only canonical images (duplicate_of IS NULL).
+    c = conn.cursor()
+    c.execute("SELECT image_name FROM images WHERE duplicate_of IS NULL")
+    entries = [row[0] for row in c.fetchall()]
+    print(f"{len(entries)} canonical image(s) in DB (duplicate_of IS NULL)")
     if len(entries) == 0:
-        raise RuntimeError(f"IMAGE_DIR is empty: {IMAGE_DIR}")
+        raise RuntimeError("No images found in DB. Run 01__dedup_images.py first.")
 
     # One query: skip all images that already have has_face set (avoids 10k+ get_image_status calls).
     already_done = get_already_has_face(conn)

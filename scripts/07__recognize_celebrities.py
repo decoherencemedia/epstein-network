@@ -10,36 +10,34 @@ faces rows for that person_id.
 Run after clustering. One RecognizeCelebrities call per person (Group 2 pricing).
 """
 
-import argparse
-import os
 import time
+from pathlib import Path
 from typing import Tuple
 
 import boto3
 from PIL import Image
 
+from config import IMAGE_DIR
 from faces_db import init_db
 
 # ---------------- CONFIG ----------------
 
 REGION = "us-east-1"
-IMAGE_DIR = "../../../all_images"
 API_DELAY_SECONDS = 0.2
 
-# Minimum IoU to assign a celebrity to the person's face in the chosen image.
 MIN_IOU = 0.3
-# Minimum Rekognition MatchConfidence (0-100) to accept a celebrity match.
 MIN_CELEBRITY_CONFIDENCE = 95.0
-
-# Rekognition Bytes limit for Image={"Bytes": ...} is 5 MiB.
 REKOGNITION_MAX_BYTES = 5 * 1024 * 1024
+
+DRY_RUN = False
+PROCESS_ALL_PEOPLE = False
 
 # --------------------------------------
 
 rekognition = boto3.client("rekognition", region_name=REGION)
 
 
-def load_image_bytes(path: str) -> bytes:
+def load_image_bytes(path: Path) -> bytes:
     """Load image bytes for Rekognition (expects file <= 5 MiB)."""
     with open(path, "rb") as f:
         raw = f.read()
@@ -50,7 +48,7 @@ def load_image_bytes(path: str) -> bytes:
     return raw
 
 
-def image_size(path: str) -> Tuple[int, int]:
+def image_size(path: Path) -> Tuple[int, int]:
     """Return (width, height) in pixels."""
     with Image.open(path) as im:
         return im.size
@@ -129,13 +127,10 @@ def pick_best_image(conn, person_id):
     best = None
     best_score = -1.0
     for image_name, left, top, width, height in appearances:
-        path = os.path.join(IMAGE_DIR, image_name)
-        if not os.path.isfile(path):
-            continue
-        try:
-            w, h = image_size(path)
-        except Exception:
-            continue
+        path = IMAGE_DIR / image_name
+        if not path.is_file():
+            raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
+        w, h = image_size(path)
         # Normalized bbox area × pixel count = approximate face size in pixels
         score = (width * height) * (w * h)
         if score > best_score:
@@ -153,19 +148,11 @@ def process_person(person_id, conn):
     if best is None:
         return False
     image_name, left, top, width, height = best
-    path = os.path.join(IMAGE_DIR, image_name)
-    if not os.path.isfile(path):
-        return False
-    try:
-        image_bytes = load_image_bytes(path)
-    except Exception as e:
-        print(f"  Skip (read): {image_name} -- {e}")
-        return False
-    try:
-        response = rekognition.recognize_celebrities(Image={"Bytes": image_bytes})
-    except Exception as e:
-        print(f"  Rekognition error: {image_name} -- {e}")
-        return False
+    path = IMAGE_DIR / image_name
+    if not path.is_file():
+        raise FileNotFoundError(f"Image file missing: {path}")
+    image_bytes = load_image_bytes(path)
+    response = rekognition.recognize_celebrities(Image={"Bytes": image_bytes})
 
     celebrity_faces = response.get("CelebrityFaces", [])
     if not celebrity_faces:
@@ -222,31 +209,15 @@ def process_person(person_id, conn):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Match people to Rekognition celebrity DB (one call per person, best image by face size)."
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Only list person count, do not call API or write DB.",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Process all people (default: skip those already in person_celebrity_check_done).",
-    )
-    args = parser.parse_args()
-
     conn = init_db()
     ensure_tables(conn)
-    image_dir = os.path.abspath(IMAGE_DIR)
-    if not os.path.isdir(image_dir):
-        raise SystemExit(f"IMAGE_DIR not a directory: {image_dir}")
+    if not IMAGE_DIR.is_dir():
+        raise RuntimeError(f"IMAGE_DIR not a directory: {IMAGE_DIR}")
 
-    person_ids = get_person_ids(conn, skip_already_done=not args.all)
+    person_ids = get_person_ids(conn, skip_already_done=not PROCESS_ALL_PEOPLE)
     print(f"{len(person_ids)} person(s) to check")
 
-    if args.dry_run:
+    if DRY_RUN:
         print("Dry run: exiting.")
         conn.close()
         return

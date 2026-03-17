@@ -1,15 +1,23 @@
 # Epstein Photo Network Visualization
 
-## Scripts
+## Pipeline order
 
+Run from `scripts/` (or set paths accordingly). `all_images` is at repo root.
 
-**00__extract_pdf_images.sh**: Extracts images from every PDF in specified directory, recursively
-**01__dedup_images.sh**: Deletes duplicate image files
-**02__downsize_images.sh**: Downsize any image above 5MB
-**03__preprocess_faces.py**: Uses local (free) face detection model to filter out images without faces
-**04__cluster_faces.py**: Index images with AWS Rekognition
-**05__recognize_celebrities.py**: Associate faces with "celebrities" using AWS Rekognition
-**06__extract_faces.py**: Write images of extracted faces to file
-**07__create_graph.py**: Build network graph based on face co-occurrence in photos, save as GraphML
-**08__visualize_graph.py**: Process laid-out graph data into data for D3 network visualization  
-**09__sheets_rekognition.py**: Google Sheet with columns Name, Person ID, Image Path, reference/archived URLs, Confidence, JSON Response, Notes; initializes sheet and fills Confidence via AWS Rekognition CompareFaces (see script docstring and `requirements-sheets.txt`)
+| Step | Script | Description |
+|------|--------|-------------|
+| 00 | `00__extract_pdf_images.sh` | Extract images from PDFs (recursive). |
+| 01 | `01__dedup_images.py` | Remove exact duplicate images by content hash. |
+| 02 | `02__downsize_images.sh` | Downsize images above 5MB. |
+| 03 | `03__preprocess_faces.py` | Local face detection (InsightFace), set `has_face` in DB. |
+| 04 | `04__index_faces.py` | Index faces in Rekognition (IndexFaces), populate faces table. |
+| 05 | `05__cluster_faces.py` | SearchFaces + UnionFind, assign `person_id` to faces. |
+| 06 | `06__moderate_images.py` | DetectModerationLabels, store raw JSON in `images.moderation_result`. |
+| 07 | `07__recognize_celebrities.py` | RecognizeCelebrities per person, write `celebrity_*` on faces. |
+| 08 | `08__extract_faces.py` | Write cropped face images to `extracted_faces/`. |
+| 09 | `09__create_graph.py` | Build co-occurrence graph (GraphML), filter nude (NudeNet), output `image_data.json`. |
+| 10 | `10__create_thumbnails.sh` | Create thumbnails for graph assets. |
+| 11 | `11__upload_to_spaces.py` | Upload images/thumbnails to DigitalOcean Spaces (env: `EPSTEIN_SPACES_*`). |
+| 12 | `12__visualize_graph.py` | Turn laid-out GraphML into D3 dataset (e.g. `dataset.json`). |
+
+Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.

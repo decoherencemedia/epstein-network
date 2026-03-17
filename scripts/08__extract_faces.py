@@ -5,8 +5,8 @@ from PIL import Image
 
 # ---------------- CONFIG ----------------
 
-DB_PATH = "faces.db"
-IMAGE_DIR = "../../../all_images"
+from config import DB_PATH, IMAGE_DIR
+
 OUTPUT_DIR = "../../extracted_faces"
 CELEBRITY_CONFIDENCE_THRESHOLD = 95.0
 
@@ -86,17 +86,11 @@ def extract_faces():
         # Rank this person's faces by approximate face size (normalized bbox area × image pixels)
         scored_faces = []
         for image_name, face_id, left, top, width, height in faces:
-            image_path = os.path.join(IMAGE_DIR, image_name)
-            if not os.path.exists(image_path):
-                print(f"  Warning: Image not found (skipping for size score): {image_path}")
-                continue
-            try:
-                img = Image.open(image_path)
+            image_path = IMAGE_DIR / image_name
+            if not image_path.is_file():
+                raise FileNotFoundError(f"Image file missing: {image_path}")
+            with Image.open(image_path) as img:
                 img_width, img_height = img.size
-                img.close()
-            except Exception as e:
-                print(f"  Warning: Failed to open for size score {image_path}: {e}")
-                continue
             score = (width * height) * (img_width * img_height)
             scored_faces.append((score, image_name, face_id, left, top, width, height))
 
@@ -112,34 +106,24 @@ def extract_faces():
         copied_originals = set()
 
         for image_name, face_id, left, top, width, height in faces_to_process:
-            image_path = os.path.join(IMAGE_DIR, image_name)
-
-            if not os.path.exists(image_path):
-                print(f"  Warning: Image not found: {image_path}")
-                continue
+            image_path = IMAGE_DIR / image_name
+            if not image_path.is_file():
+                raise FileNotFoundError(f"Image file missing: {image_path}")
 
             # Copy original image once per person
             if image_name not in copied_originals:
-                try:
-                    from shutil import copy2
-                    copy2(image_path, os.path.join(originals_dir, image_name))
-                    copied_originals.add(image_name)
-                except Exception as e:
-                    print(f"  Warning: Failed to copy original {image_path}: {e}")
+                from shutil import copy2
+                copy2(image_path, os.path.join(originals_dir, image_name))
+                copied_originals.add(image_name)
 
             # Load image for face crop
-            img = Image.open(image_path)
-            img_width, img_height = img.size
-
-            # Convert normalized coordinates to pixel coordinates
-            # Rekognition bounding box: (left, top) is top-left corner, width/height are relative
-            x1 = int(left * img_width)
-            y1 = int(top * img_height)
-            x2 = int((left + width) * img_width)
-            y2 = int((top + height) * img_height)
-
-            # Crop face
-            face_crop = img.crop((x1, y1, x2, y2))
+            with Image.open(image_path) as img:
+                img_width, img_height = img.size
+                x1 = int(left * img_width)
+                y1 = int(top * img_height)
+                x2 = int((left + width) * img_width)
+                y2 = int((top + height) * img_height)
+                face_crop = img.crop((x1, y1, x2, y2))
 
             # Save face crop
             # Use face_id as filename to ensure uniqueness

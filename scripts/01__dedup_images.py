@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
 """
 Find exact duplicate image files in a directory by content hash.
-Keeps the first occurrence of each unique file and removes later duplicates.
+Populates the `images` table:
+- One row per file
+- `duplicate_of` is NULL for canonical files
+- `duplicate_of` is the canonical filename for byte-identical duplicates
+
+No files are deleted or moved.
 """
 
-import argparse
 import hashlib
-import sys
 from pathlib import Path
 
-# Common image extensions
+from config import IMAGE_DIR
+from faces_db import init_db, upsert_image_duplicate_of
+
+# ---------------- CONFIG ----------------
+
+DRY_RUN = False
+ALL_EXTENSIONS = False
+
 IMAGE_EXTENSIONS = frozenset(
     {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".ppm"}
 )
+
+# --------------------------------------
 
 
 def file_hash(path: Path, block_size: int = 65536) -> str:
@@ -25,64 +37,48 @@ def file_hash(path: Path, block_size: int = 65536) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Remove exact duplicate image files (by content hash). Keeps first, deletes rest."
-    )
-    parser.add_argument(
-        "directory",
-        type=Path,
-        help="Directory to scan for duplicate images",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Only report duplicates, do not delete",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Consider all files, not just common image extensions",
-    )
-    args = parser.parse_args()
-
-    directory = args.directory.resolve()
+    directory = IMAGE_DIR.resolve()
     if not directory.is_dir():
-        print(f"Not a directory: {directory}", file=sys.stderr)
-        sys.exit(1)
+        raise NotADirectoryError(f"Not a directory: {directory}")
 
-    seen_hashes: set[str] = set()
-    removed = 0
+    # Deterministic canonical choice: first file by sorted path order.
+    first_for_hash: dict[str, str] = {}
+    duplicates = 0
 
-    # Sort paths for deterministic "first occurrence" (keeps lexicographically first)
     paths = sorted(directory.iterdir()) if directory.is_dir() else []
     paths = [p for p in paths if p.is_file()]
-    if not args.all:
+    if not ALL_EXTENSIONS:
         paths = [p for p in paths if p.suffix.lower() in IMAGE_EXTENSIONS]
 
-    for path in paths:
-        try:
+    conn = init_db()
+    try:
+        for path in paths:
             digest = file_hash(path)
-        except OSError as e:
-            print(f"Skip (read error): {path} -- {e}", file=sys.stderr)
-            continue
-
-        if digest in seen_hashes:
-            if args.dry_run:
-                print(f"Would remove duplicate: {path.name}")
+            canonical = first_for_hash.get(digest)
+            if canonical is None:
+                canonical = path.name
+                first_for_hash[digest] = canonical
+                duplicate_of = None
             else:
-                try:
-                    path.unlink()
-                    print(f"Removed: {path.name}")
-                    removed += 1
-                except OSError as e:
-                    print(f"Failed to remove {path}: {e}", file=sys.stderr)
-        else:
-            seen_hashes.add(digest)
+                duplicate_of = canonical
+                duplicates += 1
 
-    if args.dry_run:
-        print(f"Would remove {removed} duplicate(s).")
+            if DRY_RUN:
+                if duplicate_of is None:
+                    continue
+                print(f"Duplicate: {path.name} -> {duplicate_of}")
+                continue
+
+            upsert_image_duplicate_of(conn, path.name, duplicate_of, commit=False)
+        if not DRY_RUN:
+            conn.commit()
+    finally:
+        conn.close()
+
+    if DRY_RUN:
+        print(f"Would mark {duplicates} duplicate(s) in DB.")
     else:
-        print(f"Removed {removed} duplicate(s).")
+        print(f"Marked {duplicates} duplicate(s) in DB.")
 
 
 if __name__ == "__main__":

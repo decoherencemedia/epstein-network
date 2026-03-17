@@ -6,7 +6,7 @@ Used by preprocess (writes has_face), cluster (writes indexed + faces.person_id)
 
 import sqlite3
 
-DB_PATH = "faces.db"
+from config import DB_PATH
 
 
 def init_db():
@@ -17,6 +17,7 @@ def init_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS images (
             image_name TEXT PRIMARY KEY,
+            duplicate_of TEXT, -- if non-NULL, this file is a byte-identical duplicate of duplicate_of
             has_face INTEGER,   -- 1 if local detector saw at least one face, 0 if not, NULL if unknown
             indexed  INTEGER    -- 1 if sent to Rekognition, 0 or NULL otherwise
         )
@@ -40,6 +41,7 @@ def init_db():
     _ensure_faces_person_celebrity_columns(conn)
     _ensure_faces_index_response_columns(conn)
     _ensure_images_moderation_column(conn)
+    _ensure_images_duplicate_of_column(conn)
     _migrate_people_to_faces_if_exists(conn)
     c.execute("DROP TABLE IF EXISTS people")
     conn.commit()
@@ -84,6 +86,15 @@ def _ensure_images_moderation_column(conn):
             raise
 
 
+def _ensure_images_duplicate_of_column(conn):
+    """Add duplicate_of column to images if missing."""
+    try:
+        conn.execute("ALTER TABLE images ADD COLUMN duplicate_of TEXT")
+    except sqlite3.OperationalError as e:
+        if "duplicate" not in str(e).lower():
+            raise
+
+
 def _migrate_people_to_faces_if_exists(conn):
     """If people table exists, copy person_id and celebrity_* into faces then drop people."""
     c = conn.cursor()
@@ -116,7 +127,7 @@ def get_image_status(conn, image_name):
 def get_already_has_face(conn):
     """Return set of image_name that already have has_face set (one query for batch skip)."""
     c = conn.cursor()
-    c.execute("SELECT image_name FROM images WHERE has_face IS NOT NULL")
+    c.execute("SELECT image_name FROM images WHERE duplicate_of IS NULL AND has_face IS NOT NULL")
     return {row[0] for row in c.fetchall()}
 
 
@@ -132,8 +143,8 @@ def upsert_image_status(conn, image_name, has_face=None, indexed=None, *, commit
         indexed = cur_indexed
     c.execute(
         """
-        INSERT INTO images (image_name, has_face, indexed)
-        VALUES (?, ?, ?)
+        INSERT INTO images (image_name, duplicate_of, has_face, indexed)
+        VALUES (?, NULL, ?, ?)
         ON CONFLICT(image_name) DO UPDATE SET
             has_face = COALESCE(?, images.has_face),
             indexed  = COALESCE(?, images.indexed)
@@ -148,7 +159,7 @@ def get_images_to_index(conn):
     """Return list of image_name where has_face=1 and not yet indexed (for Rekognition)."""
     c = conn.cursor()
     c.execute(
-        "SELECT image_name FROM images WHERE has_face = 1 AND (indexed IS NULL OR indexed = 0)"
+        "SELECT image_name FROM images WHERE duplicate_of IS NULL AND has_face = 1 AND (indexed IS NULL OR indexed = 0)"
     )
     return [row[0] for row in c.fetchall()]
 
@@ -159,10 +170,27 @@ def get_images_for_moderation(conn):
     c.execute(
         """
         SELECT image_name FROM images
-        WHERE indexed = 1 AND (moderation_result IS NULL OR moderation_result = '')
+        WHERE duplicate_of IS NULL
+          AND indexed = 1
+          AND (moderation_result IS NULL OR moderation_result = '')
         """
     )
     return [row[0] for row in c.fetchall()]
+
+
+def upsert_image_duplicate_of(conn, image_name: str, duplicate_of: str | None, *, commit: bool = True) -> None:
+    """Insert image row if missing; set duplicate_of (NULL for canonical)."""
+    conn.execute(
+        """
+        INSERT INTO images (image_name, duplicate_of, has_face, indexed)
+        VALUES (?, ?, NULL, NULL)
+        ON CONFLICT(image_name) DO UPDATE SET
+            duplicate_of = excluded.duplicate_of
+        """,
+        (image_name, duplicate_of),
+    )
+    if commit:
+        conn.commit()
 
 
 def upsert_image_moderation(conn, image_name, moderation_result_json, *, commit=True):

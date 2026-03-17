@@ -430,10 +430,7 @@ def main():
         target_path = resolve_image_path(image_path_val)
         source_bytes = None
         if ref_url:
-            try:
-                source_bytes = download_image_bytes(ref_url, session)
-            except Exception as e:
-                print(e)
+            source_bytes = download_image_bytes(ref_url, session)
         if source_bytes is None and archived_url:
             source_bytes = download_image_bytes(archived_url, session)
         if source_bytes is None:

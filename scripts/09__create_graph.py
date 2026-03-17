@@ -4,51 +4,53 @@ from collections import defaultdict
 from pathlib import Path
 from functools import cache
 from shutil import copy, rmtree
+from typing import Any
 
 import pandas as pd
 from itertools import combinations
 
 import networkx as nx
 from PIL import Image
-from nudenet import NudeDetector
 
 from sheets_common import get_sheet_client, load_categories, load_names, load_ignore
+from config import DB_PATH, IMAGE_DIR
 
 
-SQLITE_DB = "faces.db"
 MAX_RANK = 292
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-IMAGE_DIR = SCRIPT_DIR.parent.parent.parent / "all_images"
 FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images"
-PEOPLE_JSON_PATH = SCRIPT_DIR / "data" / "people.json"
-
-NUDE_LABELS = [
-    "BUTTOCKS_EXPOSED",
-    "FEMALE_BREAST_EXPOSED",
-    "FEMALE_GENITALIA_EXPOSED",
-    "ANUS_EXPOSED",
-    "MALE_GENITALIA_EXPOSED",
-]
-NUDE_CONFIDENCE_THRESHOLD = 0.5
 
 OUTPUT_GRAPHML = SCRIPT_DIR.parent / "graphml" / "epstein_photo_people.graphml"
 
 
-def is_nude(filename: str, bad_photos: set[str] | None = None) -> bool:
-    if bad_photos is not None and filename in bad_photos:
-        return True
-    detector = get_nude_detector()
-    results = detector.detect(str(IMAGE_DIR / filename))
-    return any(
-        (r["class"] in NUDE_LABELS) and (r["score"] > NUDE_CONFIDENCE_THRESHOLD)
-        for r in results
-    )
+def _is_explicit_moderation(moderation_result: str | None) -> bool:
+    if not moderation_result:
+        return False
+    data: Any = json.loads(moderation_result)
+    labels = data.get("ModerationLabels") or []
+    for lb in labels:
+        name = lb.get("Name")
+        parent = lb.get("ParentName")
+        # Treat any Explicit L1 or any child of Explicit as explicit content.
+        if name == "Explicit" or parent == "Explicit":
+            return True
+    return False
 
 
-@cache
-def get_nude_detector() -> NudeDetector:
-    return NudeDetector()
+def _has_minor_face(age_low: Any, age_high: Any) -> bool:
+    # Under 18: if either bound implies <18, treat as minor.
+    try:
+        if age_low is not None and int(age_low) < 18:
+            return True
+    except Exception:
+        pass
+    try:
+        if age_high is not None and int(age_high) < 18:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 @cache
@@ -68,14 +70,7 @@ if __name__ == "__main__":
     PEOPLE_NAMES = load_names(gc)
     PEOPLE_TO_SKIP = load_ignore(gc)
 
-    # Bad photos list still from people.json.
-    BAD_PHOTOS: set[str] = set()
-    if PEOPLE_JSON_PATH.is_file():
-        with open(PEOPLE_JSON_PATH, "r") as f:
-            people_meta = json.load(f)
-        BAD_PHOTOS = set(people_meta.get("bad_photos", []))
-
-    con = sqlite3.connect(SQLITE_DB)
+    con = sqlite3.connect(DB_PATH)
 
     # Step 1: in SQL, get the MAX_RANK most common people (no ignore list here).
     top_ids_df = pd.read_sql_query(
@@ -92,20 +87,32 @@ if __name__ == "__main__":
     )
     top_ids = set(top_ids_df["person_id"].tolist())
     if not top_ids:
-        raise SystemExit("No person_ids found for graph.")
+        raise RuntimeError("No person_ids found for graph.")
 
     # Step 2: fetch all faces for those top_ids.
     placeholders_top = ",".join("?" for _ in top_ids)
     df = pd.read_sql_query(
-        "SELECT person_id, image_name, left, top, width, height, "
-        "celebrity_name, celebrity_confidence "
-        f"FROM faces WHERE person_id IN ({placeholders_top})",
+        "SELECT f.person_id, f.image_name, f.left, f.top, f.width, f.height, "
+        "f.celebrity_name, f.celebrity_confidence, "
+        "f.age_range_low, f.age_range_high, "
+        "i.moderation_result "
+        f"FROM faces f "
+        f"LEFT JOIN images i ON i.image_name = f.image_name "
+        f"WHERE f.person_id IN ({placeholders_top})",
         con,
         params=list(top_ids),
     )
 
     # Step 3: apply ignore list AFTER rank selection.
     df = df[~df["person_id"].isin(PEOPLE_TO_SKIP)]
+
+    # Disallow images that are explicit or contain any face under 18.
+    df["is_explicit"] = df["moderation_result"].apply(_is_explicit_moderation)
+    df["is_minor_face"] = df.apply(
+        lambda r: _has_minor_face(r.get("age_range_low"), r.get("age_range_high")),
+        axis=1,
+    )
+    disallowed_images = set(df.loc[df["is_explicit"] | df["is_minor_face"], "image_name"].tolist())
 
     # Attach image dimensions and face area (normalized box × pixels).
     df[["img_w", "img_h"]] = df["image_name"].apply(
@@ -181,7 +188,7 @@ if __name__ == "__main__":
     node_images = {}
     for label, filenames in node_candidates.items():
         for fn in filenames:
-            if not is_nude(fn, BAD_PHOTOS):
+            if fn not in disallowed_images:
                 node_images[label] = fn
                 break
         else:
@@ -211,13 +218,13 @@ if __name__ == "__main__":
     nx.set_node_attributes(G=G, values=name_to_category, name="category")
     nx.write_graphml(G, OUTPUT_GRAPHML)
 
-    # Edge images: per edge, ranked by product of areas desc; pick highest-res image that is not nude.
+    # Edge images: per edge, ranked by product of areas desc; pick highest-res image that is allowed.
     edge_images = {}
     for edge, candidates in edge_candidates.items():
         # Sort by product descending (best first).
         candidates = sorted(candidates, key=lambda x: x[0], reverse=True)
         for _prod, img in candidates:
-            if not is_nude(img, BAD_PHOTOS):
+            if img not in disallowed_images:
                 edge_images["-".join(edge)] = img
                 break
         else:

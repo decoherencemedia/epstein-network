@@ -6,3 +6,6 @@ graphml/
 *.db
 *.csv#
 *.graphml
+*.md
+!README.md
+*.db-journal
