@@ -12,13 +12,18 @@ This script:
 
 import argparse
 import os
+import re
 import sqlite3
+import time
 import subprocess
 import sys
 import signal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import shutil
+
+# Default width for image index in output filenames (e.g. 5 -> -00000 to -99999).
+DEFAULT_INDEX_WIDTH = 5
 
 # Single SQLite DB in output_dir to track extracted PDFs (one file for any number of PDFs).
 EXTRACTED_DB = "_extracted.sqlite"
@@ -78,6 +83,19 @@ def _mark_extracted(output_dir, pdf_basename):
         conn.close()
 
 
+def _remove_extracted(output_dir, pdf_basename):
+    """Remove this PDF basename from the extracted DB (for --force re-extract)."""
+    db_path = _extracted_db_path(output_dir)
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path), timeout=10.0)
+    try:
+        conn.execute("DELETE FROM extracted WHERE pdf_basename = ?", (pdf_basename,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _load_extracted_basenames(output_dir):
     """Load the set of pdf_basename that are already in the DB (one read, for filtering lists)."""
     db_path = _extracted_db_path(output_dir)
@@ -115,15 +133,12 @@ def seed_db_from_output(output_dir, verbose=True):
                     continue
                 scanned += 1
                 name = entry.name
-                # Match only first-image outputs to infer completed PDFs.
-                marker = "-0000."
-                idx = name.find(marker)
-                if idx <= 0:
+                # Match first-image output to infer completed PDFs (e.g. basename-00000.ext).
+                marker = "-00000."
+                i = name.find(marker)
+                if i <= 0 or i + len(marker) >= len(name):
                     continue
-                # Ensure there's an extension after "-0000."
-                if idx + len(marker) >= len(name):
-                    continue
-                pdf_basename = name[:idx]
+                pdf_basename = name[:i]
                 if pdf_basename:
                     basenames.add(pdf_basename)
                     matched += 1
@@ -133,8 +148,8 @@ def seed_db_from_output(output_dir, verbose=True):
 
         if not basenames:
             if verbose:
-                print(f"No '*-0000.*' files found in {output_dir} (nothing to seed).")
-            return 0
+                print(f"No '*-00000.*' files found in {output_dir} (nothing to seed).")
+                return 0
 
         # Bulk insert
         conn.execute("BEGIN")
@@ -151,7 +166,26 @@ def seed_db_from_output(output_dir, verbose=True):
         conn.close()
 
 
-def extract_images_from_pdf(pdf_path, output_dir, pdfimages_cmd='pdfimages', verbose=True, input_dir_root=None):
+def _numeric_sort_key(path: Path) -> tuple[int, str]:
+    """Sort key: (numeric index from stem, full path) so temp-076 sorts before temp-100."""
+    stem = path.stem
+    # pdfimages: prefix-NNN or prefix-NNNN (e.g. temp-076, temp-1000)
+    m = re.search(r"-(\d+)$", stem)
+    if m:
+        return (int(m.group(1)), str(path))
+    return (0, str(path))
+
+
+def extract_images_from_pdf(
+    pdf_path,
+    output_dir,
+    pdfimages_cmd="pdfimages",
+    verbose=True,
+    input_dir_root=None,
+    *,
+    index_width: int = DEFAULT_INDEX_WIDTH,
+    force: bool = False,
+):
     """
     Extract images from a PDF file using pdfimages.
 
@@ -176,8 +210,10 @@ def extract_images_from_pdf(pdf_path, output_dir, pdfimages_cmd='pdfimages', ver
     # Sanitize the PDF basename for use in output filenames
     pdf_basename = sanitize_filename(pdf_path.stem)
 
-    # Skip if already extracted (one SQLite DB in output_dir, no per-PDF files).
-    if _is_already_extracted(output_dir, pdf_basename):
+    # Skip if already extracted (unless --force). With --force, clear DB so we re-extract.
+    if force:
+        _remove_extracted(output_dir, pdf_basename)
+    elif _is_already_extracted(output_dir, pdf_basename):
         if verbose:
             print(f"  Skipping (already done): {pdf_path.name}")
         return (str(pdf_path), 0, True)
@@ -221,13 +257,14 @@ def extract_images_from_pdf(pdf_path, output_dir, pdfimages_cmd='pdfimages', ver
 
                 extracted_files.extend(pattern_files)
 
-            # Sort files to maintain order
-            extracted_files.sort()
+            # Sort by numeric index from pdfimages output (temp-000, temp-001, ... temp-100, ...)
+            extracted_files.sort(key=_numeric_sort_key)
 
             if not extracted_files:
                 if verbose:
-                    print(f"  Warning: No images extracted from {pdf_path.name}")
-                return (str(pdf_path), 0, False)
+                    print(f"  No images in {pdf_path.name} (skipping, marking done)")
+                _mark_extracted(output_dir, pdf_basename)
+                return (str(pdf_path), 0, True)
 
             # Move and rename files to output directory
             output_paths = []
@@ -242,14 +279,14 @@ def extract_images_from_pdf(pdf_path, output_dir, pdfimages_cmd='pdfimages', ver
                 else:
                     output_ext = original_ext if original_ext else '.jpg'
 
-                # Create output filename: {pdf_basename}-{image_index:04d}.{ext}
-                output_filename = f"{pdf_basename}-{idx:04d}{output_ext}"
+                # Create output filename: {pdf_basename}-{image_index:0Nd}.{ext}
+                output_filename = f"{pdf_basename}-{idx:0{index_width}d}{output_ext}"
                 output_path = output_dir / output_filename
 
-                # Handle potential filename collisions (though unlikely with 4-digit index)
+                # Handle potential filename collisions (e.g. from a previous partial run)
                 collision_idx = 1
                 while output_path.exists():
-                    output_filename = f"{pdf_basename}-{idx:04d}_{collision_idx}{output_ext}"
+                    output_filename = f"{pdf_basename}-{idx:0{index_width}d}_{collision_idx}{output_ext}"
                     output_path = output_dir / output_filename
                     collision_idx += 1
 
@@ -263,13 +300,25 @@ def extract_images_from_pdf(pdf_path, output_dir, pdfimages_cmd='pdfimages', ver
             return (str(pdf_path), len(output_paths), True)
 
         except subprocess.CalledProcessError as e:
+            err = (e.stderr or str(e)).strip()
+            # Only skip on these exact pdfimages corruption messages; any other failure we raise.
+            skip_errors = (
+                "Syntax Error: Couldn't find trailer dictionary",
+                "Syntax Error: Couldn't read xref table",
+            )
+            if any(msg in err for msg in skip_errors):
+                if verbose:
+                    print(f"  Skipping (corrupted PDF): {pdf_path.name} — {err}", file=sys.stderr)
+                _mark_extracted(output_dir, pdf_basename)
+                return (str(pdf_path), 0, True)
+            msg = f"pdfimages failed on {pdf_path.name}: {e.stderr or e}"
             if verbose:
-                print(f"  Error running pdfimages on {pdf_path.name}: {e.stderr}")
-            return (str(pdf_path), 0, False)
-        except Exception as e:
+                print(f"  Error: {msg}", file=sys.stderr)
+            raise RuntimeError(msg) from e
+        except Exception:
             if verbose:
-                print(f"  Unexpected error processing {pdf_path.name}: {e}")
-            return (str(pdf_path), 0, False)
+                print(f"  Unexpected error processing {pdf_path.name}", file=sys.stderr)
+            raise
 
 
 def find_pdf_files(directory):
@@ -312,14 +361,14 @@ Examples:
   %(prog)s /path/to/pdfs /path/to/output --gnu-parallel
 
 Output naming format:
-  {pdf_basename}-{image_index:04d}.{ext}
+  {pdf_basename}-{image_index:0Nd}.{ext}  (N = --index-width, default 5)
 
   Where:
     - pdf_basename is the PDF filename (without extension, sanitized)
-    - image_index is a zero-padded 4-digit number (0000, 0001, etc.)
+    - image_index is zero-padded (e.g. 00000..99999 for width 5)
     - ext is the image extension (.jpg, .png, etc.)
 
-  Example: "document-0000.jpg", "document-0001.jpg", "report-0000.jpg"
+  Example: "document-00000.jpg", "document-00001.jpg"
         """
     )
 
@@ -372,13 +421,42 @@ Output naming format:
     parser.add_argument(
         '--seed-db-from-output',
         action='store_true',
-        help=f"Populate {EXTRACTED_DB} by scanning output_dir for '*-0000.*' files, then exit."
+        help=f"Populate {EXTRACTED_DB} by scanning output_dir for '*-00000.*' files, then exit."
     )
 
     parser.add_argument(
         '--quiet', '-q',
         action='store_true',
         help='Suppress per-PDF messages (skips and extraction counts). Summary still printed.'
+    )
+
+    parser.add_argument(
+        '--index-width',
+        type=int,
+        default=DEFAULT_INDEX_WIDTH,
+        metavar='N',
+        help=f'Width of zero-padded image index in output filenames (default: {DEFAULT_INDEX_WIDTH}). E.g. 5 -> -00000 to -99999.'
+    )
+
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Re-extract even if PDF is already in the extracted DB (clears DB entry for that PDF first).'
+    )
+
+    parser.add_argument(
+        '--progress-every',
+        type=int,
+        default=100,
+        metavar='N',
+        help='In directory mode: print progress at most every N PDFs (default: 100). Use 1 for every PDF, 0 to disable count-based throttle.',
+    )
+    parser.add_argument(
+        '--progress-interval',
+        type=float,
+        default=10.0,
+        metavar='SECS',
+        help='In directory mode: print progress at most every SECS seconds (default: 10). Use 0 to disable time-based throttle.',
     )
 
     args = parser.parse_args()
@@ -471,7 +549,15 @@ Output naming format:
 
             input_dir_root = found_root if found_root else input_path.parent
 
-        result = extract_images_from_pdf(input_path, output_dir, args.pdfimages_cmd, verbose=not args.quiet, input_dir_root=input_dir_root)
+        result = extract_images_from_pdf(
+            input_path,
+            output_dir,
+            args.pdfimages_cmd,
+            verbose=False,  # no per-PDF output when run by parallel (one PDF per process)
+            input_dir_root=input_dir_root,
+            index_width=args.index_width,
+            force=args.force,
+        )
         pdf_path_str, count, success = result
         sys.exit(0 if success else 1)
 
@@ -529,24 +615,66 @@ Output naming format:
     total_images = 0
     successful_pdfs = 0
     failed_pdfs = 0
+    total_todo = len(todo)
+    start_time = time.monotonic()
+    last_progress_time = 0.0
 
     for pdf_file in todo:
-        if not args.quiet:
-            print(f"Processing: {pdf_file}")
+        done_so_far = successful_pdfs + failed_pdfs
+        current = done_so_far + 1
+        left = total_todo - current
+        now = time.monotonic()
+
+        # Throttle progress: first, last, every N PDFs, or every N seconds
+        progress_every = args.progress_every
+        progress_interval = args.progress_interval
+        if progress_every is None:
+            progress_every = 0
+        if progress_interval is None:
+            progress_interval = 0.0
+        show_progress = False
+        if args.quiet:
+            show_progress = False
+        elif current == 1 or left == 0:
+            show_progress = True
+        elif progress_every and (current - 1) % progress_every == 0:
+            show_progress = True
+        elif progress_interval and (now - last_progress_time) >= progress_interval:
+            show_progress = True
+
+        if show_progress and not args.quiet:
+            last_progress_time = now
+            eta_str = ""
+            if done_so_far > 0 and left > 0:
+                elapsed = now - start_time
+                rate = done_so_far / elapsed
+                eta_seconds = left / rate
+                if eta_seconds >= 3600:
+                    eta_str = f" [~{eta_seconds / 3600:.1f}h left]"
+                elif eta_seconds >= 60:
+                    eta_str = f" [~{eta_seconds / 60:.0f}m left]"
+                else:
+                    eta_str = f" [~{eta_seconds:.0f}s left]"
+            print(f"Processing {current}/{total_todo} ({left} left){eta_str}")
+
         pdf_path_str, count, success = extract_images_from_pdf(
             pdf_file,
             output_dir,
             args.pdfimages_cmd,
-            verbose=not args.quiet,
-            input_dir_root=input_dir_root
+            verbose=show_progress,
+            input_dir_root=input_dir_root,
+            index_width=args.index_width,
+            force=args.force,
         )
 
-        if success and count > 0:
-            successful_pdfs += 1
-            total_images += count
-        else:
+        if not success:
             failed_pdfs += 1
-        if not args.quiet:
+            print(f"Error: extraction failed for {pdf_file}", file=sys.stderr)
+            print("Halting on first failure (no further PDFs will be processed).", file=sys.stderr)
+            sys.exit(1)
+        successful_pdfs += 1
+        total_images += count
+        if show_progress:
             print()
 
     # Print summary
@@ -561,6 +689,9 @@ Output naming format:
     print(f"Failed/No images: {failed_pdfs}")
     print(f"Total images extracted: {total_images}")
     print(f"Output directory: {output_dir.absolute()}")
+
+    if failed_pdfs > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

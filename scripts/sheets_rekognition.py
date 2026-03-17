@@ -46,6 +46,7 @@ COLUMNS = [
     "Archived Reference Image URL",
     "Confidence",
     "JSON Response",
+    "Category",
     "Victim",
     "Links",
     "Notes",
@@ -69,7 +70,7 @@ def init_spreadsheet(worksheet):
         textFormat=TextFormat(bold=True),
         backgroundColor=Color(0.95, 0.95, 0.95),
     )
-    format_cell_range(worksheet, "A1:J1", fmt)
+    format_cell_range(worksheet, "A1:K1", fmt)
 
 
 def get_or_create_sheet(gc: gspread.Client):

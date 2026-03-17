@@ -38,6 +38,8 @@ def init_db():
         )
     """)
     _ensure_faces_person_celebrity_columns(conn)
+    _ensure_faces_index_response_columns(conn)
+    _ensure_images_moderation_column(conn)
     _migrate_people_to_faces_if_exists(conn)
     c.execute("DROP TABLE IF EXISTS people")
     conn.commit()
@@ -57,6 +59,29 @@ def _ensure_faces_person_celebrity_columns(conn):
         except sqlite3.OperationalError as e:
             if "duplicate" not in str(e).lower():
                 raise
+
+
+def _ensure_faces_index_response_columns(conn):
+    """Add age range and raw IndexFaces record to faces if missing."""
+    for sql in (
+        "ALTER TABLE faces ADD COLUMN age_range_low INTEGER",
+        "ALTER TABLE faces ADD COLUMN age_range_high INTEGER",
+        "ALTER TABLE faces ADD COLUMN index_face_record TEXT",
+    ):
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError as e:
+            if "duplicate" not in str(e).lower():
+                raise
+
+
+def _ensure_images_moderation_column(conn):
+    """Add moderation_result (JSON) to images if missing."""
+    try:
+        conn.execute("ALTER TABLE images ADD COLUMN moderation_result TEXT")
+    except sqlite3.OperationalError as e:
+        if "duplicate" not in str(e).lower():
+            raise
 
 
 def _migrate_people_to_faces_if_exists(conn):
@@ -126,3 +151,25 @@ def get_images_to_index(conn):
         "SELECT image_name FROM images WHERE has_face = 1 AND (indexed IS NULL OR indexed = 0)"
     )
     return [row[0] for row in c.fetchall()]
+
+
+def get_images_for_moderation(conn):
+    """Return list of image_name that are indexed and not yet moderated."""
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT image_name FROM images
+        WHERE indexed = 1 AND (moderation_result IS NULL OR moderation_result = '')
+        """
+    )
+    return [row[0] for row in c.fetchall()]
+
+
+def upsert_image_moderation(conn, image_name, moderation_result_json, *, commit=True):
+    """Store DetectModerationLabels result (JSON string) for an image."""
+    conn.execute(
+        "UPDATE images SET moderation_result = ? WHERE image_name = ?",
+        (moderation_result_json, image_name),
+    )
+    if commit:
+        conn.commit()

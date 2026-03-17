@@ -1,8 +1,11 @@
-import boto3
 import argparse
+import json
 import os
 import time
 from collections import defaultdict
+from decimal import Decimal
+
+import boto3
 
 from faces_db import get_images_to_index, init_db, upsert_image_status
 
@@ -30,6 +33,13 @@ def ensure_collection():
 
 # ---------------- INDEXING ----------------
 
+def _json_serial(obj):
+    """JSON-serialize Rekognition response (Decimal -> float)."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 def index_image(image_path, conn):
     with open(image_path, "rb") as f:
         image_bytes = f.read()
@@ -38,26 +48,39 @@ def index_image(image_path, conn):
         CollectionId=COLLECTION_ID,
         Image={"Bytes": image_bytes},
         ExternalImageId=os.path.basename(image_path),
-        DetectionAttributes=[]
+        DetectionAttributes=["ALL"],
     )
 
     c = conn.cursor()
+    image_name = os.path.basename(image_path)
 
     for record in response.get("FaceRecords", []):
         face = record["Face"]
         bb = face["BoundingBox"]
+        detail = record.get("FaceDetail") or {}
+        age_range = detail.get("AgeRange") or {}
+        age_low = age_range.get("Low")
+        age_high = age_range.get("High")
+        if age_low is not None and isinstance(age_low, Decimal):
+            age_low = int(age_low)
+        if age_high is not None and isinstance(age_high, Decimal):
+            age_high = int(age_high)
+        index_record_json = json.dumps(record, default=_json_serial)
 
         c.execute("""
             INSERT OR IGNORE INTO faces
-            (face_id, image_name, left, top, width, height, searched)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
+            (face_id, image_name, left, top, width, height, searched, age_range_low, age_range_high, index_face_record)
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
         """, (
             face["FaceId"],
-            os.path.basename(image_path),
-            bb["Left"],
-            bb["Top"],
-            bb["Width"],
-            bb["Height"]
+            image_name,
+            float(bb["Left"]),
+            float(bb["Top"]),
+            float(bb["Width"]),
+            float(bb["Height"]),
+            age_low,
+            age_high,
+            index_record_json,
         ))
 
     conn.commit()
