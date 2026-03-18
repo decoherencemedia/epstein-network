@@ -67,8 +67,9 @@
         linkStrokeOpacity: 1,
         linkStrokeLinecap: "butt",
         nodeFill: "#000",
-        nodeStrokeWidth: 1,
-        nodeStroke: "#fff",
+        // Sigma-style: no node stroke at rest.
+        nodeStrokeWidth: 0,
+        nodeStroke: "none",
       }
 
     const invalidation = null;
@@ -123,31 +124,13 @@
         linkHitbox.data(sorted, linkKey).order();
       }
 
-      function fade(trueOpacity, falseOpacity, nodeColor, linkColor) {
-        return function (event, d) {
-          node.attr("stroke", function (o) {
-            const thisColor = isConnected(d, o)
-              ? nodeColor
-              : options.nodeStroke;
-            return thisColor;
-          });
+      const DIM_NODE_OPACITY = 0.15;
+      const DIM_EDGE_OPACITY = 0.08;
+      const EDGE_HIGHLIGHT_WIDTH_MULT = 2;
+      const MUTED_NODE_FILL = "#cfcfcf";
 
-          if (nodeColor !== options.nodeStroke) {
-            raiseHighlightedLinks(links, d);
-          } else {
-            linkLayer.data(links, linkKey).order();
-            linkHitbox.data(links, linkKey).order();
-          }
-          linkLayer
-            .attr("stroke", (o) =>
-              o.source === d || o.target === d
-                ? linkColor
-                : options.linkStroke
-            )
-            .attr("stroke-opacity", (o) =>
-              o.source === d || o.target === d ? trueOpacity : falseOpacity
-            );
-        };
+      function nodeColor(d) {
+        return (d && clusterColorById[d.cluster]) || options.nodeFill;
       }
 
       const formatViews = (n) => {
@@ -500,11 +483,107 @@
         return previewLocked && previewLockedKind === kind && previewLockedItem === item;
       }
 
+      // Sigma-style focus+context highlighting.
+      // NOTE: These functions reference `node`, `label`, `linkLayer`, and `links` which are defined later.
+      let edgeGradient = null;
+
+      function ensureEdgeGradient() {
+        if (edgeGradient) return edgeGradient;
+        const svg = d3.select("#svg");
+        let defs = svg.select("defs");
+        if (defs.empty()) defs = svg.append("defs");
+        edgeGradient = defs.append("linearGradient").attr("id", "edge-gradient").attr("gradientUnits", "userSpaceOnUse");
+        edgeGradient.append("stop").attr("offset", "0%");
+        edgeGradient.append("stop").attr("offset", "100%");
+        return edgeGradient;
+      }
+
+      function resetFocus() {
+        // Nodes and labels.
+        node
+          .attr("opacity", 1)
+          .attr("fill", (d) => nodeColor(d))
+          .attr("stroke", options.nodeStroke)
+          .attr("stroke-width", options.nodeStrokeWidth);
+        label.attr("opacity", 1);
+
+        // Links.
+        linkLayer.data(links, linkKey).order();
+        linkHitbox.data(links, linkKey).order();
+        linkHitbox.attr("display", null);
+        linkLayer
+          .attr("stroke", options.linkStroke)
+          .attr("stroke-opacity", options.linkStrokeOpacity)
+          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)));
+      }
+
+      function focusOnNode(d) {
+        if (!d) return;
+        const focusColor = nodeColor(d);
+        const isInFocusSet = (o) => isConnected(d, o);
+        const isIncident = (l) => l.source === d || l.target === d;
+
+        node
+          .attr("opacity", 1)
+          .attr("fill", (o) => (isInFocusSet(o) ? nodeColor(o) : MUTED_NODE_FILL))
+          .attr("stroke", options.nodeStroke)
+          .attr("stroke-width", options.nodeStrokeWidth);
+        // Sigma-like: hide labels for muted nodes.
+        label.attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0));
+
+        linkLayer
+          .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
+          // Sigma-like: hide non-incident edges.
+          .attr("stroke-opacity", (l) => (isIncident(l) ? 1 : 0))
+          .attr("stroke-width", (l, i) => (isIncident(l) ? EDGE_HIGHLIGHT_WIDTH_MULT * (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) : (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1))));
+        linkHitbox.attr("display", (l) => (isIncident(l) ? null : "none"));
+
+        // Ensure highlighted (incident) edges render on top.
+        linkLayer.filter((l) => isIncident(l)).raise();
+        linkHitbox.filter((l) => isIncident(l)).raise();
+      }
+
+      function focusOnEdge(l) {
+        if (!l) return;
+        const s = getNodeFromLinkEnd(l.source);
+        const t = getNodeFromLinkEnd(l.target);
+        const focusNodes = new Set([s, t]);
+        const sColor = nodeColor(s);
+        const tColor = nodeColor(t);
+
+        const grad = ensureEdgeGradient();
+        grad
+          .attr("x1", s?.x ?? 0)
+          .attr("y1", s?.y ?? 0)
+          .attr("x2", t?.x ?? 0)
+          .attr("y2", t?.y ?? 0);
+        const stops = grad.selectAll("stop").nodes();
+        if (stops[0]) stops[0].setAttribute("stop-color", sColor);
+        if (stops[1]) stops[1].setAttribute("stop-color", tColor);
+
+        node
+          .attr("opacity", 1)
+          .attr("fill", (o) => (focusNodes.has(o) ? nodeColor(o) : MUTED_NODE_FILL))
+          .attr("stroke", options.nodeStroke)
+          .attr("stroke-width", options.nodeStrokeWidth);
+        label.attr("opacity", (o) => (focusNodes.has(o) ? 1 : 0));
+
+        linkLayer
+          .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
+          .attr("stroke-opacity", (o) => (o === l ? 1 : 0))
+          .attr("stroke-width", (o, i) => (o === l ? EDGE_HIGHLIGHT_WIDTH_MULT * (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) : (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1))));
+        linkHitbox.attr("display", (o) => (o === l ? null : "none"));
+
+        // Ensure the focused edge renders on top.
+        linkLayer.filter((o) => o === l).raise();
+        linkHitbox.filter((o) => o === l).raise();
+      }
+
       function applyLockedNodeHighlight(focusNode) {
         if (!focusNode) return;
         previewLockedHighlightNode = focusNode;
         tooltipDiv.classed("visible", false);
-        fade(1, 0.15, "#f00", "#f00")(null, focusNode);
+        focusOnNode(focusNode);
       }
 
       function unlockPreviewAndHighlights() {
@@ -518,22 +597,11 @@
       }
 
       function clearEdgeHighlight() {
-        node.attr("stroke", options.nodeStroke);
-        linkLayer.data(links, linkKey).order();
-        linkHitbox.data(links, linkKey).order();
-        linkLayer
-          .attr("stroke", options.linkStroke)
-          .attr("stroke-opacity", options.linkStrokeOpacity);
+        resetFocus();
       }
 
       function highlightEdge(d) {
-        const s = getNodeFromLinkEnd(d.source);
-        const t = getNodeFromLinkEnd(d.target);
-
-        node.attr("stroke", (o) => (o === s || o === t ? "#f00" : options.nodeStroke));
-        linkLayer
-          .attr("stroke", (o) => (o === d ? "#f00" : options.linkStroke))
-          .attr("stroke-opacity", (o) => (o === d ? 1 : 0.15));
+        focusOnEdge(d);
       }
 
       // Permanent sidebar: initialize to default state.
@@ -845,7 +913,8 @@
           "mouseover.fade",
           function (event, d) {
             if (previewLocked && !isLockedFor("node", d)) return;
-            fade(1, options.linkStrokeOpacity, "#f00", "#f00")(event, d);
+            if (previewLocked) return;
+            focusOnNode(d);
           }
         )
         .on("mouseout.tooltip", function () {
@@ -856,12 +925,7 @@
           "mouseout.fade",
           function (event, d) {
             if (previewLocked) return;
-            fade(
-              options.linkStrokeOpacity,
-              options.linkStrokeOpacity,
-              options.nodeStroke,
-              options.linkStroke
-            )(event, d);
+            resetFocus();
           }
         );
 
