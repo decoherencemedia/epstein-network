@@ -27,6 +27,18 @@ div#tooltip {
 div#tooltip.visible {
   visibility: visible;
 }
+.label-layer .node-label-bg { }
+.label-layer .node-label-line1,
+.label-layer .node-label-line2 {
+  font-family: sans-serif;
+  font-size: 5.75px;
+  fill: #111;
+  dominant-baseline: hanging;
+}
+.label-layer .node-label-line2 {
+  fill: #333;
+  font-size: 4.6px;
+}
 #thumb-preview {
   position: fixed;
   left: 0;

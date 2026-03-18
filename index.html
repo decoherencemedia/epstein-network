@@ -176,36 +176,7 @@
         };
       }
 
-      function showEdgeTooltip(event, d) {
-        if (!event) return;
-        const s = getNodeFromLinkEnd(d.source);
-        const t = getNodeFromLinkEnd(d.target);
-        const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
-        const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
-        const total = d && d.weight != null ? d.weight : "—";
-        tooltipDiv.html(
-          `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif; margin-bottom: 4px">${[sLabel, tLabel].join(" & ")}</div>` +
-            `<div style="padding: 10px">Shared photos: <b>${total}</b></div>`
-        );
-
-        tooltipDiv.classed("visible", true);
-        const tipEl = tooltipDiv.node();
-        const tipRect = tipEl ? tipEl.getBoundingClientRect() : { width: 0, height: 0 };
-
-        const margin = 12;
-        const offset = 14;
-        let left = event.clientX + offset;
-        let top = event.clientY - offset - tipRect.height;
-
-        // Flip below if too close to top edge.
-        if (top < margin) top = event.clientY + offset;
-        // Flip left if too close to right edge.
-        if (left + tipRect.width + margin > window.innerWidth) left = event.clientX - offset - tipRect.width;
-
-        left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
-        top = Math.max(margin, Math.min(top, window.innerHeight - tipRect.height - margin));
-        tooltipDiv.style("left", `${left}px`).style("top", `${top}px`);
-      }
+      // Edge hover tooltip is rendered as a Sigma-style label chip in `labelLayer`.
 
       const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
 
@@ -486,6 +457,11 @@
       // Sigma-style focus+context highlighting.
       // NOTE: These functions reference `node`, `label`, `linkLayer`, and `links` which are defined later.
       let edgeGradient = null;
+      let hoverKind = null; // "edge" | "node" | null
+      let hoverItem = null; // link object or node object
+      let hoveredNodeForLabel = null;
+      let hoveredEdgeForLabel = null;
+      let labelAllowFn = null; // (node) => boolean, used to hide muted labels
 
       function ensureEdgeGradient() {
         if (edgeGradient) return edgeGradient;
@@ -499,13 +475,14 @@
       }
 
       function resetFocus() {
+        labelAllowFn = null;
+        hoveredEdgeForLabel = null;
         // Nodes and labels.
         node
           .attr("opacity", 1)
           .attr("fill", (d) => nodeColor(d))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
-        label.attr("opacity", 1);
 
         // Links.
         linkLayer.data(links, linkKey).order();
@@ -515,6 +492,8 @@
           .attr("stroke", options.linkStroke)
           .attr("stroke-opacity", options.linkStrokeOpacity)
           .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)));
+
+        updateNodeLabels();
       }
 
       function focusOnNode(d) {
@@ -522,14 +501,13 @@
         const focusColor = nodeColor(d);
         const isInFocusSet = (o) => isConnected(d, o);
         const isIncident = (l) => l.source === d || l.target === d;
+        labelAllowFn = isInFocusSet;
 
         node
           .attr("opacity", 1)
           .attr("fill", (o) => (isInFocusSet(o) ? nodeColor(o) : MUTED_NODE_FILL))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
-        // Sigma-like: hide labels for muted nodes.
-        label.attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0));
 
         linkLayer
           .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
@@ -541,6 +519,8 @@
         // Ensure highlighted (incident) edges render on top.
         linkLayer.filter((l) => isIncident(l)).raise();
         linkHitbox.filter((l) => isIncident(l)).raise();
+
+        updateNodeLabels();
       }
 
       function focusOnEdge(l) {
@@ -548,6 +528,7 @@
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
         const focusNodes = new Set([s, t]);
+        labelAllowFn = (o) => focusNodes.has(o);
         const sColor = nodeColor(s);
         const tColor = nodeColor(t);
 
@@ -566,7 +547,6 @@
           .attr("fill", (o) => (focusNodes.has(o) ? nodeColor(o) : MUTED_NODE_FILL))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
-        label.attr("opacity", (o) => (focusNodes.has(o) ? 1 : 0));
 
         linkLayer
           .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
@@ -577,6 +557,8 @@
         // Ensure the focused edge renders on top.
         linkLayer.filter((o) => o === l).raise();
         linkHitbox.filter((o) => o === l).raise();
+
+        updateNodeLabels();
       }
 
       function applyLockedNodeHighlight(focusNode) {
@@ -718,7 +700,9 @@
         .radius((d) => d.radius + 1)
         .iterations(3);
 
-      parent = d3.select(".full-network-graph");
+      const parent = d3.select(".full-network-graph");
+      const zoomLayer = parent.append("g").attr("class", "zoom-layer");
+      const labelLayer = parent.append("g").attr("class", "label-layer").style("pointer-events", "none");
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
       const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
@@ -740,7 +724,7 @@
 
       const tooltipDiv = d3.select("#tooltip").attr("class", "tooltip");
 
-      const linkLayer = parent
+      const linkLayer = zoomLayer
         .append("g")
         .attr(
           "stroke",
@@ -763,7 +747,7 @@
         .join("line");
 
       // Easier edge hover: invisible thicker hitbox layer above links.
-      const linkHitbox = parent
+      const linkHitbox = zoomLayer
         .append("g")
         .attr("class", "links-hitbox")
         .attr("stroke", "transparent")
@@ -777,24 +761,35 @@
         .attr("stroke-width", (d) => (options.linkStrokeWidth?.(d) ?? 1) + 1)
         .on("mouseover.tooltip", function (event, d) {
           if (previewLocked) return;
-          showEdgeTooltip(event, d);
+          // Only one expanded tooltip at a time.
+          hoveredNodeForLabel = null;
+          hoveredEdgeForLabel = d;
+          updateNodeLabels();
         })
         .on("mousemove.tooltip", function (event, d) {
           if (previewLocked) return;
-          showEdgeTooltip(event, d);
+          // Keep chip positioned correctly while panning/zooming.
+          hoveredNodeForLabel = null;
+          hoveredEdgeForLabel = d;
+          updateNodeLabels();
         })
         .on("mouseover.highlight", function (event, d) {
           if (isCoarsePointer) return;
           if (previewLocked && !isLockedFor("edge", d)) return;
+          hoverKind = "edge";
+          hoverItem = d;
           highlightEdge(d);
         })
         .on("mouseout.tooltip", function () {
           if (previewLocked) return;
-          tooltipDiv.classed("visible", false);
+          hoveredEdgeForLabel = null;
+          updateNodeLabels();
         })
         .on("mouseout.highlight", function () {
           if (isCoarsePointer) return;
           if (previewLocked) return;
+          hoverKind = null;
+          hoverItem = null;
           clearEdgeHighlight();
         })
         .on("touchstart.tap", function (event, d) {
@@ -870,7 +865,75 @@
           );
         });
 
-      const node = parent
+      // Safety: if the pointer leaves the SVG (or the window blurs), clear hover focus.
+      // This prevents rare "stuck highlight" states when mouseout doesn't fire (e.g. fast movements).
+      d3.select("#svg").on("mouseleave.resetFocus", function () {
+        if (previewLocked) return;
+        hoverKind = null;
+        hoverItem = null;
+        hoveredEdgeForLabel = null;
+        hoveredNodeForLabel = null;
+        tooltipDiv.classed("visible", false);
+        resetFocus();
+      });
+      // Guard against races where focus is applied after the pointer already left the element.
+      d3.select("#svg").on("mousemove.hoverGuard", function (event) {
+        if (previewLocked) return;
+        if (!hoverKind || !hoverItem) return;
+        if (!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") return;
+        const el = document.elementFromPoint(event.clientX, event.clientY);
+        if (!el) return;
+
+        if (hoverKind === "edge") {
+          const line = el.closest && el.closest("g.links-hitbox line");
+          if (!line) {
+            hoverKind = null;
+            hoverItem = null;
+            tooltipDiv.classed("visible", false);
+            resetFocus();
+            return;
+          }
+          const datum = d3.select(line).datum();
+          if (datum !== hoverItem) {
+            hoverKind = null;
+            hoverItem = null;
+            tooltipDiv.classed("visible", false);
+            resetFocus();
+          }
+          return;
+        }
+
+        if (hoverKind === "node") {
+          const circle = el.closest && el.closest("g.nodes circle");
+          if (!circle) {
+            hoverKind = null;
+            hoverItem = null;
+            tooltipDiv.classed("visible", false);
+            resetFocus();
+            return;
+          }
+          const datum = d3.select(circle).datum();
+          if (datum !== hoverItem) {
+            hoverKind = null;
+            hoverItem = null;
+            tooltipDiv.classed("visible", false);
+            resetFocus();
+          }
+        }
+      });
+      if (typeof window !== "undefined") {
+        window.addEventListener("blur", () => {
+          if (previewLocked) return;
+          hoverKind = null;
+          hoverItem = null;
+          hoveredEdgeForLabel = null;
+          hoveredNodeForLabel = null;
+          tooltipDiv.classed("visible", false);
+          resetFocus();
+        });
+      }
+
+      const node = zoomLayer
         .append("g")
         .attr("stroke", options.nodeStroke)
         .attr("stroke-opacity", options.nodeStrokeOpacity)
@@ -884,7 +947,13 @@
         .attr("r", (d) => d.radius)
         .on("mouseover.tooltip", function (event, d) {
           if (previewLocked) return;
-          return createTooltip().call(this, event, d);
+          hoverKind = "node";
+          hoverItem = d;
+          // Only one expanded tooltip at a time.
+          hoveredEdgeForLabel = null;
+          hoveredNodeForLabel = d;
+          focusOnNode(d);
+          updateNodeLabels();
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
@@ -919,7 +988,10 @@
         )
         .on("mouseout.tooltip", function () {
           if (previewLocked) return;
-          tooltipDiv.classed("visible", false);
+          hoverKind = null;
+          hoverItem = null;
+          hoveredNodeForLabel = null;
+          updateNodeLabels();
         })
         .on(
           "mouseout.fade",
@@ -929,19 +1001,24 @@
           }
         );
 
-      const label = parent
+      const label = labelLayer
+        .selectAll("g.node-label")
+        .data(nodes, (d) => d.id)
+        .join((enter) => {
+          const g = enter.append("g").attr("class", "node-label").attr("visibility", "hidden");
+          g.append("rect").attr("class", "node-label-bg");
+          g.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
+          g.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 14);
+          return g;
+        });
+
+      const edgeLabel = labelLayer
         .append("g")
-        .attr("class", "labels")
-        .style("pointer-events", "none")
-        .selectAll("text")
-        .data(nodes)
-        .join("text")
-        .text((d) => d.label || "")
-        .attr("text-anchor", "middle")
-        .attr("dominant-baseline", "middle")
-        .attr("fill", "black")
-        .attr("font-family", "sans-serif")
-        .attr("font-size", (d) => `${Math.max(4, d.radius * textScaling)}px`);
+        .attr("class", "edge-label")
+        .attr("visibility", "hidden");
+      edgeLabel.append("rect").attr("class", "node-label-bg");
+      edgeLabel.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
+      edgeLabel.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
 
       const simulation = d3
         .forceSimulation(nodes)
@@ -959,12 +1036,127 @@
       const LABEL_SIZE_THRESHOLD = 10;
       let currentTransform = d3.zoomIdentity;
 
-      function updateLabelVisibility() {
+      function updateNodeLabels() {
         const k = currentTransform.k;
-        label.attr(
-          "visibility",
-          (d) => (d.radius * k >= LABEL_SIZE_THRESHOLD ? "visible" : "hidden")
-        );
+        const PADDING_X = 3;
+        const PADDING_Y = 2;
+        const GAP_PX = 5;
+        const LINE_HEIGHT = 6;
+
+        label.each(function (d) {
+          const shouldShowBySize = d.radius * k >= LABEL_SIZE_THRESHOLD;
+          const shouldShowByHover = hoveredNodeForLabel === d;
+          const shouldAllow = typeof labelAllowFn === "function" ? !!labelAllowFn(d) : true;
+          const visible = shouldAllow && (shouldShowBySize || shouldShowByHover);
+
+          const g = d3.select(this);
+          g.attr("visibility", visible ? "visible" : "hidden");
+          if (!visible) return;
+
+          const sx = currentTransform.applyX(d.x);
+          const sy = currentTransform.applyY(d.y);
+          const x = sx + d.radius * k + GAP_PX;
+          const y = sy;
+
+          const expanded = shouldShowByHover;
+          const line1 = g.select("text.node-label-line1");
+          const line2 = g.select("text.node-label-line2");
+
+          line1.text(d.label || "");
+          line2
+            .text(expanded ? `${d.cluster || "—"}` : "")
+            .attr("display", expanded ? null : "none")
+            .attr("y", LINE_HEIGHT);
+          if (expanded) {
+            line2.attr("fill", nodeColor(d));
+          }
+
+          // Measure and size background rect.
+          const bbox1 = line1.node()?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
+          let bbox = bbox1;
+          if (expanded) {
+            const bbox2 = line2.node()?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
+            const minX = Math.min(bbox1.x, bbox2.x);
+            const minY = Math.min(bbox1.y, bbox2.y);
+            const maxX = Math.max(bbox1.x + bbox1.width, bbox2.x + bbox2.width);
+            const maxY = Math.max(bbox1.y + bbox1.height, bbox2.y + bbox2.height);
+            bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+          }
+
+          g.select("rect.node-label-bg")
+            .attr("x", bbox.x - PADDING_X)
+            .attr("y", bbox.y - PADDING_Y)
+            .attr("width", bbox.width + 2 * PADDING_X)
+            .attr("height", bbox.height + 2 * PADDING_Y)
+            .attr("rx", 4)
+            .attr("ry", 4)
+            // Use style so it overrides stylesheet defaults.
+            .style("fill", expanded ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.7)")
+            .attr("stroke", expanded ? "rgba(0,0,0,0.35)" : "none")
+            .attr("stroke-width", expanded ? 1 : 0);
+
+          // Vertically center the whole chip on the node.
+          const bgY = bbox.y - PADDING_Y;
+          const bgH = bbox.height + 2 * PADDING_Y;
+          const cy = bgY + bgH / 2;
+          g.attr("transform", `translate(${x},${y - cy})`);
+        });
+
+        // Edge hover chip (two lines), positioned at the edge midpoint and offset to the right.
+        if (!hoveredEdgeForLabel) {
+          edgeLabel.attr("visibility", "hidden");
+          return;
+        }
+        const l = hoveredEdgeForLabel;
+        const s = getNodeFromLinkEnd(l.source);
+        const t = getNodeFromLinkEnd(l.target);
+        if (!s || !t) {
+          edgeLabel.attr("visibility", "hidden");
+          return;
+        }
+        const mx = (s.x + t.x) / 2;
+        const my = (s.y + t.y) / 2;
+        const sx = currentTransform.applyX(mx);
+        const sy = currentTransform.applyY(my);
+        const x = sx + GAP_PX;
+        const y = sy;
+
+        edgeLabel.attr("visibility", "visible");
+        const el1 = edgeLabel.select("text.node-label-line1");
+        const el2 = edgeLabel.select("text.node-label-line2");
+        const sLabel = s.label != null ? s.label : String(s.id);
+        const tLabel = t.label != null ? t.label : String(t.id);
+        el1.text(`${sLabel} — ${tLabel}`);
+        el2
+          .text(`Shared photos: ${l.weight ?? "—"}`)
+          .attr("display", null)
+          .attr("fill", "#333")
+          .attr("y", LINE_HEIGHT);
+
+        const b1 = el1.node()?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
+        const b2 = el2.node()?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
+        const minX = Math.min(b1.x, b2.x);
+        const minY = Math.min(b1.y, b2.y);
+        const maxX = Math.max(b1.x + b1.width, b2.x + b2.width);
+        const maxY = Math.max(b1.y + b1.height, b2.y + b2.height);
+        const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+        edgeLabel
+          .select("rect.node-label-bg")
+          .attr("x", bbox.x - PADDING_X)
+          .attr("y", bbox.y - PADDING_Y)
+          .attr("width", bbox.width + 2 * PADDING_X)
+          .attr("height", bbox.height + 2 * PADDING_Y)
+          .attr("rx", 4)
+          .attr("ry", 4)
+          .style("fill", "rgba(255,255,255,1)")
+          .attr("stroke", "rgba(0,0,0,0.35)")
+          .attr("stroke-width", 1);
+
+        const bgY = bbox.y - PADDING_Y;
+        const bgH = bbox.height + 2 * PADDING_Y;
+        const cy = bgY + bgH / 2;
+        edgeLabel.attr("transform", `translate(${x},${y - cy})`);
       }
 
       function getSidebarWidthPx() {
@@ -1033,8 +1225,8 @@
         .zoom()
         .on("zoom", (e) => {
           currentTransform = e.transform;
-          d3.select("#svg g").attr("transform", e.transform);
-          updateLabelVisibility();
+          zoomLayer.attr("transform", e.transform);
+          updateNodeLabels();
         });
 
       d3.select("#svg")
@@ -1062,7 +1254,7 @@
       } else {
         applyInitialViewportCentering();
       }
-      updateLabelVisibility();
+      updateNodeLabels();
 
       function ticked() {
         linkLayer
