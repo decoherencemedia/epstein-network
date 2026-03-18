@@ -174,7 +174,7 @@
         previewEl.setAttribute("aria-hidden", "false");
       }
 
-      function renderLegend({ categories, colorByCategory, nodeScaling }) {
+      function renderLegend({ categories, colorByCategory, nodesForSizing }) {
         const cats = Array.isArray(categories) ? categories.filter(Boolean) : [];
         previewLegendEl.innerHTML = "";
 
@@ -221,13 +221,30 @@
         sizesNote.style.font = "11px/1.35 sans-serif";
         sizesNote.style.color = "#555";
         sizesNote.style.margin = "0 0 8px";
-        sizesNote.textContent = "Radius is proportional to √(photos). Examples below use the same scaling as the visualization.";
+        sizesNote.textContent = "Examples below use the same sizing scale as the visualization.";
 
         const sizesWrap = document.createElement("div");
         sizesWrap.className = "legend-sizes";
 
-        const scale = typeof nodeScaling === "number" && Number.isFinite(nodeScaling) ? nodeScaling : 1;
-        const photoCounts = [10, 100, 1000];
+        const photoCounts = [5, 50, 500, 5000];
+        // The dataset generator's node `size` is a transformed function of photo counts.
+        // For the legend, we assume the intended relationship is √(photos) up to a single
+        // global scale factor, and we *learn that factor* from the actual nodes so the
+        // legend matches the on-screen radii used by the visualization.
+        const samples = Array.isArray(nodesForSizing) ? nodesForSizing : [];
+        const ratios = [];
+        for (const n of samples) {
+          const t = n && Number.isFinite(+n.total) ? +n.total : null;
+          const r = n && Number.isFinite(+n.radius) ? +n.radius : null;
+          // Ignore non-positive totals and tiny/clamped nodes when estimating the scale.
+          if (!t || !r || t <= 0 || r <= 0) continue;
+          if (t < 12) continue;
+          ratios.push(r / Math.sqrt(t));
+        }
+        ratios.sort((a, b) => a - b);
+        const medianRatio = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
+        const scale = Number.isFinite(medianRatio) && medianRatio > 0 ? medianRatio : 1;
+
         const radii = photoCounts.map((n) => scale * Math.sqrt(n));
         const rMax = Math.max(...radii);
         const pad = 6;
@@ -578,7 +595,7 @@
       renderLegend({
         categories: Array.from(new Set(nodes.map((n) => n.cluster).filter(Boolean))).sort(),
         colorByCategory: clusterColorById,
-        nodeScaling,
+        nodesForSizing: nodes,
       });
 
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
@@ -1001,9 +1018,10 @@
             .attr("display", expanded ? null : "none")
             .attr("y", LINE_HEIGHT);
           if (expanded) {
-            line2.attr("fill", nodeColor(d));
+            // Use inline style so CSS rules don't override this.
+            line2.style("fill", nodeColor(d));
           } else {
-            line2.attr("fill", null);
+            line2.style("fill", null);
           }
 
           // Measure and size background rect.
