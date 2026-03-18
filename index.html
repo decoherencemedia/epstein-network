@@ -421,10 +421,11 @@
         linkLayer.data(links, linkKey).order();
         linkHitbox.data(links, linkKey).order();
         linkHitbox.attr("display", null);
+        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
         linkLayer
           .attr("stroke", options.linkStroke)
           .attr("stroke-opacity", options.linkStrokeOpacity)
-          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)));
+          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)) / sqrtK);
 
         updateNodeLabels();
       }
@@ -435,6 +436,7 @@
         const isInFocusSet = (o) => isConnected(d, o);
         const isIncident = (l) => l.source === d || l.target === d;
         state.label.allowFn = isInFocusSet;
+        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
 
         node
           .attr("opacity", 1)
@@ -446,7 +448,10 @@
           .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
           // Sigma-like: hide non-incident edges.
           .attr("stroke-opacity", (l) => (isIncident(l) ? 1 : 0))
-          .attr("stroke-width", (l, i) => (isIncident(l) ? EDGE_HIGHLIGHT_WIDTH_MULT * (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) : (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1))));
+          .attr("stroke-width", (l, i) => {
+            const base = (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) / sqrtK;
+            return isIncident(l) ? EDGE_HIGHLIGHT_WIDTH_MULT * base : base;
+          });
         linkHitbox.attr("display", (l) => (isIncident(l) ? null : "none"));
 
         // Ensure highlighted (incident) edges render on top.
@@ -464,6 +469,7 @@
         state.label.allowFn = (o) => focusNodes.has(o);
         const sColor = nodeColor(s);
         const tColor = nodeColor(t);
+        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
 
         const grad = ensureEdgeGradient();
         grad
@@ -484,7 +490,10 @@
         linkLayer
           .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
           .attr("stroke-opacity", (o) => (o === l ? 1 : 0))
-          .attr("stroke-width", (o, i) => (o === l ? EDGE_HIGHLIGHT_WIDTH_MULT * (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) : (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1))));
+          .attr("stroke-width", (o, i) => {
+            const base = (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) / sqrtK;
+            return o === l ? EDGE_HIGHLIGHT_WIDTH_MULT * base : base;
+          });
         linkHitbox.attr("display", (o) => (o === l ? null : "none"));
 
         // Ensure the focused edge renders on top.
@@ -956,12 +965,14 @@
 
       function updateNodeLabels() {
         const k = currentTransform.k;
+        const sqrtK = Math.sqrt(k);
         const PADDING_X = 3;
         const PADDING_Y = 2;
         const GAP_PX = 5;
         const LINE_HEIGHT = 6;
 
         nodeLabelText.each(function (d) {
+          // Label visibility should ramp up with zoom level (k), not √k.
           const shouldShowBySize = d.radius * k >= LABEL_SIZE_THRESHOLD;
           const shouldShowByHover = state.label.hoveredNode === d;
           const shouldAllow = typeof state.label.allowFn === "function" ? !!state.label.allowFn(d) : true;
@@ -977,8 +988,8 @@
           const sy = currentTransform.applyY(d.y);
           const expanded = shouldShowByHover;
           // Keep label text anchored; on hover we only expand the background under the node.
-          const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * k * 0.6)) : 0;
-          const x = sx + d.radius * k + GAP_PX;
+          const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * sqrtK * 0.6)) : 0;
+          const x = sx + d.radius * sqrtK + GAP_PX;
           const y = sy;
 
           const line1 = g.select("text.node-label-line1");
@@ -1041,7 +1052,7 @@
             .attr("visibility", "visible")
             .attr("cx", sx)
             .attr("cy", sy)
-            .attr("r", d.radius * k)
+            .attr("r", d.radius * sqrtK)
             .attr("fill", nodeColor(d));
         } else {
           hoveredNodeClone.attr("visibility", "hidden");
@@ -1174,6 +1185,27 @@
         .on("zoom", (e) => {
           currentTransform = e.transform;
           zoomLayer.attr("transform", e.transform);
+          const sqrtK = Math.sqrt(currentTransform.k);
+          // Sigma-like zoom sizing: nodes and edge thickness scale with √k instead of k.
+          node.attr("r", (d) => d.radius / sqrtK);
+
+          // Re-apply focus styles (includes scaled edge widths).
+          if (state.lock.active) {
+            if (state.lock.kind === "node" && state.lock.highlightNode) {
+              focusOnNode(state.lock.highlightNode);
+            } else if (state.lock.kind === "edge" && state.lock.item) {
+              focusOnEdge(state.lock.item);
+            } else {
+              resetFocus();
+            }
+          } else if (state.hover.kind === "node" && state.hover.item) {
+            focusOnNode(state.hover.item);
+          } else if (state.hover.kind === "edge" && state.hover.item) {
+            focusOnEdge(state.hover.item);
+          } else {
+            resetFocus();
+          }
+
           updateNodeLabels();
         });
 
