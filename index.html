@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
 <div class="svg-container">
   <svg id="svg">
     <g class="full-network-graph" :data-dummy="update()"></g>
@@ -9,7 +10,6 @@
   <div id="thumb-preview" aria-hidden="true">
     <div class="thumb-header">
       <div class="thumb-title" id="thumb-title"></div>
-      <button class="thumb-close" id="thumb-close" type="button" aria-label="Close preview">×</button>
     </div>
     <div class="thumb-meta" id="thumb-meta" style="display:none">
       <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
@@ -28,198 +28,29 @@
         </span>
       </span>
     </a>
+    <div id="thumb-top-neighbors" style="display:none"></div>
     <div id="thumb-empty" style="display:none">No non-NSFW images available</div>
+    <div id="thumb-default" style="display:none">
+      <div class="thumb-default-body">
+        <div>This is a visualization of the people whose faces are in the <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are people, and the lines (edges) between them are when two people are in the same photograph together.</div>
+        <div>A node's area is proportional to the number of photos they appear in, and nodes are colored based on the person's category.</div>
+        <div>Hovering over or clicking on a node or edge shows you information about that person or the connection between the two people.</div>
+        <div>
+          Data was taken from
+          <a href="https://ddosecrets.org/article/epstein-files" target="_blank" rel="noopener noreferrer">DDoSecrets</a>,
+          facial recognition used
+          <a href="https://aws.amazon.com/rekognition/" target="_blank" rel="noopener noreferrer">AWS Rekognition</a>
+          and manual verification, and the network was laid out using
+          <a href="https://gephi.org/" target="_blank" rel="noopener noreferrer">Gephi</a>
+          and visualized using
+          <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
+        </div>
+        <div>The scripts for the pipeline and this visualization are available on <a href="https://github.com/epstein-library/epstein-network">GitHub</a>.</div>
+      </div>
+      <div class="thumb-legend" id="thumb-legend" style="display:none"></div>
+    </div>
   </div>
 </div>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; }
-  .svg-container {
-    width: 100%;
-    height: 100%;
-  }
-  #svg {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-  div#tooltip {
-    position: fixed;
-    text-align: left;
-    font: 12px sans-serif;
-    background: white;
-    border: 1px solid #e3e3e3;
-    border-radius: 5px;
-    pointer-events: none;
-    visibility: hidden;
-  }
-  div#tooltip.visible {
-    visibility: visible;
-  }
-  #thumb-preview {
-    position: fixed;
-    right: 12px;
-    bottom: 12px;
-    width: 520px;
-    max-width: calc(100vw - 24px);
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #e3e3e3;
-    border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0,0,0,0.15);
-    padding: 8px;
-    display: none;
-    pointer-events: auto;
-  }
-  #thumb-preview.visible {
-    display: block;
-  }
-  #thumb-preview .thumb-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  .thumb-meta {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin: 4px 0 6px;
-    font: 11px sans-serif;
-    color: #444;
-  }
-  .thumb-meta-swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    background: #ccc;
-    flex: 0 0 auto;
-  }
-  .thumb-meta-text {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .thumb-total {
-    margin: 0 0 6px;
-    font: 11px sans-serif;
-    color: #666;
-  }
-  #thumb-preview .thumb-title {
-    font: 14px sans-serif;
-    color: #222;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-  #thumb-preview .thumb-close {
-    flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
-    border: 0;
-    border-radius: 6px;
-    background: #f1f1f1;
-    color: #222;
-    font: 18px/28px sans-serif;
-    cursor: pointer;
-  }
-  #thumb-preview .thumb-close:active {
-    background: #e7e7e7;
-  }
-  #thumb-img-link {
-    display: block;
-    text-decoration: none;
-    border-radius: 6px;
-  }
-  #thumb-img-link:focus { outline: 2px solid #1565c0; outline-offset: 2px; }
-  .thumb-img-wrapper {
-    position: relative;
-    display: inline-block;
-    max-width: 100%;
-  }
-  #thumb-img {
-    width: 100%;
-    height: auto;
-    height: auto;
-    display: block;
-    border-radius: 6px;
-    background: #f3f3f3;
-    max-height: 55vh;
-    object-fit: contain;
-  }
-  .thumb-img-wrapper .thumb-img-external-icon {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 36px;
-    height: 36px;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    color: #222;
-    pointer-events: none;
-  }
-  #thumb-empty {
-    width: 100%;
-    border-radius: 6px;
-    background: #f3f3f3;
-    padding: 18px 12px;
-    color: #444;
-    font: 12px/1.3 sans-serif;
-    text-align: center;
-    box-sizing: border-box;
-  }
-  #thumb-preview .thumb-actions {
-    margin-top: 8px;
-    display: flex;
-    justify-content: flex-end;
-  }
-  #thumb-preview .thumb-actions a {
-    font: 12px sans-serif;
-    color: #1565c0;
-    text-decoration: none;
-    background: #e3f2fd;
-    border: 1px solid #bbdefb;
-    padding: 6px 10px;
-    border-radius: 999px;
-  }
-  #thumb-preview .thumb-actions a:active {
-    background: #d6ecfb;
-  }
-
-  @media (pointer: coarse), (max-width: 640px) {
-    #thumb-preview {
-      left: 10px;
-      right: 10px;
-      bottom: 10px;
-      top: auto;
-      width: auto;
-      max-width: none;
-      padding: 10px;
-      display: none;
-      max-height: 40vh;
-    }
-    #thumb-preview.visible {
-      display: flex;
-      flex-direction: column;
-    }
-    #thumb-img {
-      flex: 1 1 auto;
-      width: 100%;
-      max-height: none;
-      min-height: 0;
-    }
-    #thumb-preview .thumb-title {
-      font-size: 13px;
-    }
-  }
-</style>
 
 <body>
   <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -334,7 +165,7 @@
           const cluster = d.cluster != null ? d.cluster : "—";
           tooltipDiv.html(
             `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif"; margin-bottom: 4px>${label}</div><div style="padding: 10px">` +
-              `Cluster: <b>${cluster}</b>` +
+              `Category: <b>${cluster}</b>` +
               `<br/>Photos: <b>${d.total}</b></div>`
           );
 
@@ -362,6 +193,37 @@
         };
       }
 
+      function showEdgeTooltip(event, d) {
+        if (!event) return;
+        const s = getNodeFromLinkEnd(d.source);
+        const t = getNodeFromLinkEnd(d.target);
+        const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
+        const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+        const total = d && d.weight != null ? d.weight : "—";
+        tooltipDiv.html(
+          `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif; margin-bottom: 4px">${[sLabel, tLabel].join(" & ")}</div>` +
+            `<div style="padding: 10px">Shared photos: <b>${total}</b></div>`
+        );
+
+        tooltipDiv.classed("visible", true);
+        const tipEl = tooltipDiv.node();
+        const tipRect = tipEl ? tipEl.getBoundingClientRect() : { width: 0, height: 0 };
+
+        const margin = 12;
+        const offset = 14;
+        let left = event.clientX + offset;
+        let top = event.clientY - offset - tipRect.height;
+
+        // Flip below if too close to top edge.
+        if (top < margin) top = event.clientY + offset;
+        // Flip left if too close to right edge.
+        if (left + tipRect.width + margin > window.innerWidth) left = event.clientX - offset - tipRect.width;
+
+        left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
+        top = Math.max(margin, Math.min(top, window.innerHeight - tipRect.height - margin));
+        tooltipDiv.style("left", `${left}px`).style("top", `${top}px`);
+      }
+
       const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
 
       const previewEl = document.getElementById("thumb-preview");
@@ -373,7 +235,9 @@
       const previewCategorySwatchEl = document.getElementById("thumb-category-swatch");
       const previewCategoryTextEl = document.getElementById("thumb-category-text");
       const previewTotalEl = document.getElementById("thumb-total");
-      const previewCloseEl = document.getElementById("thumb-close");
+      const previewNeighborsEl = document.getElementById("thumb-top-neighbors");
+      const previewDefaultEl = document.getElementById("thumb-default");
+      const previewLegendEl = document.getElementById("thumb-legend");
 
       const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
@@ -396,9 +260,189 @@
         return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
       }
 
-      function showPreview(title, filename, categoryLabel, categoryColor, totalPhotos) {
+      if (!previewNeighborsEl) throw new Error("Missing #thumb-top-neighbors");
+      if (!previewDefaultEl) throw new Error("Missing #thumb-default");
+      if (!previewLegendEl) throw new Error("Missing #thumb-legend");
+
+      function showDefaultPanel() {
+        previewTitleEl.textContent = "Epstein Network";
+        previewMetaEl.style.display = "none";
+        previewCategoryTextEl.textContent = "";
+        previewTotalEl.style.display = "none";
+        previewTotalEl.textContent = "";
+        previewImgLinkEl.style.display = "none";
+        previewImgLinkEl.removeAttribute("href");
+        previewImgEl.src = "";
+        previewImgEl.alt = "";
+        previewEmptyEl.style.display = "none";
+        previewNeighborsEl.style.display = "none";
+        previewNeighborsEl.innerHTML = "";
+        previewDefaultEl.style.display = "block";
+        previewEl.classList.add("visible");
+        previewEl.setAttribute("aria-hidden", "false");
+      }
+
+      function renderLegend({ categories, colorByCategory, nodeScaling }) {
+        const cats = Array.isArray(categories) ? categories.filter(Boolean) : [];
+        previewLegendEl.innerHTML = "";
+
+        const title = document.createElement("div");
+        title.className = "thumb-legend-title";
+        title.textContent = "Legend";
+        previewLegendEl.appendChild(title);
+
+        const colorsTitle = document.createElement("div");
+        colorsTitle.className = "legend-section-title";
+        colorsTitle.textContent = "Node color";
+        previewLegendEl.appendChild(colorsTitle);
+
+        const colorsWrap = document.createElement("div");
+        colorsWrap.className = "legend-colors";
+        if (cats.length) {
+          cats.forEach((cat) => {
+            const row = document.createElement("div");
+            row.className = "legend-color-row";
+            const sw = document.createElement("span");
+            sw.className = "legend-swatch";
+            sw.style.backgroundColor = (colorByCategory && colorByCategory[cat]) || "#ccc";
+            const lab = document.createElement("span");
+            lab.className = "legend-color-label";
+            lab.textContent = cat;
+            row.appendChild(sw);
+            row.appendChild(lab);
+            colorsWrap.appendChild(row);
+          });
+        } else {
+          const row = document.createElement("div");
+          row.className = "legend-color-row";
+          row.textContent = "—";
+          colorsWrap.appendChild(row);
+        }
+        previewLegendEl.appendChild(colorsWrap);
+
+        const sizesTitle = document.createElement("div");
+        sizesTitle.className = "legend-section-title";
+        sizesTitle.textContent = "Node size";
+        previewLegendEl.appendChild(sizesTitle);
+
+        const sizesNote = document.createElement("div");
+        sizesNote.style.font = "11px/1.35 sans-serif";
+        sizesNote.style.color = "#555";
+        sizesNote.style.margin = "0 0 8px";
+        sizesNote.textContent = "Radius is proportional to √(photos). Examples below use the same scaling as the visualization.";
+
+        const sizesWrap = document.createElement("div");
+        sizesWrap.className = "legend-sizes";
+
+        const scale = typeof nodeScaling === "number" && Number.isFinite(nodeScaling) ? nodeScaling : 1;
+        const photoCounts = [10, 100, 1000];
+        const radii = photoCounts.map((n) => scale * Math.sqrt(n));
+        const rMax = Math.max(...radii);
+        const pad = 6;
+        const box = 2 * (rMax + pad);
+        const boxPx = 56; // matches .legend-size-svg width/height
+        const scalePx = boxPx / box;
+        const nodeFillForLegend = typeof options?.nodeFill === "string" ? options.nodeFill : "#000";
+        const nodeStrokeForLegend = typeof options?.nodeStroke === "string" ? options.nodeStroke : "#fff";
+
+        photoCounts.forEach((n, i) => {
+          const item = document.createElement("div");
+          item.className = "legend-size-item";
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("class", "legend-size-svg");
+          // Use a fixed pixel-like coordinate system so stroke-width matches the main viz.
+          svg.setAttribute("viewBox", `0 0 ${boxPx} ${boxPx}`);
+          const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          const rr = radii[i];
+          c.setAttribute("cx", String(boxPx / 2));
+          c.setAttribute("cy", String(boxPx / 2));
+          c.setAttribute("r", String(rr * scalePx));
+          c.setAttribute("fill", nodeFillForLegend);
+          c.setAttribute("opacity", "0.85");
+          c.setAttribute("stroke", nodeStrokeForLegend);
+          c.setAttribute("stroke-width", String(options?.nodeStrokeWidth ?? 1));
+          c.style.cursor = "default";
+          svg.addEventListener("mouseenter", () => {
+            c.setAttribute("stroke", "#f00");
+          });
+          svg.addEventListener("mouseleave", () => {
+            c.setAttribute("stroke", nodeStrokeForLegend);
+          });
+          svg.appendChild(c);
+
+          const label = document.createElement("div");
+          label.className = "legend-size-label";
+          const count = document.createElement("div");
+          count.className = "legend-size-count";
+          count.textContent = n.toLocaleString();
+          const unit = document.createElement("div");
+          unit.textContent = "photos";
+          label.appendChild(count);
+          label.appendChild(unit);
+
+          item.appendChild(svg);
+          item.appendChild(label);
+          sizesWrap.appendChild(item);
+        });
+        const sizesCenter = document.createElement("div");
+        sizesCenter.className = "legend-sizes-center";
+        sizesCenter.appendChild(sizesWrap);
+        previewLegendEl.appendChild(sizesCenter);
+
+        previewLegendEl.style.display = "block";
+      }
+
+      function setTopNeighbors(neighbors, onSelectNeighbor, titleText = "Top connections") {
+        if (!neighbors || !neighbors.length) {
+          previewNeighborsEl.style.display = "none";
+          previewNeighborsEl.innerHTML = "";
+          return;
+        }
+        previewNeighborsEl.style.display = "block";
+        previewNeighborsEl.innerHTML = "";
+        const title = document.createElement("div");
+        title.className = "neighbors-title";
+        title.textContent = titleText;
+        const list = document.createElement("div");
+        list.className = "neighbors-list";
+        neighbors.forEach((n) => {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "neighbor-row";
+          row.setAttribute("aria-label", `Highlight ${n.label}`);
+          const name = document.createElement("div");
+          name.className = "neighbor-name";
+          name.textContent = n.label;
+          const weight = document.createElement("div");
+          weight.className = "neighbor-weight";
+          weight.textContent = String(n.weight);
+          row.appendChild(name);
+          row.appendChild(weight);
+          row.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof onSelectNeighbor === "function") onSelectNeighbor(n);
+          });
+          list.appendChild(row);
+        });
+        previewNeighborsEl.appendChild(title);
+        previewNeighborsEl.appendChild(list);
+      }
+
+      function showPreview(
+        title,
+        filename,
+        categoryLabel,
+        categoryColor,
+        totalPhotos,
+        topNeighbors,
+        onSelectNeighbor,
+        topNeighborsTitle,
+        totalLabel
+      ) {
         const src = toWebpThumbPath(filename);
         const origUrl = toOriginalImageUrl(filename);
+        previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
         if (categoryLabel) {
           previewMetaEl.style.display = "flex";
@@ -410,7 +454,7 @@
         }
         if (typeof totalPhotos === "number" && !Number.isNaN(totalPhotos)) {
           previewTotalEl.style.display = "block";
-          previewTotalEl.textContent = `Photos: ${totalPhotos}`;
+          previewTotalEl.textContent = `${totalLabel || "Photos"}: ${totalPhotos}`;
         } else {
           previewTotalEl.style.display = "none";
           previewTotalEl.textContent = "";
@@ -432,28 +476,45 @@
           previewImgEl.alt = "";
           previewEmptyEl.style.display = "block";
         }
+        setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle);
         previewEl.classList.add("visible");
         previewEl.setAttribute("aria-hidden", "false");
       }
 
       function hidePreview() {
-        previewEl.classList.remove("visible");
-        previewEl.setAttribute("aria-hidden", "true");
-        previewImgEl.src = "";
-        previewImgEl.alt = "";
-        previewImgLinkEl.style.display = "none";
-        previewImgLinkEl.removeAttribute("href");
-        previewEmptyEl.style.display = "none";
-        previewMetaEl.style.display = "none";
-        previewCategoryTextEl.textContent = "";
-        previewTotalEl.style.display = "none";
-        previewTotalEl.textContent = "";
+        showDefaultPanel();
       }
 
       function openOriginalImage(filename) {
         const url = toOriginalImageUrl(filename);
         if (!url) return;
         window.open(url, "_blank", "noopener,noreferrer");
+      }
+
+      let previewLocked = false;
+      let previewLockedKind = null; // "node" | "edge" | null
+      let previewLockedItem = null; // node object or link object
+      let previewLockedHighlightNode = null; // node object (can differ from previewLockedItem for node sidebar)
+
+      function isLockedFor(kind, item) {
+        return previewLocked && previewLockedKind === kind && previewLockedItem === item;
+      }
+
+      function applyLockedNodeHighlight(focusNode) {
+        if (!focusNode) return;
+        previewLockedHighlightNode = focusNode;
+        tooltipDiv.classed("visible", false);
+        fade(1, 0.15, "#f00", "#f00")(null, focusNode);
+      }
+
+      function unlockPreviewAndHighlights() {
+        previewLocked = false;
+        previewLockedKind = null;
+        previewLockedItem = null;
+        previewLockedHighlightNode = null;
+        hidePreview();
+        clearEdgeHighlight();
+        tooltipDiv.classed("visible", false);
       }
 
       function clearEdgeHighlight() {
@@ -475,11 +536,8 @@
           .attr("stroke-opacity", (o) => (o === d ? 1 : 0.15));
       }
 
-      previewCloseEl.addEventListener("click", (e) => {
-        e.preventDefault();
-        hidePreview();
-        clearEdgeHighlight();
-      });
+      // Permanent sidebar: initialize to default state.
+      showDefaultPanel();
 
       const N = d3.map(networkData.nodes, nodeId).map(intern);
       const LS = d3.map(networkData.links, linkSource).map(intern);
@@ -522,12 +580,47 @@
         weight: networkData.links[i].weight,
       }));
 
+      renderLegend({
+        categories: Array.from(new Set(nodes.map((n) => n.cluster).filter(Boolean))).sort(),
+        colorByCategory: clusterColorById,
+        nodeScaling,
+      });
+
       const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
       function getNodeFromLinkEnd(end) {
         // d3.forceLink mutates link endpoints to node objects.
         if (end && typeof end === "object") return end;
         return nodeById.get(end) || null;
+      }
+
+      function topNeighborsForNode(focusNode, limit = 10) {
+        if (!focusNode) return [];
+        const scored = [];
+        for (const l of links) {
+          const s = getNodeFromLinkEnd(l.source);
+          const t = getNodeFromLinkEnd(l.target);
+          if (!s || !t) continue;
+          const incident = s === focusNode || t === focusNode || s.id === focusNode.id || t.id === focusNode.id;
+          if (!incident) continue;
+          const other = s === focusNode || s.id === focusNode.id ? t : s;
+          const weight = typeof l.weight === "number" ? l.weight : Number(l.weight);
+          scored.push({
+            id: other.id,
+            label: other.label != null ? String(other.label) : String(other.id),
+            weight: Number.isFinite(weight) ? weight : 0,
+          });
+        }
+        scored.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+        const seen = new Set();
+        const out = [];
+        for (const item of scored) {
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          out.push(item);
+          if (out.length >= limit) break;
+        }
+        return out;
       }
 
       function lookupEdgeFilename(labelA, labelB) {
@@ -614,31 +707,35 @@
         .data(links)
         .join("line")
         .attr("stroke-width", (d) => (options.linkStrokeWidth?.(d) ?? 1) + 1)
-        .on("mouseover.preview", function (event, d) {
-          if (isCoarsePointer) return;
-          const s = getNodeFromLinkEnd(d.source);
-          const t = getNodeFromLinkEnd(d.target);
-          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
-          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
-          const filename = lookupEdgeFilename(sLabel, tLabel);
-          const total = d.weight;
-          showPreview(`${[sLabel, tLabel].sort().join(" & ")}`, filename, null, null, total);
+        .on("mouseover.tooltip", function (event, d) {
+          if (previewLocked) return;
+          showEdgeTooltip(event, d);
+        })
+        .on("mousemove.tooltip", function (event, d) {
+          if (previewLocked) return;
+          showEdgeTooltip(event, d);
         })
         .on("mouseover.highlight", function (event, d) {
           if (isCoarsePointer) return;
+          if (previewLocked && !isLockedFor("edge", d)) return;
           highlightEdge(d);
         })
-        .on("mouseout.preview", function () {
-          if (isCoarsePointer) return;
-          hidePreview();
+        .on("mouseout.tooltip", function () {
+          if (previewLocked) return;
+          tooltipDiv.classed("visible", false);
         })
         .on("mouseout.highlight", function () {
           if (isCoarsePointer) return;
+          if (previewLocked) return;
           clearEdgeHighlight();
         })
         .on("touchstart.tap", function (event, d) {
           if (!isCoarsePointer) return;
           event.preventDefault();
+          event.stopPropagation();
+          previewLocked = true;
+          previewLockedKind = "edge";
+          previewLockedItem = d;
           highlightEdge(d);
 
           const s = getNodeFromLinkEnd(d.source);
@@ -647,22 +744,62 @@
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
           const total = d.weight;
-          showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null, total);
+          const endpoints = [
+            { id: (s && s.id) ?? d.source, label: sLabel, weight: (s && typeof s.total === "number") ? s.total : "—" },
+            { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
+          ];
+          showPreview(
+            `${[sLabel, tLabel].sort().join(" - ")}`,
+            filename,
+            null,
+            null,
+            total,
+            endpoints,
+            (n) => {
+              const target = nodeById.get(n.id);
+              if (!target) return;
+              applyLockedNodeHighlight(target);
+            },
+            "Connected nodes",
+            "Shared photos"
+          );
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
+          event.stopPropagation();
           const s = getNodeFromLinkEnd(d.source);
           const t = getNodeFromLinkEnd(d.target);
           const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
           const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
           const filename = lookupEdgeFilename(sLabel, tLabel);
           const total = d.weight;
-          if (isCoarsePointer) {
-            highlightEdge(d);
-            showPreview(`${[sLabel, tLabel].sort().join(" - ")}`, filename, null, null, total);
+          if (event.metaKey || event.ctrlKey) {
+            openOriginalImage(filename);
             return;
           }
-          openOriginalImage(filename);
+          previewLocked = true;
+          previewLockedKind = "edge";
+          previewLockedItem = d;
+          highlightEdge(d);
+          const endpoints = [
+            { id: (s && s.id) ?? d.source, label: sLabel, weight: (s && typeof s.total === "number") ? s.total : "—" },
+            { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
+          ];
+          showPreview(
+            `${[sLabel, tLabel].sort().join(" - ")}`,
+            filename,
+            null,
+            null,
+            total,
+            endpoints,
+            (n) => {
+              const target = nodeById.get(n.id);
+              if (!target) return;
+              applyLockedNodeHighlight(target);
+            },
+            "Connected nodes",
+            "Shared photos"
+          );
         });
 
       const node = parent
@@ -677,46 +814,55 @@
         .style("cursor", "pointer")
         .attr("fill", (d) => (d && clusterColorById[d.cluster]) || options.nodeFill)
         .attr("r", (d) => d.radius)
-        .on("mouseover.tooltip", createTooltip())
-        .on("mouseover.preview", function (event, d) {
-          if (isCoarsePointer) return;
-          const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
-          const category = d.cluster || "";
-          const color = category ? clusterColorById[category] || options.nodeFill : null;
-          const total = typeof d.total === "number" ? d.total : null;
-          showPreview(d.label, filename, category, color, total);
+        .on("mouseover.tooltip", function (event, d) {
+          if (previewLocked) return;
+          return createTooltip().call(this, event, d);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
+          event.stopPropagation();
           const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
-          if (isCoarsePointer) {
-            const category = d.cluster || "";
-            const color = category ? clusterColorById[category] || options.nodeFill : null;
-            const total = typeof d.total === "number" ? d.total : null;
-            showPreview(d.label, filename, category, color, total);
+          if (event.metaKey || event.ctrlKey) {
+            openOriginalImage(filename);
             return;
           }
-          openOriginalImage(filename);
+          previewLocked = true;
+          previewLockedKind = "node";
+          previewLockedItem = d;
+          const category = d.cluster || "";
+          const color = category ? clusterColorById[category] || options.nodeFill : null;
+          const total = typeof d.total === "number" ? d.total : null;
+          const neighbors = topNeighborsForNode(d, 10);
+          showPreview(d.label, filename, category, color, total, neighbors, (neighbor) => {
+            if (!previewLocked || previewLockedKind !== "node" || previewLockedItem !== d) return;
+            const target = nodeById.get(neighbor.id);
+            if (!target) return;
+            applyLockedNodeHighlight(target);
+          }, "Top connections", "Photos");
+          applyLockedNodeHighlight(d);
         })
         .on(
           "mouseover.fade",
-          fade(1, options.linkStrokeOpacity, "#f00", "#f00")
+          function (event, d) {
+            if (previewLocked && !isLockedFor("node", d)) return;
+            fade(1, options.linkStrokeOpacity, "#f00", "#f00")(event, d);
+          }
         )
         .on("mouseout.tooltip", function () {
+          if (previewLocked) return;
           tooltipDiv.classed("visible", false);
-        })
-        .on("mouseout.preview", function () {
-          if (isCoarsePointer) return;
-          hidePreview();
         })
         .on(
           "mouseout.fade",
-          fade(
-            options.linkStrokeOpacity,
-            options.linkStrokeOpacity,
-            options.nodeStroke,
-            options.linkStroke
-          )
+          function (event, d) {
+            if (previewLocked) return;
+            fade(
+              options.linkStrokeOpacity,
+              options.linkStrokeOpacity,
+              options.nodeStroke,
+              options.linkStroke
+            )(event, d);
+          }
         );
 
       const label = parent
@@ -746,7 +892,7 @@
       if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
       if (invalidation != null) invalidation.then(() => simulation.stop());
 
-      const LABEL_SIZE_THRESHOLD = 15;
+      const LABEL_SIZE_THRESHOLD = 10;
       let currentTransform = d3.zoomIdentity;
 
       function updateLabelVisibility() {
@@ -757,6 +903,68 @@
         );
       }
 
+      function getSidebarWidthPx() {
+        if (typeof window === "undefined") return 0;
+        // Keep overlay behavior on mobile (bottom sheet), so no horizontal offset.
+        if (window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches) return 0;
+        const raw = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width").trim();
+        const px = raw.endsWith("px") ? parseFloat(raw) : parseFloat(raw);
+        return Number.isFinite(px) ? px : 0;
+      }
+
+      function getSvgViewBoxWidth() {
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return null;
+        const vb = svgEl.getAttribute("viewBox");
+        if (!vb) return null;
+        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
+        if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+        return parts[2];
+      }
+
+      function getSvgViewBoxHeight() {
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return null;
+        const vb = svgEl.getAttribute("viewBox");
+        if (!vb) return null;
+        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
+        if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+        return parts[3];
+      }
+
+      function computeSidebarCenteringTranslateX() {
+        const sidebarPx = getSidebarWidthPx();
+        if (!sidebarPx) return 0;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return 0;
+        const rect = svgEl.getBoundingClientRect();
+        if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) return 0;
+        const vbWidth = getSvgViewBoxWidth();
+        if (!vbWidth || !Number.isFinite(vbWidth) || vbWidth <= 0) return 0;
+        // Convert desired pixel shift (sidebar/2) into viewBox units.
+        const userUnitsPerPx = vbWidth / rect.width;
+        return (sidebarPx / 2) * userUnitsPerPx;
+      }
+
+      function computeBottomBarCenteringTranslateY() {
+        if (typeof window === "undefined") return 0;
+        // Only for mobile bottom-sheet layout.
+        const isMobile = window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
+        if (!isMobile) return 0;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return 0;
+        const rect = svgEl.getBoundingClientRect();
+        if (!rect || !Number.isFinite(rect.height) || rect.height <= 0) return 0;
+        const vbHeight = getSvgViewBoxHeight();
+        if (!vbHeight || !Number.isFinite(vbHeight) || vbHeight <= 0) return 0;
+        const previewRect = previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
+        const bottomBarPx = previewRect && Number.isFinite(previewRect.height) ? previewRect.height : 0;
+        if (!bottomBarPx) return 0;
+        const userUnitsPerPxY = vbHeight / rect.height;
+        // Shift up by half the covered height so content centers in the visible area above the bar.
+        return -(bottomBarPx / 2) * userUnitsPerPxY;
+      }
+
       let zoom = d3
         .zoom()
         .on("zoom", (e) => {
@@ -765,7 +973,31 @@
           updateLabelVisibility();
         });
 
-      d3.select("#svg").call(zoom);
+      d3.select("#svg")
+        .call(zoom)
+        .on("click.previewDismiss", function (event) {
+          // Ignore clicks that were part of drag/zoom.
+          if (event.defaultPrevented) return;
+          if (!previewLocked) return;
+          unlockPreviewAndHighlights();
+        });
+      // Render under overlays, but center the graph in the visible region.
+      // IMPORTANT: translate values are in SVG user units (viewBox), not screen pixels.
+      let appliedInitialViewportCentering = false;
+      function applyInitialViewportCentering() {
+        if (appliedInitialViewportCentering) return;
+        const dx = computeSidebarCenteringTranslateX();
+        const dy = computeBottomBarCenteringTranslateY();
+        if (!dx && !dy) return;
+        appliedInitialViewportCentering = true;
+        d3.select("#svg").call(zoom.transform, d3.zoomIdentity.translate(dx, dy));
+      }
+      // Defer one frame so layout (esp. mobile bottom sheet) has final dimensions.
+      if (typeof window !== "undefined" && window.requestAnimationFrame) {
+        window.requestAnimationFrame(applyInitialViewportCentering);
+      } else {
+        applyInitialViewportCentering();
+      }
       updateLabelVisibility();
 
       function ticked() {
