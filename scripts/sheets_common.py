@@ -114,3 +114,36 @@ def load_categories(gc: gspread.Client) -> dict[str, str]:
                 category = "unknown"
             result[name] = category
     return result
+
+
+def _load_person_ids_from_col_b(book: gspread.Spreadsheet, sheet_name: str) -> set[str]:
+    """Load person_ids from column B of the given sheet (skips header if it looks like one)."""
+    ws = book.worksheet(sheet_name)
+    rows = ws.get_all_values()
+    if not rows:
+        return set()
+    start = 0
+    # If header row contains "person" in col B, skip it.
+    if len(rows[0]) >= 2 and "person" in (rows[0][1] or "").strip().lower():
+        start = 1
+    result: set[str] = set()
+    for row in rows[start:]:
+        if len(row) >= 2:
+            pid = (row[1] or "").strip()
+            if pid:
+                result.add(pid)
+    return result
+
+
+def load_person_ids_matches_and_unknowns(gc: gspread.Client) -> set[str]:
+    """
+    Load person_ids to include in graphs.
+
+    Source:
+      - 'Matches' sheet, column B (Person ID)
+      - 'Unknowns' sheet, column B (Person ID)
+    """
+    book = get_workbook(gc)
+    ids = _load_person_ids_from_col_b(book, "Matches")
+    ids |= _load_person_ids_from_col_b(book, "Unknowns")
+    return ids

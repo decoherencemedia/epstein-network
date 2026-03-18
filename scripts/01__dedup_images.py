@@ -5,15 +5,19 @@ Populates the `images` table:
 - One row per file
 - `duplicate_of` is NULL for canonical files
 - `duplicate_of` is the canonical filename for byte-identical duplicates
+- `width_px` and `height_px` are set from the image file
 
 No files are deleted or moved.
 """
 
 import hashlib
+import io
 from pathlib import Path
 
+from PIL import Image
+
 from config import IMAGE_DIR
-from faces_db import init_db, upsert_image_duplicate_of
+from faces_db import init_db, upsert_image_dimensions, upsert_image_duplicate_of
 
 # ---------------- CONFIG ----------------
 
@@ -27,13 +31,13 @@ IMAGE_EXTENSIONS = frozenset(
 # --------------------------------------
 
 
-def file_hash(path: Path, block_size: int = 65536) -> str:
-    """Compute SHA256 hash of file contents."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(block_size):
-            h.update(chunk)
-    return h.hexdigest()
+def read_file_and_metadata(path: Path) -> tuple[str, int, int]:
+    """Read file once; return (sha256_hex, width_px, height_px)."""
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    with Image.open(io.BytesIO(data)) as im:
+        w, h = im.size
+    return digest, w, h
 
 
 def main() -> None:
@@ -53,7 +57,7 @@ def main() -> None:
     conn = init_db()
     try:
         for path in paths:
-            digest = file_hash(path)
+            digest, w, h = read_file_and_metadata(path)
             canonical = first_for_hash.get(digest)
             if canonical is None:
                 canonical = path.name
@@ -70,6 +74,7 @@ def main() -> None:
                 continue
 
             upsert_image_duplicate_of(conn, path.name, duplicate_of, commit=False)
+            upsert_image_dimensions(conn, path.name, w, h, commit=False)
         if not DRY_RUN:
             conn.commit()
     finally:

@@ -2,7 +2,6 @@ import sqlite3
 import json
 from collections import defaultdict
 from pathlib import Path
-from functools import cache
 from shutil import copy, rmtree
 from typing import Any
 
@@ -10,13 +9,17 @@ import pandas as pd
 from itertools import combinations
 
 import networkx as nx
-from PIL import Image
 
-from sheets_common import get_sheet_client, load_categories, load_names, load_ignore
+from sheets_common import (
+    get_sheet_client,
+    load_categories,
+    load_ignore,
+    load_names,
+    load_person_ids_matches_and_unknowns,
+)
 from config import DB_PATH, IMAGE_DIR
+from faces_db import pick_best_images
 
-
-MAX_RANK = 292
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images"
@@ -40,25 +43,11 @@ def _is_explicit_moderation(moderation_result: str | None) -> bool:
 
 def _has_minor_face(age_low: Any, age_high: Any) -> bool:
     # Under 18: if either bound implies <18, treat as minor.
-    try:
-        if age_low is not None and int(age_low) < 18:
-            return True
-    except Exception:
-        pass
-    try:
-        if age_high is not None and int(age_high) < 18:
-            return True
-    except Exception:
-        pass
+    if age_low < 18:
+        return True
+    if age_high < 18:
+        return True
     return False
-
-
-@cache
-def get_image_dims(filename: str) -> tuple[int, int]:
-    image = Image.open(IMAGE_DIR / filename)
-    w, h = image.size
-    image.close()
-    return w, h
 
 
 if __name__ == "__main__":
@@ -69,42 +58,31 @@ if __name__ == "__main__":
     gc = get_sheet_client()
     PEOPLE_NAMES = load_names(gc)
     PEOPLE_TO_SKIP = load_ignore(gc)
+    INCLUDE_PERSON_IDS = load_person_ids_matches_and_unknowns(gc)
+    INCLUDE_PERSON_IDS = INCLUDE_PERSON_IDS - PEOPLE_TO_SKIP
 
     con = sqlite3.connect(DB_PATH)
 
-    # Step 1: in SQL, get the MAX_RANK most common people (no ignore list here).
-    top_ids_df = pd.read_sql_query(
-        """
-        SELECT person_id
-        FROM faces
-        WHERE person_id IS NOT NULL
-        GROUP BY person_id
-        ORDER BY COUNT(*) DESC
-        LIMIT ?
-        """,
-        con,
-        params=[MAX_RANK],
-    )
-    top_ids = set(top_ids_df["person_id"].tolist())
-    if not top_ids:
-        raise RuntimeError("No person_ids found for graph.")
+    if not INCLUDE_PERSON_IDS:
+        raise RuntimeError("No person_ids loaded from Matches/Unknowns sheets (after ignore list).")
 
-    # Step 2: fetch all faces for those top_ids.
-    placeholders_top = ",".join("?" for _ in top_ids)
+    # Fetch all faces for those person_ids.
+    placeholders_top = ",".join("?" for _ in INCLUDE_PERSON_IDS)
     df = pd.read_sql_query(
         "SELECT f.person_id, f.image_name, f.left, f.top, f.width, f.height, "
         "f.celebrity_name, f.celebrity_confidence, "
         "f.age_range_low, f.age_range_high, "
-        "i.moderation_result "
+        "i.moderation_result, "
+        "i.width_px, i.height_px "
         f"FROM faces f "
         f"LEFT JOIN images i ON i.image_name = f.image_name "
         f"WHERE f.person_id IN ({placeholders_top})",
         con,
-        params=list(top_ids),
+        params=list(INCLUDE_PERSON_IDS),
     )
 
-    # Step 3: apply ignore list AFTER rank selection.
-    df = df[~df["person_id"].isin(PEOPLE_TO_SKIP)]
+    if df.empty:
+        raise RuntimeError("No faces found in DB for person_ids from Matches/Unknowns.")
 
     # Disallow images that are explicit or contain any face under 18.
     df["is_explicit"] = df["moderation_result"].apply(_is_explicit_moderation)
@@ -114,39 +92,36 @@ if __name__ == "__main__":
     )
     disallowed_images = set(df.loc[df["is_explicit"] | df["is_minor_face"], "image_name"].tolist())
 
-    # Attach image dimensions and face area (normalized box × pixels).
-    df[["img_w", "img_h"]] = df["image_name"].apply(
-        lambda fn: pd.Series(get_image_dims(fn))
-    )
-    df["face_area"] = df["width"] * df["height"] * df["img_w"] * df["img_h"]
+    # Compute face area (normalized bbox area × image pixels), using dimensions from DB.
+    if df["width_px"].isna().any() or df["height_px"].isna().any():
+        missing = (
+            df.loc[df["width_px"].isna() | df["height_px"].isna(), "image_name"]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        raise RuntimeError(
+            "Missing image dimensions in DB for some images. "
+            "Re-run scripts/01__dedup_images.py to populate images.width_px/height_px. "
+            f"Examples: {', '.join(missing[:20])}" + (" ..." if len(missing) > 20 else "")
+        )
+    df["face_area"] = df["width"] * df["height"] * df["width_px"] * df["height_px"]
 
-    # Keep only the top MAX_RANK people by number of face appearances.
-    counts = df.groupby("person_id").size().sort_values(ascending=False)
-    top_ids = set(counts.head(MAX_RANK).index)
-    df = df[df["person_id"].isin(top_ids)]
+    # Fail loudly if sheets contain IDs not in DB.
+    found_ids = set(df["person_id"].unique().tolist())
+    missing_ids = sorted(INCLUDE_PERSON_IDS - found_ids)
+    if missing_ids:
+        raise RuntimeError(
+            f"{len(missing_ids)} person_id(s) from Matches/Unknowns not found in DB: {', '.join(missing_ids[:50])}"
+            + (" ..." if len(missing_ids) > 50 else "")
+        )
 
-    # Resolve a display name per person_id:
-    # 1) If the person_id is in PEOPLE_NAMES, ALWAYS use that (manual label wins).
-    # 2) Otherwise, if any celebrity_name exists with confidence >= 95, use that.
-    # 3) Otherwise, fall back to the raw person_id.
-    celeb_df = df.dropna(subset=["celebrity_name"])
-    celeb_df = celeb_df.sort_values("celebrity_confidence", ascending=False)
-    # For each person, take (name, confidence) of the highest-confidence celebrity.
-    celeb_best = (
-        celeb_df.groupby("person_id")[["celebrity_name", "celebrity_confidence"]]
-        .first()
-        .to_dict(orient="index")
-    )
-
+    # Resolve a display name per person_id.
+    # Ground truth is the Matches spreadsheet: only use manual names.
+    # If a person_id is not named in Matches (including IDs from Unknowns), keep it as person_###.
     def resolve_name(pid: str) -> str:
-        # Manual mapping takes priority over Rekognition celebrity labels.
         manual = PEOPLE_NAMES.get(pid)
-        if manual is not None:
-            return manual
-        info = celeb_best.get(pid)
-        if info is not None and info.get("celebrity_confidence", 0) >= 95.0:
-            return info.get("celebrity_name", pid)
-        return pid
+        return manual if manual is not None else pid
 
     df["label"] = df["person_id"].apply(resolve_name)
 
@@ -178,18 +153,18 @@ if __name__ == "__main__":
     G = nx.Graph()
     G.add_weighted_edges_from(edge_list)
 
-    # Node images: per label, ranked by face_area desc; pick highest-res image that is not nude.
-    node_candidates = (
-        per_label_image.sort_values("face_area", ascending=False)
-        .groupby("label", sort=False)["image_name"]
-        .apply(list)
-        .to_dict()
-    )
+    # Node images: same best-face selection as 07 (size × quality, dHash diversity).
+    label_to_person = df.groupby("label")["person_id"].first().to_dict()
     node_images = {}
-    for label, filenames in node_candidates.items():
-        for fn in filenames:
-            if fn not in disallowed_images:
-                node_images[label] = fn
+    for label in G.nodes():
+        person_id = label_to_person.get(label)
+        if person_id is None:
+            node_images[label] = None
+            continue
+        best_list = pick_best_images(con, person_id, n=10)
+        for image_name, _left, _top, _width, _height in best_list:
+            if image_name not in disallowed_images:
+                node_images[label] = image_name
                 break
         else:
             node_images[label] = None

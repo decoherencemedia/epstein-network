@@ -21,6 +21,7 @@ CATEGORY_COLORS = {
     "Fashion & Modeling":'#573b00',
     "Miscellaneous": '#005659',
     "Alleged Victim": '#15e18c',
+    "Employee": '#0000dd',
     "Unknown": '#999999',
 }
 
@@ -60,13 +61,12 @@ if __name__ == "__main__":
     ]
 
     clusters = [k for k, _ in Counter(nodes_df["category"]).most_common()]
-    category_colors = dict(zip(clusters, glasbey_dark[1:]))
 
     data = {
         "nodes": nodes,
         "edges": edges,
         "clusters": [
-            {"key": c, "color":category_colors[c]}
+            {"key": c, "color":CATEGORY_COLORS[c]}
             for c in clusters
         ],
     }

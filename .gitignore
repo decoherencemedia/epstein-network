@@ -5,6 +5,9 @@ graphml/
 person_to_files/
 .cursor/
 
+scripts/map_person_ids/*
+!scripts/map_person_ids/*.py
+
 **/__pycache__
 *.db
 *.csv#
@@ -12,3 +15,4 @@ person_to_files/
 *.md
 !README.md
 *.db-journal
+*.ods

@@ -22,7 +22,7 @@ import boto3
 from PIL import Image
 
 from config import IMAGE_DIR, REKOGNITION_REGION
-from faces_db import init_db
+from faces_db import init_db, pick_best_images
 
 # ---------------- CONFIG ----------------
 
@@ -32,11 +32,6 @@ MIN_IOU = 0.3
 MIN_CELEBRITY_CONFIDENCE = 95.0   # below this = no match
 CELEBRITY_CONFIDENCE_HIGH = 99.0  # ≥ this = satisfactory, stop trying more faces
 NUM_BEST_FACES = 3
-
-# Best-face selection improvements (uses IndexFaces metadata + perceptual diversity)
-BEST_FACE_RERANK_POOL_SIZE = 25
-DHASH_SIZE = 8  # 8 => 64-bit hash
-MIN_DHASH_HAMMING_DISTANCE = 10
 
 REKOGNITION_MAX_BYTES = 5 * 1024 * 1024
 
@@ -57,12 +52,6 @@ def load_image_bytes(path: Path) -> bytes:
             f"File exceeds 5 MiB Rekognition limit: {len(raw)} bytes"
         )
     return raw
-
-
-def image_size(path: Path) -> Tuple[int, int]:
-    """Return (width, height) in pixels."""
-    with Image.open(path) as im:
-        return im.size
 
 
 def bbox_iou(a: dict, b: dict) -> float:
@@ -114,140 +103,6 @@ def get_person_ids(conn, skip_already_done=True):
             ORDER BY COUNT(*) DESC
         """)
     return [row[0] for row in c.fetchall()]
-
-
-def get_appearances_for_person(conn, person_id):
-    """Return list of (image_name, left, top, width, height, index_face_record) for that person."""
-    c = conn.cursor()
-    c.execute(
-        "SELECT image_name, left, top, width, height, index_face_record FROM faces WHERE person_id = ?",
-        (person_id,),
-    )
-    return [row for row in c.fetchall()]
-
-
-def _clamp(x: float, lo: float, hi: float) -> float:
-    return lo if x < lo else hi if x > hi else x
-
-
-def _parse_index_face_record(raw: str) -> dict:
-    if not raw:
-        raise ValueError("Missing index_face_record")
-    return json.loads(raw)
-
-
-def _index_quality_multiplier(index_record: dict) -> float:
-    fd = (index_record or {}).get("FaceDetail") or {}
-    quality = fd.get("Quality") or {}
-    pose = fd.get("Pose") or {}
-    occluded = (fd.get("FaceOccluded") or {}).get("Value")
-
-    sharpness = float(quality.get("Sharpness") or 0.0)
-    brightness = float(quality.get("Brightness") or 0.0)
-    yaw = abs(float(pose.get("Yaw") or 0.0))
-    pitch = abs(float(pose.get("Pitch") or 0.0))
-
-    sharp_mult = 0.35 + _clamp(sharpness / 20.0, 0.0, 1.5)
-    pose_penalty = math.exp(-((yaw + pitch) / 35.0))
-    bright_penalty = 1.0 - _clamp(abs(brightness - 55.0) / 90.0, 0.0, 0.45)
-    occ_penalty = 0.2 if occluded is True else 1.0
-
-    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty
-    return _clamp(mult, 0.08, 2.25)
-
-
-def _crop_face(path: Path, left: float, top: float, width: float, height: float) -> Image.Image:
-    with Image.open(path) as im:
-        W, H = im.size
-        x1 = left * W
-        y1 = top * H
-        x2 = (left + width) * W
-        y2 = (top + height) * H
-        crop = im.crop((int(x1), int(y1), int(x2), int(y2)))
-        return crop.convert("RGB")
-
-
-def _dhash(im: Image.Image, hash_size: int = DHASH_SIZE) -> int:
-    g = im.convert("L").resize((hash_size + 1, hash_size), resample=Image.Resampling.LANCZOS)
-    pixels = list(g.getdata())
-    h = 0
-    bit = 0
-    for row in range(hash_size):
-        row_start = row * (hash_size + 1)
-        for col in range(hash_size):
-            if pixels[row_start + col] > pixels[row_start + col + 1]:
-                h |= 1 << bit
-            bit += 1
-    return h
-
-
-def _hamming_distance(a: int, b: int) -> int:
-    return (a ^ b).bit_count()
-
-
-def pick_best_images(
-    conn, person_id: str, n: int = NUM_BEST_FACES
-) -> List[Tuple[str, float, float, float, float]]:
-    """
-    Return up to n best (image_name, left, top, width, height) for this person.
-
-    Selection:
-    - Pool: take the largest faces by size (bbox area × image pixels).
-    - Rerank: size × (IndexFaces-based quality multiplier ** 0.6).
-    - Diversity: greedily skip near-duplicate face crops by dHash distance.
-    """
-    appearances = get_appearances_for_person(conn, person_id)
-    if not appearances:
-        return []
-
-    by_size: List[Tuple[float, Tuple[str, float, float, float, float, str]]] = []
-    for image_name, left, top, width, height, index_face_record in appearances:
-        path = IMAGE_DIR / image_name
-        if not path.is_file():
-            raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
-        w, h = image_size(path)
-        base = (float(width) * float(height)) * (w * h)
-        by_size.append(
-            (base, (image_name, float(left), float(top), float(width), float(height), index_face_record))
-        )
-    by_size.sort(key=lambda x: x[0], reverse=True)
-    pool = [t for _, t in by_size[: max(n, BEST_FACE_RERANK_POOL_SIZE)]]
-
-    scored: List[Tuple[float, Tuple[str, float, float, float, float]]] = []
-    for image_name, left, top, width, height, index_face_record in pool:
-        path = IMAGE_DIR / image_name
-        w, h = image_size(path)
-        base = (width * height) * (w * h)
-        idx = _parse_index_face_record(index_face_record)
-        mult = _index_quality_multiplier(idx)
-        score = base * (mult ** 0.6)
-        scored.append((score, (image_name, left, top, width, height)))
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    selected: List[Tuple[str, float, float, float, float]] = []
-    selected_hashes: List[int] = []
-    for _, app in scored:
-        image_name, left, top, width, height = app
-        src = IMAGE_DIR / image_name
-        if not src.is_file():
-            continue
-        crop = _crop_face(src, left, top, width, height)
-        h = _dhash(crop)
-        if any(_hamming_distance(h, hh) < MIN_DHASH_HAMMING_DISTANCE for hh in selected_hashes):
-            continue
-        selected.append(app)
-        selected_hashes.append(h)
-        if len(selected) >= n:
-            break
-
-    if len(selected) < n:
-        for _, app in scored:
-            if app in selected:
-                continue
-            selected.append(app)
-            if len(selected) >= n:
-                break
-    return selected[:n]
 
 
 def _match_celebrity_in_response(

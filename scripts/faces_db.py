@@ -4,9 +4,15 @@ Shared DB schema and helpers for the face preprocessing + Rekognition pipeline.
 Used by preprocess (writes has_face), cluster (writes indexed + faces.person_id), and celebrity (writes faces.celebrity_*).
 """
 
+import json
+import math
 import sqlite3
+from pathlib import Path
+from typing import List, Optional, Tuple
 
-from config import DB_PATH
+from PIL import Image
+
+from config import DB_PATH, IMAGE_DIR
 
 
 def init_db():
@@ -46,6 +52,7 @@ def init_db():
     _ensure_faces_index_response_columns(conn)
     _ensure_images_moderation_column(conn)
     _ensure_images_duplicate_of_column(conn)
+    _ensure_images_width_height_columns(conn)
     _migrate_people_to_faces_if_exists(conn)
     c.execute("DROP TABLE IF EXISTS people")
     conn.commit()
@@ -98,6 +105,19 @@ def _ensure_images_duplicate_of_column(conn):
     except sqlite3.OperationalError as e:
         if "duplicate" not in str(e).lower():
             raise
+
+
+def _ensure_images_width_height_columns(conn):
+    """Add width_px and height_px to images if missing."""
+    for sql in (
+        "ALTER TABLE images ADD COLUMN width_px INTEGER",
+        "ALTER TABLE images ADD COLUMN height_px INTEGER",
+    ):
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError as e:
+            if "duplicate" not in str(e).lower():
+                raise
 
 
 def _migrate_people_to_faces_if_exists(conn):
@@ -198,6 +218,16 @@ def upsert_image_duplicate_of(conn, image_name: str, duplicate_of: str | None, *
         conn.commit()
 
 
+def upsert_image_dimensions(conn, image_name: str, width_px: int, height_px: int, *, commit: bool = True) -> None:
+    """Set width_px and height_px for an existing images row (e.g. after dedup)."""
+    conn.execute(
+        "UPDATE images SET width_px = ?, height_px = ? WHERE image_name = ?",
+        (width_px, height_px, image_name),
+    )
+    if commit:
+        conn.commit()
+
+
 def upsert_image_moderation(conn, image_name, moderation_result_json, *, commit=True):
     """Store DetectModerationLabels result (JSON string) for an image."""
     conn.execute(
@@ -206,3 +236,150 @@ def upsert_image_moderation(conn, image_name, moderation_result_json, *, commit=
     )
     if commit:
         conn.commit()
+
+
+# --------------- Best-face selection (shared by 07 and 09) ---------------
+
+def get_appearances_for_person(conn, person_id: str) -> List[Tuple]:
+    """Return list of (image_name, left, top, width, height, index_face_record) for that person."""
+    c = conn.cursor()
+    c.execute(
+        "SELECT image_name, left, top, width, height, index_face_record FROM faces WHERE person_id = ?",
+        (person_id,),
+    )
+    return [row for row in c.fetchall()]
+
+
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
+def _parse_index_face_record(raw: str) -> dict:
+    if not raw:
+        raise ValueError("Missing index_face_record")
+    return json.loads(raw)
+
+
+def _index_quality_multiplier(index_record: dict) -> float:
+    fd = (index_record or {}).get("FaceDetail") or {}
+    quality = fd.get("Quality") or {}
+    pose = fd.get("Pose") or {}
+    occluded = (fd.get("FaceOccluded") or {}).get("Value")
+
+    sharpness = float(quality.get("Sharpness") or 0.0)
+    brightness = float(quality.get("Brightness") or 0.0)
+    yaw = abs(float(pose.get("Yaw") or 0.0))
+    pitch = abs(float(pose.get("Pitch") or 0.0))
+
+    sharp_mult = 0.35 + _clamp(sharpness / 20.0, 0.0, 1.5)
+    pose_penalty = math.exp(-((yaw + pitch) / 35.0))
+    bright_penalty = 1.0 - _clamp(abs(brightness - 55.0) / 90.0, 0.0, 0.45)
+    occ_penalty = 0.2 if occluded is True else 1.0
+
+    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty
+    return _clamp(mult, 0.08, 2.25)
+
+
+def _image_size(path: Path) -> Tuple[int, int]:
+    with Image.open(path) as im:
+        return im.size
+
+
+def _crop_face(path: Path, left: float, top: float, width: float, height: float) -> Image.Image:
+    with Image.open(path) as im:
+        W, H = im.size
+        x1 = left * W
+        y1 = top * H
+        x2 = (left + width) * W
+        y2 = (top + height) * H
+        crop = im.crop((int(x1), int(y1), int(x2), int(y2)))
+        return crop.convert("RGB")
+
+
+def _dhash(im: Image.Image, hash_size: int = 8) -> int:
+    g = im.convert("L").resize((hash_size + 1, hash_size), resample=Image.Resampling.LANCZOS)
+    pixels = list(g.getdata())
+    h = 0
+    bit = 0
+    for row in range(hash_size):
+        row_start = row * (hash_size + 1)
+        for col in range(hash_size):
+            if pixels[row_start + col] > pixels[row_start + col + 1]:
+                h |= 1 << bit
+            bit += 1
+    return h
+
+
+def _hamming_distance(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def pick_best_images(
+    conn,
+    person_id: str,
+    n: int = 3,
+    *,
+    image_dir: Optional[Path] = None,
+    pool_size: int = 25,
+    dhash_size: int = 8,
+    min_hamming: int = 10,
+) -> List[Tuple[str, float, float, float, float]]:
+    """
+    Return up to n best (image_name, left, top, width, height) for this person.
+
+    Selection: pool by size (bbox area × image pixels), rerank by size × quality^0.6,
+    then greedily add by dHash diversity.
+    """
+    image_dir = image_dir or IMAGE_DIR
+    appearances = get_appearances_for_person(conn, person_id)
+    if not appearances:
+        return []
+
+    by_size: List[Tuple[float, Tuple]] = []
+    for image_name, left, top, width, height, index_face_record in appearances:
+        path = image_dir / image_name
+        if not path.is_file():
+            raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
+        w, h = _image_size(path)
+        base = (float(width) * float(height)) * (w * h)
+        by_size.append(
+            (base, (image_name, float(left), float(top), float(width), float(height), index_face_record))
+        )
+    by_size.sort(key=lambda x: x[0], reverse=True)
+    pool = [t for _, t in by_size[: max(n, pool_size)]]
+
+    scored: List[Tuple[float, Tuple[str, float, float, float, float]]] = []
+    for image_name, left, top, width, height, index_face_record in pool:
+        path = image_dir / image_name
+        w, h = _image_size(path)
+        base = (width * height) * (w * h)
+        idx = _parse_index_face_record(index_face_record)
+        mult = _index_quality_multiplier(idx)
+        score = base * (mult ** 0.6)
+        scored.append((score, (image_name, left, top, width, height)))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    selected: List[Tuple[str, float, float, float, float]] = []
+    selected_hashes: List[int] = []
+    for _, app in scored:
+        image_name, left, top, width, height = app
+        src = image_dir / image_name
+        if not src.is_file():
+            continue
+        crop = _crop_face(src, left, top, width, height)
+        h = _dhash(crop, hash_size=dhash_size)
+        if any(_hamming_distance(h, hh) < min_hamming for hh in selected_hashes):
+            continue
+        selected.append(app)
+        selected_hashes.append(h)
+        if len(selected) >= n:
+            break
+
+    if len(selected) < n:
+        for _, app in scored:
+            if app in selected:
+                continue
+            selected.append(app)
+            if len(selected) >= n:
+                break
+    return selected[:n]

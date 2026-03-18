@@ -24,11 +24,18 @@ from pathlib import Path
 
 import boto3
 
+from config import IMAGE_DIR
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-ALL_IMAGES_DIR = ROOT_DIR / "all_images"
-THUMBS_DIR = ROOT_DIR / "thumbnails"
-IMAGE_DATA_PATH = ROOT_DIR / "image_data.json"
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_DIR = SCRIPT_DIR.parent
+
+# Originals live in the pipeline's configured IMAGE_DIR (often outside the repo).
+ALL_IMAGES_DIR = IMAGE_DIR
+
+# These are produced inside this repo by the graph pipeline.
+THUMBS_DIR = REPO_DIR / "thumbnails"
+IMAGE_DATA_PATH = REPO_DIR / "image_data.json"
 
 
 def get_spaces_client():
