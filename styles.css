@@ -14,20 +14,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   display: block;
   margin-left: 0;
 }
-div#tooltip {
-  position: fixed;
-  text-align: left;
-  font: 12px sans-serif;
-  background: white;
-  border: 1px solid #e3e3e3;
-  border-radius: 5px;
-  pointer-events: none;
-  visibility: hidden;
-}
-div#tooltip.visible {
-  visibility: visible;
-}
-.label-layer .node-label-bg { }
 .label-layer .node-label-line1,
 .label-layer .node-label-line2 {
   font-family: sans-serif;
@@ -114,7 +100,6 @@ div#tooltip.visible {
 #thumb-img {
   width: 100%;
   height: auto;
-  height: auto;
   display: block;
   border-radius: 6px;
   background: #f3f3f3;
@@ -191,12 +176,6 @@ div#tooltip.visible {
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 70px);
-}
-#thumb-default .thumb-default-title {
-  font: 12px sans-serif;
-  font-weight: 600;
-  color: #222;
-  margin-bottom: 6px;
 }
 #thumb-default .thumb-default-body {
   font: 12px/1.4 sans-serif;

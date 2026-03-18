@@ -6,7 +6,6 @@
   <svg id="svg">
     <g class="full-network-graph" :data-dummy="update()"></g>
   </svg>
-  <div id="tooltip"></div>
   <div id="thumb-preview" aria-hidden="true">
     <div class="thumb-header">
       <div class="thumb-title" id="thumb-title"></div>
@@ -57,8 +56,6 @@
   <script>
 
     const update = () => null,
-      width = 1200,
-      height = 500,
       linkedByIndex = {},
       options = {
         linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
@@ -71,8 +68,6 @@
         nodeStrokeWidth: 0,
         nodeStroke: "none",
       }
-
-    const invalidation = null;
 
     const nodeId = (d) => d.key;
     const linkSource = (d) => d.source;
@@ -96,7 +91,6 @@
         nodes: data.nodes,
         links: (data.edges || []).map((e) => ({ source: e[0], target: e[1], weight: e[2] })),
       };
-      const textScaling = 0.7;
       const nodeScaling = 2;
 
       function isConnected(a, b) {
@@ -113,19 +107,6 @@
         return a <= b ? `${a},${b}` : `${b},${a}`;
       }
 
-      function raiseHighlightedLinks(links, d) {
-        const sorted = [...links].sort((a, b) => {
-          const aConn = a.source === d || a.target === d;
-          const bConn = b.source === d || b.target === d;
-          if (aConn === bConn) return 0;
-          return aConn ? 1 : -1;
-        });
-        linkLayer.data(sorted, linkKey).order();
-        linkHitbox.data(sorted, linkKey).order();
-      }
-
-      const DIM_NODE_OPACITY = 0.15;
-      const DIM_EDGE_OPACITY = 0.08;
       const EDGE_HIGHLIGHT_WIDTH_MULT = 2;
       const MUTED_NODE_FILL = "#cfcfcf";
 
@@ -133,50 +114,7 @@
         return (d && clusterColorById[d.cluster]) || options.nodeFill;
       }
 
-      const formatViews = (n) => {
-        if (n == null || Number.isNaN(n)) return "—";
-        return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 0 }).format(n);
-      };
-
-      function createTooltip() {
-        return function (event, d) {
-          var matrix = this.getScreenCTM().translate(
-            +this.getAttribute("cx"),
-            +this.getAttribute("cy")
-          );
-          const label = d.label != null ? d.label : "Node " + d.id;
-          const cluster = d.cluster != null ? d.cluster : "—";
-          tooltipDiv.html(
-            `<div style="text-align: center; background: #ECEFF1;border-bottom: 1px solid #ddd; padding: 6px; font: 13px sans-serif"; margin-bottom: 4px>${label}</div><div style="padding: 10px">` +
-              `Category: <b>${cluster}</b>` +
-              `<br/>Photos: <b>${d.total}</b></div>`
-          );
-
-          // Show first so we can measure width/height, then place it.
-          tooltipDiv.classed("visible", true);
-          const tipEl = tooltipDiv.node();
-          const tipRect = tipEl ? tipEl.getBoundingClientRect() : { width: 0, height: 0 };
-
-          const margin = 12;
-          const offsetX = 15;
-          const desiredTop = matrix.f - 30;
-
-          const placeRightX = matrix.e + offsetX;
-          const placeLeftX = matrix.e - offsetX - tipRect.width;
-
-          // Flip left if too close to right edge.
-          const wouldOverflowRight = placeRightX + tipRect.width + margin > window.innerWidth;
-          let left = wouldOverflowRight ? placeLeftX : placeRightX;
-
-          // Clamp inside viewport.
-          left = Math.max(margin, Math.min(left, window.innerWidth - tipRect.width - margin));
-          let top = Math.max(margin, Math.min(desiredTop, window.innerHeight - tipRect.height - margin));
-
-          tooltipDiv.style("left", `${left}px`).style("top", `${top}px`);
-        };
-      }
-
-      // Edge hover tooltip is rendered as a Sigma-style label chip in `labelLayer`.
+      // Tooltips are rendered as Sigma-style label chips in `labelLayer`.
 
       const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
 
@@ -445,23 +383,18 @@
         window.open(url, "_blank", "noopener,noreferrer");
       }
 
-      let previewLocked = false;
-      let previewLockedKind = null; // "node" | "edge" | null
-      let previewLockedItem = null; // node object or link object
-      let previewLockedHighlightNode = null; // node object (can differ from previewLockedItem for node sidebar)
-
-      function isLockedFor(kind, item) {
-        return previewLocked && previewLockedKind === kind && previewLockedItem === item;
-      }
-
       // Sigma-style focus+context highlighting.
       // NOTE: These functions reference `node`, `label`, `linkLayer`, and `links` which are defined later.
       let edgeGradient = null;
-      let hoverKind = null; // "edge" | "node" | null
-      let hoverItem = null; // link object or node object
-      let hoveredNodeForLabel = null;
-      let hoveredEdgeForLabel = null;
-      let labelAllowFn = null; // (node) => boolean, used to hide muted labels
+      const state = {
+        lock: { active: false, kind: null, item: null, highlightNode: null }, // kind: "node" | "edge" | null
+        hover: { kind: null, item: null }, // kind: "edge" | "node" | null
+        label: { hoveredNode: null, hoveredEdge: null, allowFn: null },
+      };
+
+      function isLockedFor(kind, item) {
+        return state.lock.active && state.lock.kind === kind && state.lock.item === item;
+      }
 
       function ensureEdgeGradient() {
         if (edgeGradient) return edgeGradient;
@@ -475,8 +408,8 @@
       }
 
       function resetFocus() {
-        labelAllowFn = null;
-        hoveredEdgeForLabel = null;
+        state.label.allowFn = null;
+        state.label.hoveredEdge = null;
         // Nodes and labels.
         node
           .attr("opacity", 1)
@@ -501,7 +434,7 @@
         const focusColor = nodeColor(d);
         const isInFocusSet = (o) => isConnected(d, o);
         const isIncident = (l) => l.source === d || l.target === d;
-        labelAllowFn = isInFocusSet;
+        state.label.allowFn = isInFocusSet;
 
         node
           .attr("opacity", 1)
@@ -528,7 +461,7 @@
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
         const focusNodes = new Set([s, t]);
-        labelAllowFn = (o) => focusNodes.has(o);
+        state.label.allowFn = (o) => focusNodes.has(o);
         const sColor = nodeColor(s);
         const tColor = nodeColor(t);
 
@@ -563,24 +496,22 @@
 
       function applyLockedNodeHighlight(focusNode) {
         if (!focusNode) return;
-        previewLockedHighlightNode = focusNode;
-        tooltipDiv.classed("visible", false);
+        state.lock.highlightNode = focusNode;
         // Show the Sigma-style expanded label for the highlighted node
         // (e.g. when clicking a Top Connection in the sidebar).
-        hoveredEdgeForLabel = null;
-        hoveredNodeForLabel = focusNode;
+        state.label.hoveredEdge = null;
+        state.label.hoveredNode = focusNode;
         focusOnNode(focusNode);
         updateNodeLabels();
       }
 
       function unlockPreviewAndHighlights() {
-        previewLocked = false;
-        previewLockedKind = null;
-        previewLockedItem = null;
-        previewLockedHighlightNode = null;
+        state.lock.active = false;
+        state.lock.kind = null;
+        state.lock.item = null;
+        state.lock.highlightNode = null;
         hidePreview();
         clearEdgeHighlight();
-        tooltipDiv.classed("visible", false);
       }
 
       function clearEdgeHighlight() {
@@ -690,6 +621,43 @@
         );
       }
 
+      function getEdgeEndpoints(d) {
+        const s = getNodeFromLinkEnd(d.source);
+        const t = getNodeFromLinkEnd(d.target);
+        const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
+        const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+        return { s, t, sLabel, tLabel };
+      }
+
+      function pinEdge(d) {
+        const { s, t, sLabel, tLabel } = getEdgeEndpoints(d);
+        const filename = lookupEdgeFilename(sLabel, tLabel);
+        const total = d.weight;
+        state.lock.active = true;
+        state.lock.kind = "edge";
+        state.lock.item = d;
+        highlightEdge(d);
+        const endpoints = [
+          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—" },
+          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—" },
+        ];
+        showPreview(
+          `${[sLabel, tLabel].sort().join(" & ")}`,
+          filename,
+          null,
+          null,
+          total,
+          endpoints,
+          (n) => {
+            const target = nodeById.get(n.id);
+            if (!target) return;
+            applyLockedNodeHighlight(target);
+          },
+          "Connected nodes",
+          "Shared photos"
+        );
+      }
+
       links.forEach((d) => {
         linkedByIndex[`${d.source},${d.target}`] = 1;
       });
@@ -730,8 +698,6 @@
         window.addEventListener("resize", setViewBox);
       }
 
-      const tooltipDiv = d3.select("#tooltip").attr("class", "tooltip");
-
       const linkLayer = zoomLayer
         .append("g")
         .attr(
@@ -768,175 +734,107 @@
         .join("line")
         .attr("stroke-width", (d) => (options.linkStrokeWidth?.(d) ?? 1) + 1)
         .on("mouseover.tooltip", function (event, d) {
-          if (previewLocked) return;
+          if (state.lock.active) return;
           // Only one expanded tooltip at a time.
-          hoveredNodeForLabel = null;
-          hoveredEdgeForLabel = d;
-          updateNodeLabels();
-        })
-        .on("mousemove.tooltip", function (event, d) {
-          if (previewLocked) return;
-          // Keep chip positioned correctly while panning/zooming.
-          hoveredNodeForLabel = null;
-          hoveredEdgeForLabel = d;
+          state.label.hoveredNode = null;
+          state.label.hoveredEdge = d;
           updateNodeLabels();
         })
         .on("mouseover.highlight", function (event, d) {
           if (isCoarsePointer) return;
-          if (previewLocked && !isLockedFor("edge", d)) return;
-          hoverKind = "edge";
-          hoverItem = d;
+          if (state.lock.active && !isLockedFor("edge", d)) return;
+          state.hover.kind = "edge";
+          state.hover.item = d;
           highlightEdge(d);
         })
         .on("mouseout.tooltip", function () {
-          if (previewLocked) return;
-          hoveredEdgeForLabel = null;
+          if (state.lock.active) return;
+          state.label.hoveredEdge = null;
           updateNodeLabels();
         })
         .on("mouseout.highlight", function () {
           if (isCoarsePointer) return;
-          if (previewLocked) return;
-          hoverKind = null;
-          hoverItem = null;
+          if (state.lock.active) return;
+          state.hover.kind = null;
+          state.hover.item = null;
           clearEdgeHighlight();
         })
         .on("touchstart.tap", function (event, d) {
           if (!isCoarsePointer) return;
           event.preventDefault();
           event.stopPropagation();
-          previewLocked = true;
-          previewLockedKind = "edge";
-          previewLockedItem = d;
-          highlightEdge(d);
-
-          const s = getNodeFromLinkEnd(d.source);
-          const t = getNodeFromLinkEnd(d.target);
-          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
-          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
-          const filename = lookupEdgeFilename(sLabel, tLabel);
-          const total = d.weight;
-          const endpoints = [
-            { id: (s && s.id) ?? d.source, label: sLabel, weight: (s && typeof s.total === "number") ? s.total : "—" },
-            { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
-          ];
-          showPreview(
-            `${[sLabel, tLabel].sort().join(" & ")}`,
-            filename,
-            null,
-            null,
-            total,
-            endpoints,
-            (n) => {
-              const target = nodeById.get(n.id);
-              if (!target) return;
-              applyLockedNodeHighlight(target);
-            },
-            "Connected nodes",
-            "Shared photos"
-          );
+          pinEdge(d);
         })
         .on("click.open", function (event, d) {
           event.preventDefault();
           event.stopPropagation();
-          const s = getNodeFromLinkEnd(d.source);
-          const t = getNodeFromLinkEnd(d.target);
-          const sLabel = s && s.label != null ? s.label : String((d.source && d.source.id) ?? d.source);
-          const tLabel = t && t.label != null ? t.label : String((d.target && d.target.id) ?? d.target);
+          const { sLabel, tLabel } = getEdgeEndpoints(d);
           const filename = lookupEdgeFilename(sLabel, tLabel);
-          const total = d.weight;
           if (event.metaKey || event.ctrlKey) {
             openOriginalImage(filename);
             return;
           }
-          previewLocked = true;
-          previewLockedKind = "edge";
-          previewLockedItem = d;
-          highlightEdge(d);
-          const endpoints = [
-            { id: (s && s.id) ?? d.source, label: sLabel, weight: (s && typeof s.total === "number") ? s.total : "—" },
-            { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
-          ];
-          showPreview(
-            `${[sLabel, tLabel].sort().join(" & ")}`,
-            filename,
-            null,
-            null,
-            total,
-            endpoints,
-            (n) => {
-              const target = nodeById.get(n.id);
-              if (!target) return;
-              applyLockedNodeHighlight(target);
-            },
-            "Connected nodes",
-            "Shared photos"
-          );
+          pinEdge(d);
         });
 
       // Safety: if the pointer leaves the SVG (or the window blurs), clear hover focus.
       // This prevents rare "stuck highlight" states when mouseout doesn't fire (e.g. fast movements).
       d3.select("#svg").on("mouseleave.resetFocus", function () {
-        if (previewLocked) return;
-        hoverKind = null;
-        hoverItem = null;
-        hoveredEdgeForLabel = null;
-        hoveredNodeForLabel = null;
-        tooltipDiv.classed("visible", false);
+        if (state.lock.active) return;
+        state.hover.kind = null;
+        state.hover.item = null;
+        state.label.hoveredEdge = null;
+        state.label.hoveredNode = null;
         resetFocus();
       });
       // Guard against races where focus is applied after the pointer already left the element.
       d3.select("#svg").on("mousemove.hoverGuard", function (event) {
-        if (previewLocked) return;
-        if (!hoverKind || !hoverItem) return;
+        if (state.lock.active) return;
+        if (!state.hover.kind || !state.hover.item) return;
         if (!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") return;
         const el = document.elementFromPoint(event.clientX, event.clientY);
         if (!el) return;
 
-        if (hoverKind === "edge") {
+        if (state.hover.kind === "edge") {
           const line = el.closest && el.closest("g.links-hitbox line");
           if (!line) {
-            hoverKind = null;
-            hoverItem = null;
-            tooltipDiv.classed("visible", false);
+            state.hover.kind = null;
+            state.hover.item = null;
             resetFocus();
             return;
           }
           const datum = d3.select(line).datum();
-          if (datum !== hoverItem) {
-            hoverKind = null;
-            hoverItem = null;
-            tooltipDiv.classed("visible", false);
+          if (datum !== state.hover.item) {
+            state.hover.kind = null;
+            state.hover.item = null;
             resetFocus();
           }
           return;
         }
 
-        if (hoverKind === "node") {
+        if (state.hover.kind === "node") {
           const circle = el.closest && el.closest("g.nodes circle");
           if (!circle) {
-            hoverKind = null;
-            hoverItem = null;
-            tooltipDiv.classed("visible", false);
+            state.hover.kind = null;
+            state.hover.item = null;
             resetFocus();
             return;
           }
           const datum = d3.select(circle).datum();
-          if (datum !== hoverItem) {
-            hoverKind = null;
-            hoverItem = null;
-            tooltipDiv.classed("visible", false);
+          if (datum !== state.hover.item) {
+            state.hover.kind = null;
+            state.hover.item = null;
             resetFocus();
           }
         }
       });
       if (typeof window !== "undefined") {
         window.addEventListener("blur", () => {
-          if (previewLocked) return;
-          hoverKind = null;
-          hoverItem = null;
-          hoveredEdgeForLabel = null;
-          hoveredNodeForLabel = null;
-          tooltipDiv.classed("visible", false);
+          if (state.lock.active) return;
+          state.hover.kind = null;
+          state.hover.item = null;
+          state.label.hoveredEdge = null;
+          state.label.hoveredNode = null;
           resetFocus();
         });
       }
@@ -954,12 +852,12 @@
         .attr("fill", (d) => (d && clusterColorById[d.cluster]) || options.nodeFill)
         .attr("r", (d) => d.radius)
         .on("mouseover.tooltip", function (event, d) {
-          if (previewLocked) return;
-          hoverKind = "node";
-          hoverItem = d;
+          if (state.lock.active) return;
+          state.hover.kind = "node";
+          state.hover.item = d;
           // Only one expanded tooltip at a time.
-          hoveredEdgeForLabel = null;
-          hoveredNodeForLabel = d;
+          state.label.hoveredEdge = null;
+          state.label.hoveredNode = d;
           focusOnNode(d);
           updateNodeLabels();
         })
@@ -971,15 +869,15 @@
             openOriginalImage(filename);
             return;
           }
-          previewLocked = true;
-          previewLockedKind = "node";
-          previewLockedItem = d;
+          state.lock.active = true;
+          state.lock.kind = "node";
+          state.lock.item = d;
           const category = d.cluster || "";
           const color = category ? clusterColorById[category] || options.nodeFill : null;
           const total = typeof d.total === "number" ? d.total : null;
           const neighbors = topNeighborsForNode(d, 10);
           showPreview(d.label, filename, category, color, total, neighbors, (neighbor) => {
-            if (!previewLocked || previewLockedKind !== "node" || previewLockedItem !== d) return;
+            if (!state.lock.active || state.lock.kind !== "node" || state.lock.item !== d) return;
             const target = nodeById.get(neighbor.id);
             if (!target) return;
             applyLockedNodeHighlight(target);
@@ -989,22 +887,22 @@
         .on(
           "mouseover.fade",
           function (event, d) {
-            if (previewLocked && !isLockedFor("node", d)) return;
-            if (previewLocked) return;
+            if (state.lock.active && !isLockedFor("node", d)) return;
+            if (state.lock.active) return;
             focusOnNode(d);
           }
         )
         .on("mouseout.tooltip", function () {
-          if (previewLocked) return;
-          hoverKind = null;
-          hoverItem = null;
-          hoveredNodeForLabel = null;
+          if (state.lock.active) return;
+          state.hover.kind = null;
+          state.hover.item = null;
+          state.label.hoveredNode = null;
           updateNodeLabels();
         })
         .on(
           "mouseout.fade",
           function (event, d) {
-            if (previewLocked) return;
+            if (state.lock.active) return;
             resetFocus();
           }
         );
@@ -1024,6 +922,11 @@
         .join("rect")
         .attr("class", "node-label-bg")
         .attr("visibility", "hidden");
+
+      const nodeLabelBgById = new Map();
+      nodeLabelBg.each(function (d) {
+        nodeLabelBgById.set(d.id, this);
+      });
 
       const edgeLabelText = labelTextLayer.append("g").attr("class", "edge-label").attr("visibility", "hidden");
       edgeLabelText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
@@ -1047,7 +950,6 @@
       if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
       if (L) linkLayer.attr("stroke", ({ index: i }) => L[i]);
       if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
-      if (invalidation != null) invalidation.then(() => simulation.stop());
 
       const LABEL_SIZE_THRESHOLD = 10;
       let currentTransform = d3.zoomIdentity;
@@ -1061,13 +963,14 @@
 
         nodeLabelText.each(function (d) {
           const shouldShowBySize = d.radius * k >= LABEL_SIZE_THRESHOLD;
-          const shouldShowByHover = hoveredNodeForLabel === d;
-          const shouldAllow = typeof labelAllowFn === "function" ? !!labelAllowFn(d) : true;
+          const shouldShowByHover = state.label.hoveredNode === d;
+          const shouldAllow = typeof state.label.allowFn === "function" ? !!state.label.allowFn(d) : true;
           const visible = shouldAllow && (shouldShowBySize || shouldShowByHover);
 
           const g = d3.select(this);
           g.attr("visibility", visible ? "visible" : "hidden");
-          nodeLabelBg.filter((o) => o === d).attr("visibility", visible ? "visible" : "hidden");
+          const bgEl = nodeLabelBgById.get(d.id);
+          if (bgEl) bgEl.setAttribute("visibility", visible ? "visible" : "hidden");
           if (!visible) return;
 
           const sx = currentTransform.applyX(d.x);
@@ -1116,22 +1019,22 @@
           const ty = y - cy1;
           g.attr("transform", `translate(${x},${ty})`);
 
-          nodeLabelBg
-            .filter((o) => o === d)
-            .attr("x", bgX + x - overlapPx)
-            .attr("y", bgY + ty)
-            .attr("width", bgW + overlapPx)
-            .attr("height", bgH)
-            .attr("rx", 4)
-            .attr("ry", 4)
-            .style("fill", expanded ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.7)")
-            .attr("stroke", expanded ? "rgba(0,0,0,0.35)" : "none")
-            .attr("stroke-width", expanded ? 1 : 0);
+          if (bgEl) {
+            bgEl.setAttribute("x", String(bgX + x - overlapPx));
+            bgEl.setAttribute("y", String(bgY + ty));
+            bgEl.setAttribute("width", String(bgW + overlapPx));
+            bgEl.setAttribute("height", String(bgH));
+            bgEl.setAttribute("rx", "4");
+            bgEl.setAttribute("ry", "4");
+            bgEl.style.fill = expanded ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.7)";
+            bgEl.setAttribute("stroke", expanded ? "rgba(0,0,0,0.35)" : "none");
+            bgEl.setAttribute("stroke-width", expanded ? "1" : "0");
+          }
         });
 
         // Sigma-style integration: draw a screen-space clone of the hovered node above the tooltip bg.
-        if (hoveredNodeForLabel) {
-          const d = hoveredNodeForLabel;
+        if (state.label.hoveredNode) {
+          const d = state.label.hoveredNode;
           const sx = currentTransform.applyX(d.x);
           const sy = currentTransform.applyY(d.y);
           hoveredNodeClone
@@ -1145,12 +1048,12 @@
         }
 
         // Edge hover chip (two lines), positioned at the edge midpoint and offset to the right.
-        if (!hoveredEdgeForLabel) {
+        if (!state.label.hoveredEdge) {
           edgeLabelText.attr("visibility", "hidden");
           edgeLabelBg.attr("visibility", "hidden");
           return;
         }
-        const l = hoveredEdgeForLabel;
+        const l = state.label.hoveredEdge;
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
         if (!s || !t) {
@@ -1279,14 +1182,14 @@
         .on("click.previewDismiss", function (event) {
           // Ignore clicks that were part of drag/zoom.
           if (event.defaultPrevented) return;
-          if (!previewLocked) return;
+          if (!state.lock.active) return;
           unlockPreviewAndHighlights();
         });
       // Allow ESC to dismiss the pinned sidebar selection (same as clicking empty graph space).
       if (typeof window !== "undefined") {
         window.addEventListener("keydown", (e) => {
           if (e.key !== "Escape") return;
-          if (!previewLocked) return;
+          if (!state.lock.active) return;
           e.preventDefault();
           unlockPreviewAndHighlights();
         });
@@ -1322,7 +1225,6 @@
           .attr("x2", (d) => d.target.x)
           .attr("y2", (d) => d.target.y);
         node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
-        label.attr("x", (d) => d.x).attr("y", (d) => d.y);
       }
     });
 
