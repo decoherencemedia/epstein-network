@@ -56,8 +56,6 @@ def load_image_bytes(path: Path) -> bytes:
 
 def bbox_iou(a: dict, b: dict) -> float:
     """Intersection-over-union of two Rekognition-style boxes (Left, Top, Width, Height, 0-1)."""
-    def box_area(x):
-        return x["Width"] * x["Height"]
     l1, t1, w1, h1 = a["Left"], a["Top"], a["Width"], a["Height"]
     l2, t2, w2, h2 = b["Left"], b["Top"], b["Width"], b["Height"]
     xi1 = max(l1, l2)
@@ -67,7 +65,7 @@ def bbox_iou(a: dict, b: dict) -> float:
     inter_w = max(0, xi2 - xi1)
     inter_h = max(0, yi2 - yi1)
     inter = inter_w * inter_h
-    union = box_area(a) + box_area(b) - inter
+    union = w1 * h1 + w2 * h2 - inter
     return inter / union if union > 0 else 0.0
 
 

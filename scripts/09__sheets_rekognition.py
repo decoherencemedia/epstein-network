@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import json
 import os
-import tempfile
 from urllib.parse import urlparse, parse_qs
 import time
 from pathlib import Path
@@ -140,27 +139,19 @@ def download_image_bytes(url: str, session: requests.Session) -> bytes:
 
 
 def ensure_rekognition_compatible(image_bytes: bytes) -> bytes:
-    """Convert image bytes to JPEG or PNG if needed. Rekognition accepts only JPEG and PNG."""
-    # Already in a supported format
+    """Convert image bytes to JPEG if needed. Rekognition accepts only JPEG and PNG."""
     if len(image_bytes) >= 3 and image_bytes[:3] == b"\xff\xd8\xff":
         return image_bytes
     if len(image_bytes) >= 8 and image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
         return image_bytes
-    # Convert with Pillow; write to temp file then read back to avoid holding two copies in memory
-    img = Image.open(io.BytesIO(image_bytes))
-    if img.mode in ("RGBA", "P", "LA"):
-        img = img.convert("RGB")
-    elif img.mode != "RGB":
-        img = img.convert("RGB")
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
-        img.save(tmp.name, format="JPEG", quality=95)
-        tmp.flush()
-        out = Path(tmp.name).read_bytes()
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    out = buf.getvalue()
     if len(out) > REKOGNITION_MAX_BYTES:
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=True) as tmp:
-            img.save(tmp.name, format="JPEG", quality=70)
-            tmp.flush()
-            out = Path(tmp.name).read_bytes()
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=70)
+        out = buf.getvalue()
         if len(out) > REKOGNITION_MAX_BYTES:
             raise ValueError(
                 f"Converted image still too large for Rekognition: {len(out)} bytes (max {REKOGNITION_MAX_BYTES})"
@@ -377,18 +368,13 @@ def main():
 
     header = rows[0]
     col_index = {h.strip().lower().replace(" ", ""): i for i, h in enumerate(header)}
-
-    def col(name: str) -> int:
-        key = name.strip().lower().replace(" ", "")
-        return col_index[key]
-
-    idx_name = col("Name")
-    idx_person_id = col("Person ID")
-    idx_image_path = col("Image Path")
-    idx_ref_url = col("Reference Image URL")
-    idx_archived_url = col("Archived Reference Image URL")
-    idx_confidence = col("Confidence")
-    idx_json_response = col("JSON Response")
+    idx_name = col_index["name"]
+    idx_person_id = col_index["personid"]
+    idx_image_path = col_index["imagepath"]
+    idx_ref_url = col_index["referenceimageurl"]
+    idx_archived_url = col_index["archivedreferenceimageurl"]
+    idx_confidence = col_index["confidence"]
+    idx_json_response = col_index["jsonresponse"]
 
     missing = []
     for i in range(1, len(rows)):

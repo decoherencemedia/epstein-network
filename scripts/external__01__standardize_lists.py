@@ -1,42 +1,39 @@
 import json
 from pathlib import Path
 from itertools import chain
-import sqlite3
-from collections import defaultdict, Counter
+from collections import defaultdict
 
 import requests
 import pandas as pd
 
+from config import IMAGE_DIR
+from external__00__scrape_tommy import tommy_to_me
+
 JMAIL_DATA_URL = 'https://jmail.world/api/photos'
 TOMMY_DATA_URL = "https://tommycarstensen.com/epstein/data/gallery-db.js"
-TOMMY_JSON = "../jupyter/people_photo_links.json"
 
-IMAGE_DIR = Path("../../../all_images/")
+DATA_DIR = Path("data")
+TOMMY_JSON = DATA_DIR / "tommy_name_to_urls.json"
+
 EXTRACTED_FACES_DIR = Path("../../extracted_faces/")
 
 MAX_FOLDER_RANK = 1504
 
-OUTPUT_DIR = Path("person_to_files/")
+OUTPUT_DIR = DATA_DIR / "people_to_files"
 
 def jmail_to_me(s):
     if "EFTA" not in s:
         return
     doc = s.split("-")[0]
     pg = int(s.split("-")[1].split(".")[0])
-    return doc + f"-{pg:>04}.jpg"
-
-def tommy_to_me(s):
-    filename = s.strip("/").split("/")[-1]
-    doc = filename.split("_")[0]
-    pg = int(filename.split("_p")[1].split("_")[0])
-    return doc + f"-{pg-1:>04}.jpg"
+    return doc + f"-{pg:>05}.jpg"
 
 def process_basename(basename):
+    """Parse the folder naming convention I've been using"""
     parts = basename.split("__")
     to_ignore = parts[-1] == "IGNORE"
 
     match parts:
-        # Any folder explicitly marked IGNORE should not contribute a name.
         case [rank, person_id, "IGNORE"]:
             name = None
         case [rank, person_id, name, "IGNORE"]:
@@ -79,8 +76,8 @@ if __name__ == "__main__":
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     r = requests.get(TOMMY_DATA_URL)
-    image_data = json.loads(r.text.split(";")[0].split("DB=")[1])
-    all_renamed_tommy_photo_ids = [f"EFTA{photo['id']:0>8}-{photo['pg']-1:0>4}.jpg" for photo in image_data]
+    image_data = json.loads(r.text.split(";\nconst STAMP_RANGES")[0].split("DB_RAW=")[1])
+    all_renamed_tommy_photo_ids = [f"EFTA{photo[1]:0>8}-{photo[2]-1:0>5}.jpg" for photo in image_data]
 
     with open(TOMMY_JSON, "r") as f:
         tommy_person_to_urls = json.load(f)
@@ -110,6 +107,8 @@ if __name__ == "__main__":
         filenames = [file.name for file in (EXTRACTED_FACES_DIR / folder / "original").glob("*") if "_" not in file.name]
         my_person_to_files[identifier].extend(filenames)
     my_person_to_files = dict(my_person_to_files)
+
+    OUTPUT_DIR.mkdir(exist_ok=True)
 
     with open(OUTPUT_DIR / "me.json", "w") as f:
         json.dump(sort_dict(my_person_to_files), f, indent=4)

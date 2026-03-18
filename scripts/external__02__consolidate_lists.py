@@ -6,12 +6,13 @@ from typing import Any
 
 # ---------------- CONFIG ----------------
 
-LIST_DIR = Path("person_to_files/")
+DATA_DIR = Path("data")
+LIST_DIR = DATA_DIR / "people_to_files"
 ME_PATH = LIST_DIR / "me.json"
 JMAIL_PATH = LIST_DIR / "jmail.json"
 TOMMY_PATH = LIST_DIR / "tommy.json"
 
-OUTPUT_DIR = LIST_DIR / "consolidated"
+OUTPUT_DIR = DATA_DIR / "suggestions"
 TOP_K_CANDIDATES = 10
 
 # Only consider unknowns in me.json whose key starts with this prefix.

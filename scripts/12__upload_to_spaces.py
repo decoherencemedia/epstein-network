@@ -2,7 +2,7 @@
 """
 Upload selected graph images and thumbnails to DigitalOcean Spaces.
 
-- Reads image_data.json written by 09__create_graph.py:
+- Reads image_data.json written by 10__create_graph.py:
     {"nodes": {name: filename_or_null, ...}, "edges": {"A-B": filename_or_null, ...}}
 - Uploads originals from all_images/ to:   images/<filename>
 - Uploads thumbnails from thumbnails/ to:  thumbnails/<stem>.webp
@@ -72,13 +72,14 @@ def load_image_data():
         data = json.load(f)
     nodes = data.get("nodes") or {}
     edges = data.get("edges") or {}
+    # nodes values are [filename, bbox] or null; edges values are [filename, bbox_a, bbox_b] or null.
     filenames: set[str] = set()
-    for fn in nodes.values():
-        if fn:
-            filenames.add(fn)
-    for fn in edges.values():
-        if fn:
-            filenames.add(fn)
+    for v in nodes.values():
+        if v:
+            filenames.add(v[0])
+    for v in edges.values():
+        if v:
+            filenames.add(v[0])
     return sorted(filenames)
 
 

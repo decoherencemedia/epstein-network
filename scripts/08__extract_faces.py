@@ -1,11 +1,12 @@
 import os
 import re
-import sqlite3
+from shutil import copy2
 from PIL import Image
 
 # ---------------- CONFIG ----------------
 
-from config import DB_PATH, IMAGE_DIR
+from config import IMAGE_DIR
+from faces_db import init_db
 
 OUTPUT_DIR = "../../extracted_faces"
 CELEBRITY_CONFIDENCE_THRESHOLD = 95.0
@@ -20,7 +21,7 @@ def _slugify_name(name: str) -> str:
 
 
 def extract_faces():
-    conn = sqlite3.connect(DB_PATH)
+    conn = init_db()
     c = conn.cursor()
 
     # Fetch all data from faces (with person_id set)
@@ -112,7 +113,6 @@ def extract_faces():
 
             # Copy original image once per person
             if image_name not in copied_originals:
-                from shutil import copy2
                 copy2(image_path, os.path.join(originals_dir, image_name))
                 copied_originals.add(image_name)
 

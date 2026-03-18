@@ -107,6 +107,17 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   max-height: 55vh;
   object-fit: contain;
 }
+.thumb-bbox {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  border: 2px solid rgba(60, 220, 60);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+.thumb-bbox.thumb-bbox-b {
+  border-color: rgba(255, 220, 0);
+}
 .thumb-img-wrapper .thumb-img-external-icon {
   position: absolute;
   top: 6px;
@@ -146,7 +157,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 #thumb-top-neighbors .neighbors-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 #thumb-top-neighbors .neighbor-row {
   display: flex;
@@ -156,15 +167,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   font: 12px sans-serif;
   color: #222;
   width: 100%;
-  background: transparent;
+  background: none;
   border: 0;
-  padding: 4px 6px;
-  border-radius: 6px;
+  padding: 0 8px 0 0;
   text-align: left;
   cursor: pointer;
+  user-select: none;
 }
-#thumb-top-neighbors .neighbor-row:hover {
-  background: rgba(21, 101, 192, 0.08);
+#thumb-top-neighbors .neighbor-row:hover .neighbor-name {
+  background: rgba(21, 101, 192, 0.14);
 }
 #thumb-top-neighbors .neighbor-row:focus-visible {
   outline: 2px solid #1565c0;
@@ -284,16 +295,19 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   font-weight: 600;
 }
 #thumb-top-neighbors .neighbor-name {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  padding: 4px 8px;
 }
 #thumb-top-neighbors .neighbor-weight {
   flex: 0 0 auto;
-  font: 11px sans-serif;
-  color: #666;
+  font: 12px sans-serif;
+  color: #222;
 }
 #thumb-preview .thumb-actions {
   margin-top: 8px;

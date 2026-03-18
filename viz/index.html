@@ -18,6 +18,8 @@
     <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
       <span class="thumb-img-wrapper">
         <img id="thumb-img" alt="" />
+        <div id="thumb-bbox" class="thumb-bbox"></div>
+        <div id="thumb-bbox-b" class="thumb-bbox thumb-bbox-b"></div>
         <span class="thumb-img-external-icon" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -130,6 +132,8 @@
       const previewNeighborsEl = document.getElementById("thumb-top-neighbors");
       const previewDefaultEl = document.getElementById("thumb-default");
       const previewLegendEl = document.getElementById("thumb-legend");
+      const previewBboxEl = document.getElementById("thumb-bbox");
+      const previewBboxBEl = document.getElementById("thumb-bbox-b");
 
       const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
@@ -152,6 +156,40 @@
         return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
       }
 
+      let currentBboxes = [];
+
+      function positionBboxEl(el, bbox, displayW, displayH, offsetX, offsetY) {
+        const [left, top, width, height] = bbox;
+        el.style.left = `${offsetX + left * displayW}px`;
+        el.style.top = `${offsetY + top * displayH}px`;
+        el.style.width = `${width * displayW}px`;
+        el.style.height = `${height * displayH}px`;
+        el.style.display = "block";
+      }
+
+      function updateBboxOverlay() {
+        if (!currentBboxes.length) return;
+        const imgEl = previewImgEl;
+        const containerW = imgEl.clientWidth;
+        const containerH = imgEl.clientHeight;
+        const naturalW = imgEl.naturalWidth;
+        const naturalH = imgEl.naturalHeight;
+        if (!naturalW || !naturalH || !containerW || !containerH) return;
+        const scale = Math.min(containerW / naturalW, containerH / naturalH);
+        const displayW = naturalW * scale;
+        const displayH = naturalH * scale;
+        const offsetX = (containerW - displayW) / 2;
+        const offsetY = (containerH - displayH) / 2;
+        if (previewBboxEl && currentBboxes[0]) {
+          positionBboxEl(previewBboxEl, currentBboxes[0], displayW, displayH, offsetX, offsetY);
+        }
+        if (previewBboxBEl && currentBboxes[1]) {
+          positionBboxEl(previewBboxBEl, currentBboxes[1], displayW, displayH, offsetX, offsetY);
+        }
+      }
+
+      previewImgEl.addEventListener("load", updateBboxOverlay);
+
       if (!previewNeighborsEl) throw new Error("Missing #thumb-top-neighbors");
       if (!previewDefaultEl) throw new Error("Missing #thumb-default");
       if (!previewLegendEl) throw new Error("Missing #thumb-legend");
@@ -169,6 +207,9 @@
         previewEmptyEl.style.display = "none";
         previewNeighborsEl.style.display = "none";
         previewNeighborsEl.innerHTML = "";
+        currentBboxes = [];
+        if (previewBboxEl) previewBboxEl.style.display = "none";
+        if (previewBboxBEl) previewBboxBEl.style.display = "none";
         previewDefaultEl.style.display = "block";
         previewEl.classList.add("visible");
         previewEl.setAttribute("aria-hidden", "false");
@@ -322,6 +363,7 @@
           const name = document.createElement("div");
           name.className = "neighbor-name";
           name.textContent = n.label;
+          if (n.color) name.style.boxShadow = `inset 0 0 0 2px ${n.color}`;
           const weight = document.createElement("div");
           weight.className = "neighbor-weight";
           weight.textContent = String(n.weight);
@@ -347,7 +389,8 @@
         topNeighbors,
         onSelectNeighbor,
         topNeighborsTitle,
-        totalLabel
+        totalLabel,
+        bboxes
       ) {
         const src = toWebpThumbPath(filename);
         const origUrl = toOriginalImageUrl(filename);
@@ -368,6 +411,9 @@
           previewTotalEl.style.display = "none";
           previewTotalEl.textContent = "";
         }
+        currentBboxes = (src && Array.isArray(bboxes) && bboxes.length) ? bboxes : [];
+        if (previewBboxEl) previewBboxEl.style.display = "none";
+        if (previewBboxBEl) previewBboxBEl.style.display = "none";
         if (src) {
           previewEmptyEl.style.display = "none";
           previewImgLinkEl.style.display = "block";
@@ -378,6 +424,9 @@
           }
           previewImgEl.src = src;
           previewImgEl.alt = title || "";
+          if (currentBboxes.length && previewImgEl.complete && previewImgEl.naturalWidth) {
+            updateBboxOverlay();
+          }
         } else {
           previewImgLinkEl.style.display = "none";
           previewImgLinkEl.removeAttribute("href");
@@ -635,16 +684,17 @@
         return out;
       }
 
-      function lookupEdgeFilename(labelA, labelB) {
+      function lookupEdgeEntry(labelA, labelB) {
         const a = labelA ?? "";
         const b = labelB ?? "";
         const sortedKey = [a, b].sort().join("-");
         const unsortedKey = `${a}-${b}`;
         const reverseKey = `${b}-${a}`;
-        return (
+        const v =
           (imageData && imageData.edges && (imageData.edges[sortedKey] || imageData.edges[unsortedKey] || imageData.edges[reverseKey])) ||
-          null
-        );
+          null;
+        if (!Array.isArray(v)) return null;
+        return { filename: v[0], bboxA: v[1], bboxB: v[2] };
       }
 
       function getEdgeEndpoints(d) {
@@ -657,15 +707,21 @@
 
       function pinEdge(d) {
         const { s, t, sLabel, tLabel } = getEdgeEndpoints(d);
-        const filename = lookupEdgeFilename(sLabel, tLabel);
+        const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
+        const filename = edgeEntry ? edgeEntry.filename : null;
+        const edgeBboxes = edgeEntry ? [edgeEntry.bboxA, edgeEntry.bboxB].filter(Boolean) : null;
         const total = d.weight;
         state.lock.active = true;
         state.lock.kind = "edge";
         state.lock.item = d;
         highlightEdge(d);
+        // bboxA = alphabetically first label (green), bboxB = second (yellow)
+        const BBOX_COLORS = sLabel <= tLabel
+          ? { [sLabel]: "rgba(60, 220, 60, 0.95)", [tLabel]: "rgba(255, 220, 0, 0.95)" }
+          : { [tLabel]: "rgba(60, 220, 60, 0.95)", [sLabel]: "rgba(255, 220, 0, 0.95)" };
         const endpoints = [
-          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—" },
-          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—" },
+          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—", color: BBOX_COLORS[sLabel] },
+          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—", color: BBOX_COLORS[tLabel] },
         ];
         showPreview(
           `${[sLabel, tLabel].sort().join(" & ")}`,
@@ -680,7 +736,8 @@
             applyLockedNodeHighlight(target);
           },
           "Connected nodes",
-          "Shared photos"
+          "Shared photos",
+          edgeBboxes
         );
       }
 
@@ -795,7 +852,8 @@
           event.preventDefault();
           event.stopPropagation();
           const { sLabel, tLabel } = getEdgeEndpoints(d);
-          const filename = lookupEdgeFilename(sLabel, tLabel);
+          const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
+          const filename = edgeEntry ? edgeEntry.filename : null;
           if (event.metaKey || event.ctrlKey) {
             openOriginalImage(filename);
             return;
@@ -890,7 +948,9 @@
         .on("click.open", function (event, d) {
           event.preventDefault();
           event.stopPropagation();
-          const filename = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
+          const nodeEntry = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
+          const filename = Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null);
+          const bbox = Array.isArray(nodeEntry) ? nodeEntry[1] : null;
           if (event.metaKey || event.ctrlKey) {
             openOriginalImage(filename);
             return;
@@ -907,7 +967,7 @@
             const target = nodeById.get(neighbor.id);
             if (!target) return;
             applyLockedNodeHighlight(target);
-          }, "Top connections", "Photos");
+          }, "Top connections", "Photos", bbox ? [bbox] : null);
           applyLockedNodeHighlight(d);
         })
         .on(
@@ -1276,6 +1336,8 @@
           .attr("y2", (d) => d.target.y);
         node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
       }
+    }).catch(function (err) {
+      document.body.innerHTML = `<pre style="padding:2rem;color:#c00;font:14px/1.6 monospace">Failed to load data:\n${err}</pre>`;
     });
 
   </script>
