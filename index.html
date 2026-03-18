@@ -565,7 +565,12 @@
         if (!focusNode) return;
         previewLockedHighlightNode = focusNode;
         tooltipDiv.classed("visible", false);
+        // Show the Sigma-style expanded label for the highlighted node
+        // (e.g. when clicking a Top Connection in the sidebar).
+        hoveredEdgeForLabel = null;
+        hoveredNodeForLabel = focusNode;
         focusOnNode(focusNode);
+        updateNodeLabels();
       }
 
       function unlockPreviewAndHighlights() {
@@ -703,6 +708,9 @@
       const parent = d3.select(".full-network-graph");
       const zoomLayer = parent.append("g").attr("class", "zoom-layer");
       const labelLayer = parent.append("g").attr("class", "label-layer").style("pointer-events", "none");
+      const labelBgLayer = labelLayer.append("g").attr("class", "label-bg-layer");
+      const labelNodeLayer = labelLayer.append("g").attr("class", "label-node-layer");
+      const labelTextLayer = labelLayer.append("g").attr("class", "label-text-layer");
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
       const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
@@ -812,7 +820,7 @@
             { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
           ];
           showPreview(
-            `${[sLabel, tLabel].sort().join(" - ")}`,
+            `${[sLabel, tLabel].sort().join(" & ")}`,
             filename,
             null,
             null,
@@ -849,7 +857,7 @@
             { id: (t && t.id) ?? d.target, label: tLabel, weight: (t && typeof t.total === "number") ? t.total : "—" },
           ];
           showPreview(
-            `${[sLabel, tLabel].sort().join(" - ")}`,
+            `${[sLabel, tLabel].sort().join(" & ")}`,
             filename,
             null,
             null,
@@ -1001,24 +1009,32 @@
           }
         );
 
-      const label = labelLayer
+      const nodeLabelText = labelTextLayer
         .selectAll("g.node-label")
         .data(nodes, (d) => d.id)
         .join((enter) => {
           const g = enter.append("g").attr("class", "node-label").attr("visibility", "hidden");
-          g.append("rect").attr("class", "node-label-bg");
           g.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
-          g.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 14);
+          g.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
           return g;
         });
-
-      const edgeLabel = labelLayer
-        .append("g")
-        .attr("class", "edge-label")
+      const nodeLabelBg = labelBgLayer
+        .selectAll("rect.node-label-bg")
+        .data(nodes, (d) => d.id)
+        .join("rect")
+        .attr("class", "node-label-bg")
         .attr("visibility", "hidden");
-      edgeLabel.append("rect").attr("class", "node-label-bg");
-      edgeLabel.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
-      edgeLabel.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
+
+      const edgeLabelText = labelTextLayer.append("g").attr("class", "edge-label").attr("visibility", "hidden");
+      edgeLabelText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
+      edgeLabelText.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
+      const edgeLabelBg = labelBgLayer.append("rect").attr("class", "node-label-bg").attr("visibility", "hidden");
+
+      const hoveredNodeClone = labelNodeLayer
+        .append("circle")
+        .attr("class", "hover-node-clone")
+        .attr("visibility", "hidden")
+        .attr("stroke", "none");
 
       const simulation = d3
         .forceSimulation(nodes)
@@ -1043,7 +1059,7 @@
         const GAP_PX = 5;
         const LINE_HEIGHT = 6;
 
-        label.each(function (d) {
+        nodeLabelText.each(function (d) {
           const shouldShowBySize = d.radius * k >= LABEL_SIZE_THRESHOLD;
           const shouldShowByHover = hoveredNodeForLabel === d;
           const shouldAllow = typeof labelAllowFn === "function" ? !!labelAllowFn(d) : true;
@@ -1051,14 +1067,17 @@
 
           const g = d3.select(this);
           g.attr("visibility", visible ? "visible" : "hidden");
+          nodeLabelBg.filter((o) => o === d).attr("visibility", visible ? "visible" : "hidden");
           if (!visible) return;
 
           const sx = currentTransform.applyX(d.x);
           const sy = currentTransform.applyY(d.y);
+          const expanded = shouldShowByHover;
+          // Keep label text anchored; on hover we only expand the background under the node.
+          const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * k * 0.6)) : 0;
           const x = sx + d.radius * k + GAP_PX;
           const y = sy;
 
-          const expanded = shouldShowByHover;
           const line1 = g.select("text.node-label-line1");
           const line2 = g.select("text.node-label-line2");
 
@@ -1069,6 +1088,8 @@
             .attr("y", LINE_HEIGHT);
           if (expanded) {
             line2.attr("fill", nodeColor(d));
+          } else {
+            line2.attr("fill", null);
           }
 
           // Measure and size background rect.
@@ -1083,35 +1104,58 @@
             bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
           }
 
-          g.select("rect.node-label-bg")
-            .attr("x", bbox.x - PADDING_X)
-            .attr("y", bbox.y - PADDING_Y)
-            .attr("width", bbox.width + 2 * PADDING_X)
-            .attr("height", bbox.height + 2 * PADDING_Y)
+          const bgX = bbox.x - PADDING_X;
+          const bgY = bbox.y - PADDING_Y;
+          const bgW = bbox.width + 2 * PADDING_X;
+          const bgH = bbox.height + 2 * PADDING_Y;
+          // IMPORTANT: keep the first line anchored (no vertical jump) when expanding.
+          // We center based on the first line's background box only, then expand the bg around it.
+          const bg1Y = bbox1.y - PADDING_Y;
+          const bg1H = bbox1.height + 2 * PADDING_Y;
+          const cy1 = bg1Y + bg1H / 2;
+          const ty = y - cy1;
+          g.attr("transform", `translate(${x},${ty})`);
+
+          nodeLabelBg
+            .filter((o) => o === d)
+            .attr("x", bgX + x - overlapPx)
+            .attr("y", bgY + ty)
+            .attr("width", bgW + overlapPx)
+            .attr("height", bgH)
             .attr("rx", 4)
             .attr("ry", 4)
-            // Use style so it overrides stylesheet defaults.
             .style("fill", expanded ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.7)")
             .attr("stroke", expanded ? "rgba(0,0,0,0.35)" : "none")
             .attr("stroke-width", expanded ? 1 : 0);
-
-          // Vertically center the whole chip on the node.
-          const bgY = bbox.y - PADDING_Y;
-          const bgH = bbox.height + 2 * PADDING_Y;
-          const cy = bgY + bgH / 2;
-          g.attr("transform", `translate(${x},${y - cy})`);
         });
+
+        // Sigma-style integration: draw a screen-space clone of the hovered node above the tooltip bg.
+        if (hoveredNodeForLabel) {
+          const d = hoveredNodeForLabel;
+          const sx = currentTransform.applyX(d.x);
+          const sy = currentTransform.applyY(d.y);
+          hoveredNodeClone
+            .attr("visibility", "visible")
+            .attr("cx", sx)
+            .attr("cy", sy)
+            .attr("r", d.radius * k)
+            .attr("fill", nodeColor(d));
+        } else {
+          hoveredNodeClone.attr("visibility", "hidden");
+        }
 
         // Edge hover chip (two lines), positioned at the edge midpoint and offset to the right.
         if (!hoveredEdgeForLabel) {
-          edgeLabel.attr("visibility", "hidden");
+          edgeLabelText.attr("visibility", "hidden");
+          edgeLabelBg.attr("visibility", "hidden");
           return;
         }
         const l = hoveredEdgeForLabel;
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
         if (!s || !t) {
-          edgeLabel.attr("visibility", "hidden");
+          edgeLabelText.attr("visibility", "hidden");
+          edgeLabelBg.attr("visibility", "hidden");
           return;
         }
         const mx = (s.x + t.x) / 2;
@@ -1121,12 +1165,13 @@
         const x = sx + GAP_PX;
         const y = sy;
 
-        edgeLabel.attr("visibility", "visible");
-        const el1 = edgeLabel.select("text.node-label-line1");
-        const el2 = edgeLabel.select("text.node-label-line2");
+        edgeLabelText.attr("visibility", "visible");
+        edgeLabelBg.attr("visibility", "visible");
+        const el1 = edgeLabelText.select("text.node-label-line1");
+        const el2 = edgeLabelText.select("text.node-label-line2");
         const sLabel = s.label != null ? s.label : String(s.id);
         const tLabel = t.label != null ? t.label : String(t.id);
-        el1.text(`${sLabel} — ${tLabel}`);
+        el1.text(`${sLabel} & ${tLabel}`);
         el2
           .text(`Shared photos: ${l.weight ?? "—"}`)
           .attr("display", null)
@@ -1141,8 +1186,7 @@
         const maxY = Math.max(b1.y + b1.height, b2.y + b2.height);
         const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 
-        edgeLabel
-          .select("rect.node-label-bg")
+        edgeLabelBg
           .attr("x", bbox.x - PADDING_X)
           .attr("y", bbox.y - PADDING_Y)
           .attr("width", bbox.width + 2 * PADDING_X)
@@ -1156,7 +1200,8 @@
         const bgY = bbox.y - PADDING_Y;
         const bgH = bbox.height + 2 * PADDING_Y;
         const cy = bgY + bgH / 2;
-        edgeLabel.attr("transform", `translate(${x},${y - cy})`);
+        edgeLabelText.attr("transform", `translate(${x},${y - cy})`);
+        edgeLabelBg.attr("x", bbox.x - PADDING_X + x).attr("y", bbox.y - PADDING_Y + (y - cy));
       }
 
       function getSidebarWidthPx() {
@@ -1237,6 +1282,15 @@
           if (!previewLocked) return;
           unlockPreviewAndHighlights();
         });
+      // Allow ESC to dismiss the pinned sidebar selection (same as clicking empty graph space).
+      if (typeof window !== "undefined") {
+        window.addEventListener("keydown", (e) => {
+          if (e.key !== "Escape") return;
+          if (!previewLocked) return;
+          e.preventDefault();
+          unlockPreviewAndHighlights();
+        });
+      }
       // Render under overlays, but center the graph in the visible region.
       // IMPORTANT: translate values are in SVG user units (viewBox), not screen pixels.
       let appliedInitialViewportCentering = false;
