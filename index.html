@@ -30,7 +30,7 @@
       </span>
     </a>
     <div id="thumb-top-neighbors" style="display:none"></div>
-    <div id="thumb-empty" style="display:none">No non-NSFW images available</div>
+    <div id="thumb-empty" style="display:none">No images to display<br>All photos contain minors or nudity</div>
     <div id="thumb-default" style="display:none">
       <div class="thumb-default-body">
         <div>This is a visualization of the people whose faces are in the <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are people, and the lines (edges) between them are when two people are in the same photograph together.</div>
@@ -46,7 +46,7 @@
           and visualized using
           <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
         </div>
-        <div>The scripts for the pipeline and this visualization are available on <a href="https://github.com/epstein-library/epstein-network">GitHub</a>.</div>
+        <div>The scripts for the pipeline and this visualization are available on <a href="https://github.com/decoherencemedia/epstein-network">GitHub</a>.</div>
       </div>
       <div class="thumb-legend" id="thumb-legend" style="display:none"></div>
     </div>
@@ -219,11 +219,6 @@
         const cats = Array.isArray(categories) ? categories.filter(Boolean) : [];
         previewLegendEl.innerHTML = "";
 
-        const title = document.createElement("div");
-        title.className = "thumb-legend-title";
-        title.textContent = "Legend";
-        previewLegendEl.appendChild(title);
-
         const colorsTitle = document.createElement("div");
         colorsTitle.className = "legend-section-title";
         colorsTitle.textContent = "Node color";
@@ -267,7 +262,8 @@
         const sizesWrap = document.createElement("div");
         sizesWrap.className = "legend-sizes";
 
-        const photoCounts = [5, 50, 500, 5000];
+        // const photoCounts = [5, 50, 500, 5000];
+        const photoCounts = [5000, 500, 50, 5];
         // The dataset generator's node `size` is a transformed function of photo counts.
         // For the legend, we assume the intended relationship is √(photos) up to a single
         // global scale factor, and we *learn that factor* from the actual nodes so the
@@ -342,7 +338,7 @@
         previewLegendEl.style.display = "block";
       }
 
-      function setTopNeighbors(neighbors, onSelectNeighbor, titleText = "Top connections") {
+      function setTopNeighbors(neighbors, onSelectNeighbor, titleText = "Top connections", onNavigateToNeighbor) {
         if (!neighbors || !neighbors.length) {
           previewNeighborsEl.style.display = "none";
           previewNeighborsEl.innerHTML = "";
@@ -359,7 +355,7 @@
           const row = document.createElement("button");
           row.type = "button";
           row.className = "neighbor-row";
-          row.setAttribute("aria-label", `Highlight ${n.label}`);
+          row.setAttribute("aria-label", `Highlight ${n.label}. Double-click to show in sidebar.`);
           const name = document.createElement("div");
           name.className = "neighbor-name";
           name.textContent = n.label;
@@ -369,10 +365,25 @@
           weight.textContent = String(n.weight);
           row.appendChild(name);
           row.appendChild(weight);
+          let clickTimeout = null;
           row.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (typeof onSelectNeighbor === "function") onSelectNeighbor(n);
+            if (e.detail === 2) return;
+            if (clickTimeout) clearTimeout(clickTimeout);
+            clickTimeout = setTimeout(() => {
+              clickTimeout = null;
+              if (typeof onSelectNeighbor === "function") onSelectNeighbor(n);
+            }, 250);
+          });
+          row.addEventListener("dblclick", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (clickTimeout) {
+              clearTimeout(clickTimeout);
+              clickTimeout = null;
+            }
+            if (typeof onNavigateToNeighbor === "function") onNavigateToNeighbor(n);
           });
           list.appendChild(row);
         });
@@ -390,7 +401,8 @@
         onSelectNeighbor,
         topNeighborsTitle,
         totalLabel,
-        bboxes
+        bboxes,
+        onNavigateToNeighbor
       ) {
         const src = toWebpThumbPath(filename);
         const origUrl = toOriginalImageUrl(filename);
@@ -434,7 +446,7 @@
           previewImgEl.alt = "";
           previewEmptyEl.style.display = "block";
         }
-        setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle);
+        setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle, onNavigateToNeighbor);
         previewEl.classList.add("visible");
         previewEl.setAttribute("aria-hidden", "false");
       }
@@ -705,6 +717,42 @@
         return { s, t, sLabel, tLabel };
       }
 
+      function showNodeInSidebar(targetNode) {
+        const nodeEntry = imageData && imageData.nodes ? imageData.nodes[targetNode.label] : null;
+        const filename = Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null);
+        const bbox = Array.isArray(nodeEntry) ? nodeEntry[1] : null;
+        state.lock.active = true;
+        state.lock.kind = "node";
+        state.lock.item = targetNode;
+        const category = targetNode.cluster || "";
+        const color = category ? clusterColorById[category] || options.nodeFill : null;
+        const total = typeof targetNode.total === "number" ? targetNode.total : null;
+        const neighbors = topNeighborsForNode(targetNode, 10);
+        showPreview(
+          targetNode.label,
+          filename,
+          category,
+          color,
+          total,
+          neighbors,
+          (neighbor) => {
+            if (!state.lock.active || state.lock.kind !== "node" || state.lock.item !== targetNode) return;
+            const t = nodeById.get(neighbor.id);
+            if (!t) return;
+            applyLockedNodeHighlight(t);
+          },
+          "Top connections",
+          "Photos",
+          bbox ? [bbox] : null,
+          (neighbor) => {
+            const t = nodeById.get(neighbor.id);
+            if (!t) return;
+            showNodeInSidebar(t);
+          }
+        );
+        applyLockedNodeHighlight(targetNode);
+      }
+
       function pinEdge(d) {
         const { s, t, sLabel, tLabel } = getEdgeEndpoints(d);
         const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
@@ -737,7 +785,12 @@
           },
           "Connected nodes",
           "Shared photos",
-          edgeBboxes
+          edgeBboxes,
+          (n) => {
+            const target = nodeById.get(n.id);
+            if (!target) return;
+            showNodeInSidebar(target);
+          }
         );
       }
 
@@ -976,7 +1029,11 @@
             const target = nodeById.get(neighbor.id);
             if (!target) return;
             applyLockedNodeHighlight(target);
-          }, "Top connections", "Photos", bbox ? [bbox] : null);
+          }, "Top connections", "Photos", bbox ? [bbox] : null, (neighbor) => {
+            const target = nodeById.get(neighbor.id);
+            if (!target) return;
+            showNodeInSidebar(target);
+          });
           applyLockedNodeHighlight(d);
         })
         .on(
