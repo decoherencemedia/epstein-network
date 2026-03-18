@@ -2,31 +2,42 @@
 """
 Compare indexed people to AWS Rekognition's celebrity database.
 
-Processes by person: for each person_id, picks the image where their face is
-largest (bbox area × image resolution), calls RecognizeCelebrities once,
-then writes celebrity_name / celebrity_id / celebrity_confidence to all
-faces rows for that person_id.
+Processes by person: for each person_id, picks the 3 best appearances (largest,
+highest quality), runs RecognizeCelebrities on each until one reaches ≥99%
+confidence (early exit) or all 3 are tried. If all are ≤95%, no match. If any
+are in 95.1–98.9%, the highest confidence celebrity is used for that person.
+Writes celebrity_name / celebrity_id / celebrity_confidence to all faces for
+that person_id.
 
-Run after clustering. One RecognizeCelebrities call per person (Group 2 pricing).
+Run after clustering. Up to 3 RecognizeCelebrities calls per person (Group 2 pricing).
 """
 
+import json
+import math
 import time
 from pathlib import Path
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 import boto3
 from PIL import Image
 
-from config import IMAGE_DIR
+from config import IMAGE_DIR, REKOGNITION_REGION
 from faces_db import init_db
 
 # ---------------- CONFIG ----------------
 
-REGION = "us-east-1"
 API_DELAY_SECONDS = 0.2
 
 MIN_IOU = 0.3
-MIN_CELEBRITY_CONFIDENCE = 95.0
+MIN_CELEBRITY_CONFIDENCE = 95.0   # below this = no match
+CELEBRITY_CONFIDENCE_HIGH = 99.0  # ≥ this = satisfactory, stop trying more faces
+NUM_BEST_FACES = 3
+
+# Best-face selection improvements (uses IndexFaces metadata + perceptual diversity)
+BEST_FACE_RERANK_POOL_SIZE = 25
+DHASH_SIZE = 8  # 8 => 64-bit hash
+MIN_DHASH_HAMMING_DISTANCE = 10
+
 REKOGNITION_MAX_BYTES = 5 * 1024 * 1024
 
 DRY_RUN = False
@@ -34,7 +45,7 @@ PROCESS_ALL_PEOPLE = False
 
 # --------------------------------------
 
-rekognition = boto3.client("rekognition", region_name=REGION)
+rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
 
 
 def load_image_bytes(path: Path) -> bytes:
@@ -106,56 +117,172 @@ def get_person_ids(conn, skip_already_done=True):
 
 
 def get_appearances_for_person(conn, person_id):
-    """Return list of (image_name, left, top, width, height) for that person."""
+    """Return list of (image_name, left, top, width, height, index_face_record) for that person."""
     c = conn.cursor()
     c.execute(
-        "SELECT image_name, left, top, width, height FROM faces WHERE person_id = ?",
+        "SELECT image_name, left, top, width, height, index_face_record FROM faces WHERE person_id = ?",
         (person_id,),
     )
     return [row for row in c.fetchall()]
 
 
-def pick_best_image(conn, person_id):
+def _clamp(x: float, lo: float, hi: float) -> float:
+    return lo if x < lo else hi if x > hi else x
+
+
+def _parse_index_face_record(raw: str) -> dict:
+    if not raw:
+        raise ValueError("Missing index_face_record")
+    return json.loads(raw)
+
+
+def _index_quality_multiplier(index_record: dict) -> float:
+    fd = (index_record or {}).get("FaceDetail") or {}
+    quality = fd.get("Quality") or {}
+    pose = fd.get("Pose") or {}
+    occluded = (fd.get("FaceOccluded") or {}).get("Value")
+
+    sharpness = float(quality.get("Sharpness") or 0.0)
+    brightness = float(quality.get("Brightness") or 0.0)
+    yaw = abs(float(pose.get("Yaw") or 0.0))
+    pitch = abs(float(pose.get("Pitch") or 0.0))
+
+    sharp_mult = 0.35 + _clamp(sharpness / 20.0, 0.0, 1.5)
+    pose_penalty = math.exp(-((yaw + pitch) / 35.0))
+    bright_penalty = 1.0 - _clamp(abs(brightness - 55.0) / 90.0, 0.0, 0.45)
+    occ_penalty = 0.2 if occluded is True else 1.0
+
+    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty
+    return _clamp(mult, 0.08, 2.25)
+
+
+def _crop_face(path: Path, left: float, top: float, width: float, height: float) -> Image.Image:
+    with Image.open(path) as im:
+        W, H = im.size
+        x1 = left * W
+        y1 = top * H
+        x2 = (left + width) * W
+        y2 = (top + height) * H
+        crop = im.crop((int(x1), int(y1), int(x2), int(y2)))
+        return crop.convert("RGB")
+
+
+def _dhash(im: Image.Image, hash_size: int = DHASH_SIZE) -> int:
+    g = im.convert("L").resize((hash_size + 1, hash_size), resample=Image.Resampling.LANCZOS)
+    pixels = list(g.getdata())
+    h = 0
+    bit = 0
+    for row in range(hash_size):
+        row_start = row * (hash_size + 1)
+        for col in range(hash_size):
+            if pixels[row_start + col] > pixels[row_start + col + 1]:
+                h |= 1 << bit
+            bit += 1
+    return h
+
+
+def _hamming_distance(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def pick_best_images(
+    conn, person_id: str, n: int = NUM_BEST_FACES
+) -> List[Tuple[str, float, float, float, float]]:
     """
-    Return (image_name, left, top, width, height) for the appearance where
-    this person's face is largest (bbox area × image pixel count).
-    Returns None if no valid image found.
+    Return up to n best (image_name, left, top, width, height) for this person.
+
+    Selection:
+    - Pool: take the largest faces by size (bbox area × image pixels).
+    - Rerank: size × (IndexFaces-based quality multiplier ** 0.6).
+    - Diversity: greedily skip near-duplicate face crops by dHash distance.
     """
     appearances = get_appearances_for_person(conn, person_id)
     if not appearances:
-        return None
-    best = None
-    best_score = -1.0
-    for image_name, left, top, width, height in appearances:
+        return []
+
+    by_size: List[Tuple[float, Tuple[str, float, float, float, float, str]]] = []
+    for image_name, left, top, width, height, index_face_record in appearances:
         path = IMAGE_DIR / image_name
         if not path.is_file():
             raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
         w, h = image_size(path)
-        # Normalized bbox area × pixel count = approximate face size in pixels
-        score = (width * height) * (w * h)
-        if score > best_score:
-            best_score = score
-            best = (image_name, left, top, width, height)
-    return best
+        base = (float(width) * float(height)) * (w * h)
+        by_size.append(
+            (base, (image_name, float(left), float(top), float(width), float(height), index_face_record))
+        )
+    by_size.sort(key=lambda x: x[0], reverse=True)
+    pool = [t for _, t in by_size[: max(n, BEST_FACE_RERANK_POOL_SIZE)]]
+
+    scored: List[Tuple[float, Tuple[str, float, float, float, float]]] = []
+    for image_name, left, top, width, height, index_face_record in pool:
+        path = IMAGE_DIR / image_name
+        w, h = image_size(path)
+        base = (width * height) * (w * h)
+        idx = _parse_index_face_record(index_face_record)
+        mult = _index_quality_multiplier(idx)
+        score = base * (mult ** 0.6)
+        scored.append((score, (image_name, left, top, width, height)))
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    selected: List[Tuple[str, float, float, float, float]] = []
+    selected_hashes: List[int] = []
+    for _, app in scored:
+        image_name, left, top, width, height = app
+        src = IMAGE_DIR / image_name
+        if not src.is_file():
+            continue
+        crop = _crop_face(src, left, top, width, height)
+        h = _dhash(crop)
+        if any(_hamming_distance(h, hh) < MIN_DHASH_HAMMING_DISTANCE for hh in selected_hashes):
+            continue
+        selected.append(app)
+        selected_hashes.append(h)
+        if len(selected) >= n:
+            break
+
+    if len(selected) < n:
+        for _, app in scored:
+            if app in selected:
+                continue
+            selected.append(app)
+            if len(selected) >= n:
+                break
+    return selected[:n]
 
 
-def process_person(person_id, conn):
+def _match_celebrity_in_response(
+    response: dict, our_bbox: dict
+) -> Optional[Tuple[dict, float]]:
     """
-    Pick best image for this person, call RecognizeCelebrities, match by IoU,
-    update faces.celebrity_* for this person_id. Return celebrity name if matched, else None.
+    Find the celebrity in RecognizeCelebrities response that best matches our_bbox (by IoU).
+    Return (celeb_dict, confidence) or None if no CelebrityFaces or no IoU >= MIN_IOU.
     """
-    best = pick_best_image(conn, person_id)
-    if best is None:
-        return False
-    image_name, left, top, width, height = best
-    path = IMAGE_DIR / image_name
-    if not path.is_file():
-        raise FileNotFoundError(f"Image file missing: {path}")
-    image_bytes = load_image_bytes(path)
-    response = rekognition.recognize_celebrities(Image={"Bytes": image_bytes})
-
     celebrity_faces = response.get("CelebrityFaces", [])
     if not celebrity_faces:
+        return None
+    best_celeb = None
+    best_iou = 0.0
+    for celeb in celebrity_faces:
+        iou = bbox_iou(our_bbox, celeb["Face"]["BoundingBox"])
+        if iou >= MIN_IOU and iou > best_iou:
+            best_iou = iou
+            best_celeb = celeb
+    if best_celeb is None:
+        return None
+    confidence = best_celeb.get("MatchConfidence") or 0.0
+    return (best_celeb, confidence)
+
+
+def process_person(person_id: str, conn) -> Optional[str]:
+    """
+    Get up to 3 best appearances for this person. Run RecognizeCelebrities on each:
+    - If any returns ≥99% confidence: use that celebrity and stop.
+    - If all return ≤95%: no match.
+    - If any in 95.1–98.9%: keep the highest confidence; after trying all 3, use it.
+    Update faces.celebrity_* for this person_id. Return celebrity name if matched, else None.
+    """
+    best_appearances = pick_best_images(conn, person_id, n=NUM_BEST_FACES)
+    if not best_appearances:
         c = conn.cursor()
         c.execute(
             "UPDATE faces SET celebrity_name = NULL, celebrity_id = NULL, celebrity_confidence = NULL WHERE person_id = ?",
@@ -166,20 +293,35 @@ def process_person(person_id, conn):
             (person_id,),
         )
         conn.commit()
-        return False
+        return None
 
-    our_bbox = {"Left": left, "Top": top, "Width": width, "Height": height}
-    best_iou = 0.0
-    best_celeb = None
-    for celeb in celebrity_faces:
-        iou = bbox_iou(our_bbox, celeb["Face"]["BoundingBox"])
-        if iou > best_iou and iou >= MIN_IOU:
-            best_iou = iou
+    best_celeb: Optional[dict] = None
+    best_confidence = 0.0
+
+    for image_name, left, top, width, height in best_appearances:
+        path = IMAGE_DIR / image_name
+        if not path.is_file():
+            raise FileNotFoundError(f"Image file missing: {path}")
+        image_bytes = load_image_bytes(path)
+        response = rekognition.recognize_celebrities(Image={"Bytes": image_bytes})
+        time.sleep(API_DELAY_SECONDS)
+
+        our_bbox = {"Left": left, "Top": top, "Width": width, "Height": height}
+        matched = _match_celebrity_in_response(response, our_bbox)
+        if matched is None:
+            continue
+        celeb, confidence = matched
+
+        if confidence >= CELEBRITY_CONFIDENCE_HIGH:
             best_celeb = celeb
+            best_confidence = confidence
+            break
+        if confidence > MIN_CELEBRITY_CONFIDENCE and confidence > best_confidence:
+            best_celeb = celeb
+            best_confidence = confidence
 
     c = conn.cursor()
-    confidence = (best_celeb or {}).get("MatchConfidence") or 0.0
-    if best_celeb is not None and confidence >= MIN_CELEBRITY_CONFIDENCE:
+    if best_celeb is not None and best_confidence >= MIN_CELEBRITY_CONFIDENCE:
         c.execute(
             """
             UPDATE faces
@@ -227,7 +369,7 @@ def main():
         celebrity_name = process_person(person_id, conn)
         if celebrity_name:
             total_matched += 1
-            print(f"[{i}/{len(person_ids)}] {person_id} -> celebrity match: {celebrity_name}")
+            print(f"{i}/{len(person_ids)} {person_id} -> celebrity match: {celebrity_name}")
         time.sleep(API_DELAY_SECONDS)
 
     print(f"Done. People matched to a celebrity: {total_matched}")

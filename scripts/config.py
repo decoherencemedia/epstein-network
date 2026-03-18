@@ -8,3 +8,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent.parent.parent
 IMAGE_DIR = ROOT_DIR / "all_images"
 DB_PATH = "faces.db"
+
+# ---------------- Rekognition ----------------
+
+REKOGNITION_REGION = "us-east-1"
+REKOGNITION_COLLECTION_ID = "epstein-doj-20260317"

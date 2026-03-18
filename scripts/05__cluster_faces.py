@@ -3,24 +3,24 @@ Run SearchFaces on indexed faces, cluster by similarity (UnionFind), and assign 
 Run after 04__index_faces.py. Requires faces already indexed in Rekognition and in faces table.
 """
 
+import json
 import time
 from collections import defaultdict
 
 import boto3
 
 from faces_db import init_db
+from config import REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
 
 # ---------------- CONFIG ----------------
 
-REGION = "us-east-1"
-COLLECTION_ID = "epstein-doj-rerun"
 SIMILARITY_THRESHOLD = 99.0
 MAX_FACES_PER_SEARCH = 100
 API_DELAY_SECONDS = 0.2
 
 # --------------------------------------
 
-rekognition = boto3.client("rekognition", region_name=REGION)
+rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
 
 
 class UnionFind:
@@ -47,23 +47,28 @@ def cluster_faces(conn):
     for face_id in face_ids:
         uf.find(face_id)
 
-    matched = set()
-    for face_id in face_ids:
-        if face_id in matched:
-            continue
+    for i, face_id in enumerate(face_ids):
+        print(f"{i}/{len(face_ids)}:   {face_id}")
         response = rekognition.search_faces(
-            CollectionId=COLLECTION_ID,
+            CollectionId=REKOGNITION_COLLECTION_ID,
             FaceId=face_id,
             FaceMatchThreshold=SIMILARITY_THRESHOLD,
             MaxFaces=MAX_FACES_PER_SEARCH,
         )
 
+        # Persist the raw SearchFaces response for later analysis / debugging.
+        c.execute(
+            "UPDATE faces SET searched = 1, search_faces_result = ? WHERE face_id = ?",
+            (json.dumps(response, default=str), face_id),
+        )
+
         for match in response["FaceMatches"]:
             other = match["Face"]["FaceId"]
             uf.union(face_id, other)
-            matched.add(other)
 
         time.sleep(API_DELAY_SECONDS)
+
+    conn.commit()
 
     clusters = defaultdict(list)
     for face_id in face_ids:

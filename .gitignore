@@ -2,6 +2,9 @@ images/
 thumbnails/
 jupyter/
 graphml/
+person_to_files/
+.cursor/
+
 **/__pycache__
 *.db
 *.csv#

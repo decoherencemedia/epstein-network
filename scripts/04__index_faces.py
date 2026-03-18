@@ -10,25 +10,23 @@ from pathlib import Path
 
 import boto3
 
-from config import IMAGE_DIR
+from config import IMAGE_DIR, REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
 from faces_db import get_images_to_index, init_db, upsert_image_status
 
 # ---------------- CONFIG ----------------
 
-REGION = "us-east-1"
-COLLECTION_ID = "epstein-doj-rerun"
 API_DELAY_SECONDS = 0.2
 
 # --------------------------------------
 
-rekognition = boto3.client("rekognition", region_name=REGION)
+rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
 
 
 def ensure_collection():
     try:
-        rekognition.describe_collection(CollectionId=COLLECTION_ID)
+        rekognition.describe_collection(CollectionId=REKOGNITION_COLLECTION_ID)
     except rekognition.exceptions.ResourceNotFoundException:
-        rekognition.create_collection(CollectionId=COLLECTION_ID)
+        rekognition.create_collection(CollectionId=REKOGNITION_COLLECTION_ID)
 
 
 def _json_serial(obj):
@@ -45,7 +43,7 @@ def index_image(image_path: Path, conn):
         image_bytes = f.read()
 
     response = rekognition.index_faces(
-        CollectionId=COLLECTION_ID,
+        CollectionId=REKOGNITION_COLLECTION_ID,
         Image={"Bytes": image_bytes},
         ExternalImageId=image_path.name,
         DetectionAttributes=["ALL"],

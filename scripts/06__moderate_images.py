@@ -9,12 +9,11 @@ import time
 
 import boto3
 
-from config import IMAGE_DIR
+from config import IMAGE_DIR, REKOGNITION_REGION
 from faces_db import get_images_for_moderation, init_db, upsert_image_moderation
 
 # ---------------- CONFIG ----------------
 
-REGION = "us-east-1"
 API_DELAY_SECONDS = 0.2
 
 # --------------------------------------
@@ -32,7 +31,7 @@ def filter_explicit_labels(moderation_labels):
 
 
 def main():
-    rekognition = boto3.client("rekognition", region_name=REGION)
+    rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
     conn = init_db()
 
     to_moderate = get_images_for_moderation(conn)

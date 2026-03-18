@@ -35,7 +35,11 @@ def init_db():
             person_id TEXT,
             celebrity_name TEXT,
             celebrity_id TEXT,
-            celebrity_confidence REAL
+            celebrity_confidence REAL,
+            age_range_low INTEGER,
+            age_range_high INTEGER,
+            index_face_record TEXT,
+            search_faces_result TEXT
         )
     """)
     _ensure_faces_person_celebrity_columns(conn)
@@ -64,11 +68,12 @@ def _ensure_faces_person_celebrity_columns(conn):
 
 
 def _ensure_faces_index_response_columns(conn):
-    """Add age range and raw IndexFaces record to faces if missing."""
+    """Add age range, raw IndexFaces record, and SearchFaces result to faces if missing."""
     for sql in (
         "ALTER TABLE faces ADD COLUMN age_range_low INTEGER",
         "ALTER TABLE faces ADD COLUMN age_range_high INTEGER",
         "ALTER TABLE faces ADD COLUMN index_face_record TEXT",
+        "ALTER TABLE faces ADD COLUMN search_faces_result TEXT",
     ):
         try:
             conn.execute(sql)
