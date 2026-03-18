@@ -762,6 +762,15 @@
       const labelBgLayer = labelLayer.append("g").attr("class", "label-bg-layer");
       const labelNodeLayer = labelLayer.append("g").attr("class", "label-node-layer");
       const labelTextLayer = labelLayer.append("g").attr("class", "label-text-layer");
+      // Tooltip overlay drawn on top of all labels so its bg is never covered by other node labels.
+      const tooltipOverlay = labelLayer.append("g").attr("class", "tooltip-overlay").attr("visibility", "hidden");
+      const tooltipOverlayBg = tooltipOverlay.append("rect").attr("class", "node-label-bg");
+      const tooltipOverlayText = tooltipOverlay.append("g");
+      tooltipOverlayText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
+      tooltipOverlayText.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
+      // Hovered node circle drawn on top of the tooltip so it stays visible.
+      const hoveredNodeOnTop = labelLayer.append("g").attr("class", "hovered-node-on-top");
+      const hoveredNodeClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-clone").attr("visibility", "hidden").attr("stroke", "none");
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
       const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
@@ -1019,12 +1028,6 @@
       edgeLabelText.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
       const edgeLabelBg = labelBgLayer.append("rect").attr("class", "node-label-bg").attr("visibility", "hidden");
 
-      const hoveredNodeClone = labelNodeLayer
-        .append("circle")
-        .attr("class", "hover-node-clone")
-        .attr("visibility", "hidden")
-        .attr("stroke", "none");
-
       const simulation = d3
         .forceSimulation(nodes)
         .force("link", forceLink)
@@ -1054,11 +1057,13 @@
           const shouldShowByHover = state.label.hoveredNode === d;
           const shouldAllow = typeof state.label.allowFn === "function" ? !!state.label.allowFn(d) : true;
           const visible = shouldAllow && (shouldShowBySize || shouldShowByHover);
+          // When this node is the expanded tooltip, draw it in tooltipOverlay (above all labels); hide here.
+          const drawInOverlay = visible && shouldShowByHover;
 
           const g = d3.select(this);
-          g.attr("visibility", visible ? "visible" : "hidden");
+          g.attr("visibility", visible && !drawInOverlay ? "visible" : "hidden");
           const bgEl = nodeLabelBgById.get(d.id);
-          if (bgEl) bgEl.setAttribute("visibility", visible ? "visible" : "hidden");
+          if (bgEl) bgEl.setAttribute("visibility", visible && !drawInOverlay ? "visible" : "hidden");
           if (!visible) return;
 
           const sx = currentTransform.applyX(d.x);
@@ -1136,64 +1141,95 @@
           hoveredNodeClone.attr("visibility", "hidden");
         }
 
-        // Edge hover chip (two lines), positioned at the edge midpoint and offset to the right.
+        // Draw expanded node or edge tooltip in overlay (above all labels) so it is never covered.
+        if (state.label.hoveredNode) {
+          const d = state.label.hoveredNode;
+          const sx = currentTransform.applyX(d.x);
+          const overlapPx = Math.min(14, Math.max(6, d.radius * sqrtK * 0.6));
+          const x = sx + d.radius * sqrtK + GAP_PX;
+          const y = currentTransform.applyY(d.y);
+          tooltipOverlayText.select("text.node-label-line1").text(d.label || "");
+          tooltipOverlayText.select("text.node-label-line2").text(d.cluster || "—").attr("display", null).attr("y", LINE_HEIGHT).style("fill", nodeColor(d));
+          const t1 = tooltipOverlayText.select("text.node-label-line1").node();
+          const t2 = tooltipOverlayText.select("text.node-label-line2").node();
+          const bbox1 = t1?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
+          const bbox2 = t2?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
+          const minX = Math.min(bbox1.x, bbox2.x);
+          const minY = Math.min(bbox1.y, bbox2.y);
+          const maxX = Math.max(bbox1.x + bbox1.width, bbox2.x + bbox2.width);
+          const maxY = Math.max(bbox1.y + bbox1.height, bbox2.y + bbox2.height);
+          const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+          const bgX = bbox.x - PADDING_X;
+          const bgY = bbox.y - PADDING_Y;
+          const bgW = bbox.width + 2 * PADDING_X;
+          const bgH = bbox.height + 2 * PADDING_Y;
+          const bg1Y = bbox1.y - PADDING_Y;
+          const bg1H = bbox1.height + 2 * PADDING_Y;
+          const cy1 = bg1Y + bg1H / 2;
+          const ty = y - cy1;
+          tooltipOverlayText.attr("transform", `translate(${x},${ty})`);
+          tooltipOverlayBg
+            .attr("x", bgX + x - overlapPx)
+            .attr("y", bgY + ty)
+            .attr("width", bgW + overlapPx)
+            .attr("height", bgH)
+            .attr("rx", 4)
+            .attr("ry", 4)
+            .style("fill", "rgba(255,255,255,1)")
+            .attr("stroke", "rgba(0,0,0,0.35)")
+            .attr("stroke-width", "1");
+          tooltipOverlay.attr("visibility", "visible");
+        } else if (state.label.hoveredEdge) {
+          // Edge tooltip in overlay (positioning duplicated from edge block below).
+          const l = state.label.hoveredEdge;
+          const s = getNodeFromLinkEnd(l.source);
+          const t = getNodeFromLinkEnd(l.target);
+          if (s && t) {
+            const mx = (s.x + t.x) / 2;
+            const my = (s.y + t.y) / 2;
+            const sx = currentTransform.applyX(mx);
+            const sy = currentTransform.applyY(my);
+            const x = sx + GAP_PX;
+            const y = sy;
+            const sLabel = s.label != null ? s.label : String(s.id);
+            const tLabel = t.label != null ? t.label : String(t.id);
+            tooltipOverlayText.select("text.node-label-line1").text(`${sLabel} & ${tLabel}`);
+            tooltipOverlayText.select("text.node-label-line2").text(`Shared photos: ${l.weight ?? "—"}`).attr("display", null).attr("y", LINE_HEIGHT).attr("fill", "#333");
+            tooltipOverlayText.attr("transform", `translate(${x},${y})`);
+            const el1 = tooltipOverlayText.select("text.node-label-line1").node();
+            const el2 = tooltipOverlayText.select("text.node-label-line2").node();
+            const b1 = el1?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
+            const b2 = el2?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
+            const minX = Math.min(b1.x, b2.x);
+            const minY = Math.min(b1.y, b2.y);
+            const maxX = Math.max(b1.x + b1.width, b2.x + b2.width);
+            const maxY = Math.max(b1.y + b1.height, b2.y + b2.height);
+            tooltipOverlayBg
+              .attr("x", minX - PADDING_X + x)
+              .attr("y", minY - PADDING_Y + y)
+              .attr("width", maxX - minX + 2 * PADDING_X)
+              .attr("height", maxY - minY + 2 * PADDING_Y)
+              .attr("rx", 4)
+              .attr("ry", 4)
+              .style("fill", "rgba(255,255,255,1)")
+              .attr("stroke", "rgba(0,0,0,0.35)")
+              .attr("stroke-width", "1");
+            tooltipOverlay.attr("visibility", "visible");
+          } else {
+            tooltipOverlay.attr("visibility", "hidden");
+          }
+        } else {
+          tooltipOverlay.attr("visibility", "hidden");
+        }
+
+        // Edge hover chip: drawn in tooltipOverlay above; hide the in-layer copy so it is not duplicated.
         if (!state.label.hoveredEdge) {
           edgeLabelText.attr("visibility", "hidden");
           edgeLabelBg.attr("visibility", "hidden");
           return;
         }
-        const l = state.label.hoveredEdge;
-        const s = getNodeFromLinkEnd(l.source);
-        const t = getNodeFromLinkEnd(l.target);
-        if (!s || !t) {
-          edgeLabelText.attr("visibility", "hidden");
-          edgeLabelBg.attr("visibility", "hidden");
-          return;
-        }
-        const mx = (s.x + t.x) / 2;
-        const my = (s.y + t.y) / 2;
-        const sx = currentTransform.applyX(mx);
-        const sy = currentTransform.applyY(my);
-        const x = sx + GAP_PX;
-        const y = sy;
-
-        edgeLabelText.attr("visibility", "visible");
-        edgeLabelBg.attr("visibility", "visible");
-        const el1 = edgeLabelText.select("text.node-label-line1");
-        const el2 = edgeLabelText.select("text.node-label-line2");
-        const sLabel = s.label != null ? s.label : String(s.id);
-        const tLabel = t.label != null ? t.label : String(t.id);
-        el1.text(`${sLabel} & ${tLabel}`);
-        el2
-          .text(`Shared photos: ${l.weight ?? "—"}`)
-          .attr("display", null)
-          .attr("fill", "#333")
-          .attr("y", LINE_HEIGHT);
-
-        const b1 = el1.node()?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
-        const b2 = el2.node()?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
-        const minX = Math.min(b1.x, b2.x);
-        const minY = Math.min(b1.y, b2.y);
-        const maxX = Math.max(b1.x + b1.width, b2.x + b2.width);
-        const maxY = Math.max(b1.y + b1.height, b2.y + b2.height);
-        const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-
-        edgeLabelBg
-          .attr("x", bbox.x - PADDING_X)
-          .attr("y", bbox.y - PADDING_Y)
-          .attr("width", bbox.width + 2 * PADDING_X)
-          .attr("height", bbox.height + 2 * PADDING_Y)
-          .attr("rx", 4)
-          .attr("ry", 4)
-          .style("fill", "rgba(255,255,255,1)")
-          .attr("stroke", "rgba(0,0,0,0.35)")
-          .attr("stroke-width", 1);
-
-        const bgY = bbox.y - PADDING_Y;
-        const bgH = bbox.height + 2 * PADDING_Y;
-        const cy = bgY + bgH / 2;
-        edgeLabelText.attr("transform", `translate(${x},${y - cy})`);
-        edgeLabelBg.attr("x", bbox.x - PADDING_X + x).attr("y", bbox.y - PADDING_Y + (y - cy));
+        edgeLabelText.attr("visibility", "hidden");
+        edgeLabelBg.attr("visibility", "hidden");
       }
 
       function getSidebarWidthPx() {
