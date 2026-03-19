@@ -6,6 +6,10 @@
   <svg id="svg">
     <g class="full-network-graph" :data-dummy="update()"></g>
   </svg>
+  <div id="name-search" aria-label="Search people">
+    <input id="name-search-input" type="search" placeholder="Search names" autocomplete="off" spellcheck="false" />
+    <div id="name-search-results" role="listbox" aria-label="Search results" style="display:none"></div>
+  </div>
   <div id="thumb-preview" aria-hidden="true">
     <div class="thumb-header">
       <div class="thumb-title" id="thumb-title"></div>
@@ -121,6 +125,9 @@
       const nodeRadius = (n) => nodeScaling * (n.size != null ? +n.size : 5);
 
       const previewEl = document.getElementById("thumb-preview");
+      const nameSearchEl = document.getElementById("name-search");
+      const nameSearchInputEl = document.getElementById("name-search-input");
+      const nameSearchResultsEl = document.getElementById("name-search-results");
       const previewImgLinkEl = document.getElementById("thumb-img-link");
       const previewImgEl = document.getElementById("thumb-img");
       const previewEmptyEl = document.getElementById("thumb-empty");
@@ -753,6 +760,186 @@
         applyLockedNodeHighlight(targetNode);
       }
 
+      function centerNodeInViewport(targetNode, { durationMs = 550 } = {}) {
+        if (!targetNode) return;
+        if (!Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) return;
+        if (typeof zoom === "undefined" || !zoom) return;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return;
+        const rect = svgEl.getBoundingClientRect();
+        if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
+        const vb = getSvgViewBoxMin();
+        if (!vb || !vb.width || !vb.height) return;
+
+        const sidebarPx = getSidebarWidthPx();
+        const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
+        const previewRect = isMobile && previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
+        const bottomBarPx = previewRect && Number.isFinite(previewRect.height) ? previewRect.height : 0;
+
+        // Desired center of the visible area in SVG pixel coordinates (excluding sidebar / bottom sheet).
+        const cxPx = rect.width / 2 + sidebarPx / 2;
+        const cyPx = rect.height / 2 - bottomBarPx / 2;
+        // Map that pixel position into viewBox coordinates (viewBox has origin vb.x, vb.y).
+        const centerX = vb.x + (cxPx / rect.width) * vb.width;
+        const centerY = vb.y + (cyPx / rect.height) * vb.height;
+
+        const k = currentTransform && Number.isFinite(currentTransform.k) ? currentTransform.k : 1;
+        const tx = centerX - k * targetNode.x;
+        const ty = centerY - k * targetNode.y;
+        const t = d3.zoomIdentity.translate(tx, ty).scale(k);
+        d3.select("#svg").transition().duration(durationMs).call(zoom.transform, t);
+      }
+
+      function setupNameSearch() {
+        if (!nameSearchEl || !nameSearchInputEl || !nameSearchResultsEl) return;
+        if (!Array.isArray(nodes) || !nodes.length) return;
+
+        const normalized = nodes
+          .filter((n) => n && n.label != null)
+          .map((n) => ({
+            node: n,
+            label: String(n.label),
+            tokens: String(n.label)
+              .toLowerCase()
+              .split(/\s+/)
+              .filter(Boolean),
+          }));
+
+        function getMatches(q) {
+          const query = String(q || "").trim().toLowerCase();
+          if (!query) return [];
+          const out = [];
+          for (const item of normalized) {
+            let matched = false;
+            for (const tok of item.tokens) {
+              if (tok.includes(query)) {
+                matched = true;
+                break;
+              }
+            }
+            if (!matched) continue;
+            out.push(item);
+          }
+          out.sort((a, b) => {
+            const at = a.tokens.some((t) => t.startsWith(query)) ? 0 : 1;
+            const bt = b.tokens.some((t) => t.startsWith(query)) ? 0 : 1;
+            if (at !== bt) return at - bt;
+            const as = typeof a.node.total === "number" ? -a.node.total : 0;
+            const bs = typeof b.node.total === "number" ? -b.node.total : 0;
+            if (as !== bs) return as - bs;
+            return a.label.localeCompare(b.label);
+          });
+          return out.slice(0, 12);
+        }
+
+        let activeIndex = -1;
+        let current = [];
+
+        function clearResults() {
+          nameSearchResultsEl.innerHTML = "";
+          nameSearchResultsEl.style.display = "none";
+          nameSearchResultsEl.setAttribute("aria-hidden", "true");
+          activeIndex = -1;
+          current = [];
+        }
+
+        function renderResults(items) {
+          current = items;
+          activeIndex = -1;
+          nameSearchResultsEl.innerHTML = "";
+          if (!items.length) {
+            nameSearchResultsEl.style.display = "none";
+            nameSearchResultsEl.setAttribute("aria-hidden", "true");
+            return;
+          }
+          nameSearchResultsEl.style.display = "block";
+          nameSearchResultsEl.setAttribute("aria-hidden", "false");
+          items.forEach((item, idx) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "name-search-result";
+            btn.setAttribute("role", "option");
+            btn.setAttribute("aria-selected", "false");
+            btn.textContent = item.label;
+            btn.addEventListener("mousedown", (e) => {
+              // Prevent input blur before click.
+              e.preventDefault();
+            });
+            btn.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              showNodeInSidebar(item.node);
+              centerNodeInViewport(item.node);
+              nameSearchInputEl.value = item.label;
+              clearResults();
+              nameSearchInputEl.blur();
+            });
+            nameSearchResultsEl.appendChild(btn);
+          });
+        }
+
+        function setActive(nextIndex) {
+          const kids = Array.from(nameSearchResultsEl.children);
+          kids.forEach((el, i) => {
+            if (!(el instanceof HTMLElement)) return;
+            const active = i === nextIndex;
+            el.classList.toggle("active", active);
+            el.setAttribute("aria-selected", active ? "true" : "false");
+          });
+          activeIndex = nextIndex;
+        }
+
+        nameSearchInputEl.addEventListener("input", () => {
+          const q = nameSearchInputEl.value;
+          const matches = getMatches(q);
+          renderResults(matches);
+        });
+
+        nameSearchInputEl.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            clearResults();
+            return;
+          }
+          if (e.key === "ArrowDown") {
+            if (!current.length) return;
+            e.preventDefault();
+            const next = Math.min(current.length - 1, activeIndex + 1);
+            setActive(next);
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            if (!current.length) return;
+            e.preventDefault();
+            const next = Math.max(0, activeIndex - 1);
+            setActive(next);
+            return;
+          }
+          if (e.key === "Enter") {
+            if (!current.length) return;
+            e.preventDefault();
+            const chosen = current[Math.max(0, activeIndex)];
+            if (!chosen) return;
+            showNodeInSidebar(chosen.node);
+            centerNodeInViewport(chosen.node);
+            nameSearchInputEl.value = chosen.label;
+            clearResults();
+            nameSearchInputEl.blur();
+          }
+        });
+
+        nameSearchEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+        });
+        nameSearchInputEl.addEventListener("focus", () => {
+          const q = nameSearchInputEl.value;
+          if (!q.trim()) return;
+          renderResults(getMatches(q));
+        });
+        document.addEventListener("click", () => {
+          clearResults();
+        });
+      }
+
       function pinEdge(d) {
         const { s, t, sLabel, tLabel } = getEdgeEndpoints(d);
         const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
@@ -1093,6 +1280,8 @@
         .force("center", forceCollide)
         .on("tick", ticked);
 
+      setupNameSearch();
+
       if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
       if (L) linkLayer.attr("stroke", ({ index: i }) => L[i]);
       if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
@@ -1316,6 +1505,15 @@
         const parts = vb.trim().split(/\s+/).map((x) => Number(x));
         if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
         return parts[3];
+      }
+      function getSvgViewBoxMin() {
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return null;
+        const vb = svgEl.getAttribute("viewBox");
+        if (!vb) return null;
+        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
+        if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
+        return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
       }
 
       function computeSidebarCenteringTranslateX() {
