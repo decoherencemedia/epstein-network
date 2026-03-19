@@ -78,7 +78,30 @@
     const linkSource = (d) => d.source;
     const linkTarget = (d) => d.target;
 
-    Promise.all([d3.json("dataset.json"), d3.json("image_data.json")]).then(function ([data, imageData]) {
+    const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
+    // Central place for user-tweakable visualization constants.
+    const TWEAK = {
+      nodeScaling: 2.5,
+      initialZoomK: 1.2,
+      edgeHighlightWidthMult: 2,
+      mutedNodeFill: "#cfcfcf",
+      mediaSmallViewport: "(pointer: coarse), (max-width: 640px)",
+      viewbox: { x: -200, y: -200, width: 400, height: 400 },
+      mobileViewbox: { x: -100, y: -100, width: 200, height: 200 },
+      mobileBreakpoint: 1280,
+      labelSizeThreshold: 10,
+      labelPaddingX: 3,
+      labelPaddingY: 2,
+      labelGapPx: 5,
+      labelLineHeight: 6,
+      labelZoomResponseExp: 0.7,
+    };
+
+    Promise.all([
+      d3.json("viz_data/dataset.json"),
+      d3.json("viz_data/image_data.json"),
+      d3.json("viz_data/atlas_manifest.json"),
+    ]).then(function ([data, imageData, atlasManifest]) {
 
       function intern(value) {
         return value !== null && typeof value === "object"
@@ -96,7 +119,8 @@
         nodes: data.nodes,
         links: (data.edges || []).map((e) => ({ source: e[0], target: e[1], weight: e[2] })),
       };
-      const nodeScaling = 2;
+      const nodeScaling = TWEAK.nodeScaling;
+      const INITIAL_ZOOM_K = TWEAK.initialZoomK;
 
       function isConnected(a, b) {
         return (
@@ -112,22 +136,95 @@
         return a <= b ? `${a},${b}` : `${b},${a}`;
       }
 
-      const EDGE_HIGHLIGHT_WIDTH_MULT = 2;
-      const MUTED_NODE_FILL = "#cfcfcf";
-      const NODE_FACE_PATTERN_ID = "epstein-face-pattern";
-      const NODE_FACE_IMAGE_HREF = "epstein_face.webp";
+      const EDGE_HIGHLIGHT_WIDTH_MULT = TWEAK.edgeHighlightWidthMult;
+      const MUTED_NODE_FILL = TWEAK.mutedNodeFill;
+      const NODE_ATLAS_IMAGE_HREF = `${SPACES_CDN_BASE}/atlas/atlas.webp`;
+
+      function computeAtlasDims(manifest) {
+        if (!manifest || typeof manifest !== "object") {
+          return { atlasW: 0, atlasH: 0 };
+        }
+        let maxX = 0;
+        let maxY = 0;
+        let minX = Infinity;
+        let minY = Infinity;
+        for (const k of Object.keys(manifest)) {
+          const e = manifest[k];
+          if (!e) continue;
+          const x = Number(e.x ?? 0);
+          const y = Number(e.y ?? 0);
+          const w = Number(e.w ?? 0);
+          const h = Number(e.h ?? 0);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) continue;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x + w);
+          maxY = Math.max(maxY, y + h);
+        }
+        // `maxX/maxY` land on the last filled cell edge; the underlying atlas
+        // image also includes the (uniform) padding on the far edge.
+        const padX = Number.isFinite(minX) ? minX : 0;
+        const padY = Number.isFinite(minY) ? minY : 0;
+        return { atlasW: maxX + padX, atlasH: maxY + padY };
+      }
+
+      const { atlasW: ATLAS_W, atlasH: ATLAS_H } = computeAtlasDims(atlasManifest);
+
+      function sanitizeLabelForAtlasKey(label) {
+        // Match scripts/11__export_node_faces.py and scripts/14__build_atlas.py.
+        const s = String(label || "").split("").filter((c) => {
+          const isAlnum = /^[0-9A-Za-z]$/.test(c);
+          const isAllowed = "._- ".includes(c);
+          return isAlnum || isAllowed;
+        }).join("");
+        const trimmed = s.trim();
+        return trimmed.replace(/ /g, "_").replace(/\//g, "_") || "node";
+      }
+
+      const atlasKeyByBaseStem = (() => {
+        // If atlas_manifest.json keys are filename stems like `Jeffrey_Epstein__003`,
+        // map `baseStem -> bestKey` (prefer smallest idx, commonly __000).
+        const m = new Map();
+        if (!atlasManifest || typeof atlasManifest !== "object") return m;
+        const re = /^(.*)__(\d{3})$/;
+        for (const key of Object.keys(atlasManifest)) {
+          const mm = re.exec(key);
+          if (mm) {
+            const base = mm[1];
+            const idx = Number(mm[2]);
+            if (!m.has(base) || idx < m.get(base).idx) {
+              m.set(base, { key, idx });
+            }
+            continue;
+          }
+          // Non-suffixed entry: treat as idx=0 for its base.
+          if (!m.has(key)) m.set(key, { key, idx: 0 });
+        }
+        return m;
+      })();
+
+      function nodeFacePatternId(d) {
+        // `d.id` is a stable numeric key from dataset.json.
+        return `node-face-pattern-${d?.id ?? "unknown"}`;
+      }
+
+      function atlasKeyForNode(d) {
+        if (!atlasManifest || !d) return null;
+        const label = d.label;
+        if (label && atlasManifest[label]) return label;
+        const base = sanitizeLabelForAtlasKey(label);
+        const best = atlasKeyByBaseStem.get(base);
+        return best?.key ?? null;
+      }
+
+      function nodeFaceFill(d) {
+        const k = atlasKeyForNode(d);
+        if (!k) return "none";
+        return `url(#${nodeFacePatternId(d)})`;
+      }
 
       function nodeColor(d) {
         return (d && clusterColorById[d.cluster]) || options.nodeFill;
-      }
-
-      let nodeFacePatternReady = false;
-
-      function nodeFaceFill() {
-        if (nodeFacePatternReady) {
-          return `url(#${NODE_FACE_PATTERN_ID})`;
-        }
-        return "none";
       }
 
       // Tooltips are rendered as Sigma-style label chips in `labelLayer`.
@@ -151,8 +248,6 @@
       const previewLegendEl = document.getElementById("thumb-legend");
       const previewBboxEl = document.getElementById("thumb-bbox");
       const previewBboxBEl = document.getElementById("thumb-bbox-b");
-
-      const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
       const isCoarsePointer =
         (typeof window !== "undefined" &&
@@ -484,7 +579,7 @@
         return state.lock.active && state.lock.kind === kind && state.lock.item === item;
       }
 
-      const MEDIA_SMALL_VIEWPORT = "(pointer: coarse), (max-width: 640px)";
+      const MEDIA_SMALL_VIEWPORT = TWEAK.mediaSmallViewport;
       function isSmallViewport() {
         return typeof window !== "undefined" && window.matchMedia && window.matchMedia(MEDIA_SMALL_VIEWPORT).matches;
       }
@@ -507,31 +602,62 @@
         return edgeGradient;
       }
 
-      function ensureNodeFacePattern() {
-        if (nodeFacePatternReady) return;
+      function ensureAtlasNodePatterns(nodesList) {
+        // Build one pattern per node so the circle fill can show the correct
+        // atlas cell, while hover/focus can simply toggle opacity.
+        if (!atlasManifest || typeof atlasManifest !== "object") return;
+        if (!Array.isArray(nodesList)) return;
+        if (!Number.isFinite(ATLAS_W) || !Number.isFinite(ATLAS_H) || ATLAS_W <= 0 || ATLAS_H <= 0) return;
+
         const svg = d3.select("#svg");
         let defs = svg.select("defs");
         if (defs.empty()) defs = svg.append("defs");
-        const existing = defs.select(`#${NODE_FACE_PATTERN_ID}`);
-        if (!existing.empty()) {
-          nodeFacePatternReady = true;
-          return;
+
+        // Sentinel ensures we don't append duplicate patterns.
+        const sentinelId = "atlas-node-patterns-built";
+        if (!defs.select(`#${sentinelId}`).empty()) return;
+
+        for (const d of nodesList) {
+          const k = atlasKeyForNode(d);
+          if (!k) continue;
+          const entry = atlasManifest[k];
+          if (!entry) continue;
+
+          const pid = nodeFacePatternId(d);
+          if (!defs.select(`#${pid}`).empty()) continue;
+
+          const x = Number(entry.x ?? 0);
+          const y = Number(entry.y ?? 0);
+          const w = Number(entry.w ?? 0);
+          const h = Number(entry.h ?? 0);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) continue;
+
+          // With objectBoundingBox pattern coordinates:
+          // - the atlas sub-rect should be scaled up so it fills the 1x1 pattern box
+          // - atlas cell top-left is aligned via negative offsets.
+          const imageWidth = ATLAS_W / w;
+          const imageHeight = ATLAS_H / h;
+          const imgX = -x / w;
+          const imgY = -y / h;
+
+          const p = defs
+            .append("pattern")
+            .attr("id", pid)
+            .attr("patternUnits", "objectBoundingBox")
+            .attr("patternContentUnits", "objectBoundingBox")
+            .attr("width", 1)
+            .attr("height", 1);
+
+          p.append("image")
+            .attr("href", NODE_ATLAS_IMAGE_HREF)
+            .attr("x", imgX)
+            .attr("y", imgY)
+            .attr("width", imageWidth)
+            .attr("height", imageHeight)
+            .attr("preserveAspectRatio", "none");
         }
-        const p = defs
-          .append("pattern")
-          .attr("id", NODE_FACE_PATTERN_ID)
-          .attr("patternUnits", "objectBoundingBox")
-          .attr("patternContentUnits", "objectBoundingBox")
-          .attr("width", 1)
-          .attr("height", 1);
-        p.append("image")
-          .attr("href", NODE_FACE_IMAGE_HREF)
-          .attr("x", 0)
-          .attr("y", 0)
-          .attr("width", 1)
-          .attr("height", 1)
-          .attr("preserveAspectRatio", "xMidYMid slice");
-        nodeFacePatternReady = true;
+
+        defs.append("rect").attr("id", sentinelId).attr("width", 0).attr("height", 0).style("display", "none");
       }
 
       function resetFocus() {
@@ -545,8 +671,7 @@
           .attr("stroke-width", options.nodeStrokeWidth);
         nodeImage
           .attr("visibility", "visible")
-          .attr("opacity", 1)
-          .attr("fill", nodeFaceFill());
+          .attr("opacity", 1);
 
         // Links.
         linkLayer.data(links, linkKey).order();
@@ -576,8 +701,7 @@
           .attr("stroke-width", options.nodeStrokeWidth);
         nodeImage
           .attr("visibility", "visible")
-          .attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0))
-          .attr("fill", nodeFaceFill());
+          .attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0));
 
         linkLayer
           .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
@@ -626,8 +750,7 @@
           .attr("stroke-width", options.nodeStrokeWidth);
         nodeImage
           .attr("visibility", "visible")
-          .attr("opacity", (o) => (isEndpoint(o) ? 1 : 0))
-          .attr("fill", nodeFaceFill());
+          .attr("opacity", (o) => (isEndpoint(o) ? 1 : 0));
         // Hide top clones during edge focus (edge tooltip mode).
         hoveredNodeClone.attr("visibility", "hidden");
         hoveredNodeImageClone.attr("visibility", "hidden");
@@ -713,6 +836,9 @@
         target: LT[i],
         weight: networkData.links[i].weight,
       }));
+
+      // Node face patterns require `nodes` to exist (we need `d.id` and `d.label`).
+      ensureAtlasNodePatterns(nodes);
 
       renderLegend({
         categories: Array.from(new Set(nodes.map((n) => n.cluster).filter(Boolean))).sort(),
@@ -1067,9 +1193,9 @@
       const hoveredNodeImageClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-image-clone").attr("visibility", "hidden").attr("stroke", "none");
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
-      const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
-      const MOBILE_VIEWBOX = { x: -100, y: -100, width: 200, height: 200 }; // different framing for small screens
-      const MOBILE_BREAKPOINT = 1280;
+      const VIEWBOX = TWEAK.viewbox;
+      const MOBILE_VIEWBOX = TWEAK.mobileViewbox; // different framing for small screens
+      const MOBILE_BREAKPOINT = TWEAK.mobileBreakpoint;
       function isMobileView() {
         return typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT;
       }
@@ -1080,7 +1206,6 @@
           .attr("preserveAspectRatio", "xMidYMid meet");
       }
       setViewBox();
-      ensureNodeFacePattern();
       if (typeof window !== "undefined") {
         window.addEventListener("resize", setViewBox);
       }
@@ -1296,7 +1421,7 @@
         .selectAll("circle")
         .data(nodes)
         .join("circle")
-        .attr("fill", nodeFaceFill())
+        .attr("fill", (d) => nodeFaceFill(d))
         .attr("r", (d) => d.radius);
 
       const nodeLabelText = labelTextLayer
@@ -1337,13 +1462,16 @@
 
       if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
 
-      const LABEL_SIZE_THRESHOLD = 10;
+      const LABEL_SIZE_THRESHOLD = TWEAK.labelSizeThreshold;
       let currentTransform = d3.zoomIdentity;
 
-      const LABEL_PADDING_X = 3;
-      const LABEL_PADDING_Y = 2;
-      const LABEL_GAP_PX = 5;
-      const LABEL_LINE_HEIGHT = 6;
+      const LABEL_PADDING_X = TWEAK.labelPaddingX;
+      const LABEL_PADDING_Y = TWEAK.labelPaddingY;
+      const LABEL_GAP_PX = TWEAK.labelGapPx;
+      const LABEL_LINE_HEIGHT = TWEAK.labelLineHeight;
+      // Slow down how quickly labels appear as zoom increases.
+      // (< 1) makes reveal more gradual across wheel increments.
+      const LABEL_ZOOM_RESPONSE_EXP = TWEAK.labelZoomResponseExp;
 
       function styleTooltipOverlayBg(sel) {
         return sel.attr("rx", 4).attr("ry", 4).style("fill", "rgba(255,255,255,1)").attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", "1");
@@ -1370,10 +1498,11 @@
       function updateNodeLabels() {
         const k = currentTransform.k;
         const sqrtK = Math.sqrt(k);
+        const labelZoomK = Math.pow(k, LABEL_ZOOM_RESPONSE_EXP);
 
         nodeLabelText.each(function (d) {
-          // Label visibility should ramp up with zoom level (k), not √k.
-          const shouldShowBySize = d.radius * k >= LABEL_SIZE_THRESHOLD;
+          // Use a sublinear zoom response so labels don't pop in too abruptly.
+          const shouldShowBySize = d.radius * labelZoomK >= LABEL_SIZE_THRESHOLD;
           const shouldShowByHover = state.label.hoveredNode === d;
           const shouldAllow = typeof state.label.allowFn === "function" ? !!state.label.allowFn(d) : true;
           const visible = shouldAllow && (shouldShowBySize || shouldShowByHover);
@@ -1443,7 +1572,7 @@
             .attr("cx", sx)
             .attr("cy", sy)
             .attr("r", rr)
-            .attr("fill", nodeFaceFill());
+            .attr("fill", nodeFaceFill(d));
         } else {
           hoveredNodeClone.attr("visibility", "hidden");
           hoveredNodeImageClone.attr("visibility", "hidden");
@@ -1635,9 +1764,9 @@
         if (appliedInitialViewportCentering) return;
         const dx = computeSidebarCenteringTranslateX();
         const dy = computeBottomBarCenteringTranslateY();
-        if (!dx && !dy) return;
+        if (!dx && !dy && INITIAL_ZOOM_K === 1) return;
         appliedInitialViewportCentering = true;
-        d3.select("#svg").call(zoom.transform, d3.zoomIdentity.translate(dx, dy));
+        d3.select("#svg").call(zoom.transform, d3.zoomIdentity.translate(dx, dy).scale(INITIAL_ZOOM_K));
       }
       // Defer one frame so layout (esp. mobile bottom sheet) has final dimensions.
       if (typeof window !== "undefined" && window.requestAnimationFrame) {

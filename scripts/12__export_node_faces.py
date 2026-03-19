@@ -1,5 +1,5 @@
 """
-Export one cropped face image per graph node to node_faces/.
+Export one cropped face image per graph node to `images/node_faces/`.
 
 This script recomputes the \"best\" face per node using the current pick_best_images scoring,
 so you can iterate on the algorithm quickly without rerunning 10__create_graph.py.
@@ -28,8 +28,8 @@ from sheets_common import (
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-NODE_FACES_DIR = SCRIPT_DIR.parent / "node_faces"
-TOP_FACES_DIR = SCRIPT_DIR.parent / "node_faces_top5"
+IMAGES_DIR = SCRIPT_DIR.parent / "images"
+TOP_FACES_DIR = IMAGES_DIR / "node_faces_top5"
 TOP_K = 5
 
 # Face bbox is typically eyes-to-chin; expand more above for full head. Fraction of bbox dimension.
@@ -37,7 +37,7 @@ MARGIN_TOP = 0.65
 MARGIN_SIDES = 0.45
 MARGIN_BOTTOM = 0.35
 
-DEBUG_PERSON_ID = "person_1820"
+DEBUG_PERSON_ID = None
 
 
 def _is_explicit_moderation(moderation_result: str | None) -> bool:
@@ -192,15 +192,12 @@ if __name__ == "__main__":
     if not include_person_ids:
         raise RuntimeError("No person_ids loaded from Matches/Unknowns sheets (after ignore list).")
 
-    if NODE_FACES_DIR.exists():
-        rmtree(NODE_FACES_DIR)
-    NODE_FACES_DIR.mkdir(parents=True)
     if TOP_FACES_DIR.exists():
         rmtree(TOP_FACES_DIR)
     TOP_FACES_DIR.mkdir(parents=True)
 
-    count = 0
     top_count = 0
+    failed_exports: list[tuple[str, str, str]] = []
     for person_id in sorted(include_person_ids):
         label = names.get(person_id) or person_id
 
@@ -228,37 +225,12 @@ if __name__ == "__main__":
             if len(top_candidates) >= TOP_K and chosen is not None:
                 break
         if not chosen:
+            failed_exports.append((person_id, label, "no allowed candidate image after disallowed filters"))
             continue
-
-        image_name, left, top, width, height = chosen
-        roll = _best_roll_for_bbox(con, person_id, image_name, left, top, width, height)
-        rotation = _rotation_for_roll(roll)
-        bbox = _rotate_bbox(left, top, width, height, rotation)
-
-        src_path = IMAGE_DIR / image_name
-        if not src_path.is_file():
-            continue
-        transpose = None
-        if rotation == -90:
-            transpose = Image.Transpose.ROTATE_90
-        elif rotation == 90:
-            transpose = Image.Transpose.ROTATE_270
-
-        with Image.open(src_path) as img:
-            img.load()
-            if transpose is not None:
-                img = img.transpose(transpose)
-            w, h = img.size
-            x0, y0, x1, y1 = _square_crop_region(bbox[0], bbox[1], bbox[2], bbox[3], w, h)
-            if x1 <= x0 or y1 <= y0:
-                continue
-            crop = img.crop((x0, y0, x1, y1))
-            out_name = _sanitize_label_for_filename(label) + ".jpg"
-            crop.save(NODE_FACES_DIR / out_name, "JPEG", quality=92)
-            count += 1
 
         # Also export top-K similarly cropped faces per person.
         safe_label = _sanitize_label_for_filename(label)
+        exported_for_person = 0
         for idx, (img_name_k, left_k, top_k, width_k, height_k) in enumerate(top_candidates):
             roll_k = _best_roll_for_bbox(con, person_id, img_name_k, left_k, top_k, width_k, height_k)
             rotation_k = _rotation_for_roll(roll_k)
@@ -284,7 +256,18 @@ if __name__ == "__main__":
                 crop_k = img_k.crop((x0_k, y0_k, x1_k, y1_k))
                 out_k = f"{safe_label}__{idx:03d}.jpg"
                 crop_k.save(TOP_FACES_DIR / out_k, "JPEG", quality=92)
+                exported_for_person += 1
                 top_count += 1
+        if exported_for_person == 0:
+            failed_exports.append((person_id, label, "no top-K crops could be exported"))
 
-    print(f"Wrote {count} node face crops to {NODE_FACES_DIR}.")
+    if failed_exports:
+        print("FAILED NODE FACE EXPORTS:")
+        for pid, lbl, reason in failed_exports:
+            print(f"  - {pid} ({lbl}): {reason}")
+        print(
+            f"WARNING: {len(failed_exports)} person_id(s) had no exportable node faces. "
+            "See list above."
+        )
+
     print(f"Wrote {top_count} top-{TOP_K} node face crops to {TOP_FACES_DIR}.")

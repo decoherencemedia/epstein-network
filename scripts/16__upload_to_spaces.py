@@ -34,8 +34,13 @@ REPO_DIR = SCRIPT_DIR.parent
 ALL_IMAGES_DIR = IMAGE_DIR
 
 # These are produced inside this repo by the graph pipeline.
-THUMBS_DIR = REPO_DIR / "thumbnails"
-IMAGE_DATA_PATH = REPO_DIR / "image_data.json"
+THUMBS_DIR = REPO_DIR / "images" / "thumbnails"
+VIZ_DATA_DIR = REPO_DIR / "viz_data"
+IMAGE_DATA_PATH = VIZ_DATA_DIR / "image_data.json"
+
+ATLAS_WEBP_PATH = REPO_DIR / "images" / "atlas.webp"
+ATLAS_MANIFEST_PATH = VIZ_DATA_DIR / "atlas_manifest.json"
+SYNC_PREFIXES = ("images/", "thumbnails/", "atlas/")
 
 
 def get_spaces_client():
@@ -95,23 +100,81 @@ def upload_file(s3, bucket: str, local_path: Path, key: str) -> None:
     )
 
 
+def list_remote_objects(s3, bucket: str, prefixes: tuple[str, ...]) -> dict[str, int]:
+    """Return {key: size_bytes} for all objects under the provided prefixes."""
+    out: dict[str, int] = {}
+    paginator = s3.get_paginator("list_objects_v2")
+    for prefix in prefixes:
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                out[obj["Key"]] = int(obj["Size"])
+    return out
+
+
+def delete_keys(s3, bucket: str, keys: list[str]) -> None:
+    """Delete keys in batches (max 1000 per request)."""
+    if not keys:
+        return
+    chunk_size = 1000
+    for i in range(0, len(keys), chunk_size):
+        chunk = keys[i:i + chunk_size]
+        print(f"Deleting {len(chunk)} stale object(s) from s3://{bucket}/...")
+        s3.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
+        )
+
+
 def main():
     s3, bucket = get_spaces_client()
     filenames = load_image_data()
 
+    desired: dict[str, Path] = {}
     for filename in filenames:
         # Original image
         orig_path = ALL_IMAGES_DIR / filename
         orig_key = f"images/{filename}"
-        upload_file(s3, bucket, orig_path, orig_key)
+        desired[orig_key] = orig_path
 
         # Thumbnail: thumbnails/<stem>.webp
         stem = Path(filename).stem
         thumb_path = THUMBS_DIR / f"{stem}.webp"
         thumb_key = f"thumbnails/{stem}.webp"
-        upload_file(s3, bucket, thumb_path, thumb_key)
+        desired[thumb_key] = thumb_path
 
-    print("Done uploading originals and thumbnails to Spaces.")
+    # Atlas: used by index.html to render per-node faces without many HTTP requests.
+    desired["atlas/atlas.webp"] = ATLAS_WEBP_PATH
+    desired["atlas/atlas_manifest.json"] = ATLAS_MANIFEST_PATH
+
+    # Validate all desired local files before mutating remote state.
+    for key, local_path in desired.items():
+        if not local_path.is_file():
+            raise FileNotFoundError(f"Required file missing for upload key={key}: {local_path}")
+
+    remote = list_remote_objects(s3, bucket, SYNC_PREFIXES)
+
+    # Upload only missing/changed files.
+    uploaded = 0
+    skipped = 0
+    for key, local_path in desired.items():
+        local_size = local_path.stat().st_size
+        remote_size = remote.get(key)
+        if remote_size is not None and remote_size == local_size:
+            skipped += 1
+            continue
+        upload_file(s3, bucket, local_path, key)
+        uploaded += 1
+
+    # Delete stale remote files in managed prefixes.
+    desired_keys = set(desired.keys())
+    remote_keys = set(remote.keys())
+    stale_keys = sorted(remote_keys - desired_keys)
+    delete_keys(s3, bucket, stale_keys)
+
+    print(
+        "Spaces sync complete. "
+        f"desired={len(desired_keys)} uploaded={uploaded} skipped={skipped} deleted={len(stale_keys)}"
+    )
 
 
 if __name__ == "__main__":

@@ -24,7 +24,8 @@ from faces_db import pick_best_images
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images"
+FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images" / "filtered_images"
+VIZ_DATA_DIR = SCRIPT_DIR.parent / "viz_data"
 
 OUTPUT_GRAPHML = SCRIPT_DIR.parent / "graphml" / "epstein_photo_people.graphml"
 
@@ -228,7 +229,9 @@ if __name__ == "__main__":
 
     # Attach node attributes: degree_root_2, total image count, and category.
     degree_root_2 = {k: v ** 0.5 for k, v in dict(G.degree()).items()}
+    degree_root_3 = {k: v ** (1/3.0) for k, v in dict(G.degree()).items()}
     nx.set_node_attributes(G=G, values=degree_root_2, name="degree_root_2")
+    nx.set_node_attributes(G=G, values=degree_root_3, name="degree_root_3")
 
     # Total number of distinct images associated with each person/label.
     total_images_by_label = (
@@ -290,5 +293,6 @@ if __name__ == "__main__":
         "edges": edge_images,
     }
 
-    with open(SCRIPT_DIR / "image_data.json", "w") as f:
+    VIZ_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(VIZ_DATA_DIR / "image_data.json", "w") as f:
         json.dump(image_data, f)
