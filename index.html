@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="styles.css">
 <div class="svg-container">
   <svg id="svg">
-    <g class="full-network-graph" :data-dummy="update()"></g>
+    <g class="full-network-graph"></g>
   </svg>
   <div id="name-search" aria-label="Search people">
     <input id="name-search-input" type="search" placeholder="Search names" autocomplete="off" spellcheck="false" />
@@ -61,8 +61,7 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
 
-    const update = () => null,
-      linkedByIndex = {},
+    const linkedByIndex = {},
       options = {
         linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
         linkStroke: "#999",
@@ -269,7 +268,6 @@
         const sizesWrap = document.createElement("div");
         sizesWrap.className = "legend-sizes";
 
-        // const photoCounts = [5, 50, 500, 5000];
         const photoCounts = [5000, 500, 50, 5];
         // The dataset generator's node `size` is a transformed function of photo counts.
         // For the legend, we assume the intended relationship is √(photos) up to a single
@@ -315,12 +313,6 @@
           c.setAttribute("stroke", nodeStrokeForLegend);
           c.setAttribute("stroke-width", String(options?.nodeStrokeWidth ?? 1));
           c.style.cursor = "default";
-          svg.addEventListener("mouseenter", () => {
-            c.setAttribute("stroke", "#f00");
-          });
-          svg.addEventListener("mouseleave", () => {
-            c.setAttribute("stroke", nodeStrokeForLegend);
-          });
           svg.appendChild(c);
 
           const label = document.createElement("div");
@@ -481,6 +473,18 @@
         return state.lock.active && state.lock.kind === kind && state.lock.item === item;
       }
 
+      const MEDIA_SMALL_VIEWPORT = "(pointer: coarse), (max-width: 640px)";
+      function isSmallViewport() {
+        return typeof window !== "undefined" && window.matchMedia && window.matchMedia(MEDIA_SMALL_VIEWPORT).matches;
+      }
+
+      function clearHoverAndLabel() {
+        state.hover.kind = null;
+        state.hover.item = null;
+        state.label.hoveredEdge = null;
+        state.label.hoveredNode = null;
+      }
+
       function ensureEdgeGradient() {
         if (edgeGradient) return edgeGradient;
         const svg = d3.select("#svg");
@@ -622,16 +626,10 @@
       const N = d3.map(networkData.nodes, nodeId).map(intern);
       const LS = d3.map(networkData.links, linkSource).map(intern);
       const LT = d3.map(networkData.links, linkTarget).map(intern);
-      const nodeTitle = (_, i) => N[i];
-      const T = d3.map(networkData.nodes, nodeTitle);
       const W =
         typeof options.linkStrokeWidth !== "function"
           ? null
           : d3.map(networkData.links, options.linkStrokeWidth);
-      const L =
-        typeof options.linkStroke !== "function"
-          ? null
-          : d3.map(networkData.links, options.linkStroke);
       const R =
         typeof nodeRadius !== "function"
           ? null
@@ -768,12 +766,11 @@
         if (!svgEl) return;
         const rect = svgEl.getBoundingClientRect();
         if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
-        const vb = getSvgViewBoxMin();
+        const vb = getSvgViewBox();
         if (!vb || !vb.width || !vb.height) return;
 
         const sidebarPx = getSidebarWidthPx();
-        const isMobile = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
-        const previewRect = isMobile && previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
+        const previewRect = isSmallViewport() && previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
         const bottomBarPx = previewRect && Number.isFinite(previewRect.height) ? previewRect.height : 0;
 
         // Desired center of the visible area in SVG pixel coordinates (excluding sidebar / bottom sheet).
@@ -1114,10 +1111,7 @@
       // This prevents rare "stuck highlight" states when mouseout doesn't fire (e.g. fast movements).
       d3.select("#svg").on("mouseleave.resetFocus", function () {
         if (state.lock.active) return;
-        state.hover.kind = null;
-        state.hover.item = null;
-        state.label.hoveredEdge = null;
-        state.label.hoveredNode = null;
+        clearHoverAndLabel();
         resetFocus();
       });
       // Guard against races where focus is applied after the pointer already left the element.
@@ -1131,15 +1125,13 @@
         if (state.hover.kind === "edge") {
           const line = el.closest && el.closest("g.links-hitbox line");
           if (!line) {
-            state.hover.kind = null;
-            state.hover.item = null;
+            clearHoverAndLabel();
             resetFocus();
             return;
           }
           const datum = d3.select(line).datum();
           if (datum !== state.hover.item) {
-            state.hover.kind = null;
-            state.hover.item = null;
+            clearHoverAndLabel();
             resetFocus();
           }
           return;
@@ -1148,15 +1140,13 @@
         if (state.hover.kind === "node") {
           const circle = el.closest && el.closest("g.nodes circle");
           if (!circle) {
-            state.hover.kind = null;
-            state.hover.item = null;
+            clearHoverAndLabel();
             resetFocus();
             return;
           }
           const datum = d3.select(circle).datum();
           if (datum !== state.hover.item) {
-            state.hover.kind = null;
-            state.hover.item = null;
+            clearHoverAndLabel();
             resetFocus();
           }
         }
@@ -1164,10 +1154,7 @@
       if (typeof window !== "undefined") {
         window.addEventListener("blur", () => {
           if (state.lock.active) return;
-          state.hover.kind = null;
-          state.hover.item = null;
-          state.label.hoveredEdge = null;
-          state.label.hoveredNode = null;
+          clearHoverAndLabel();
           resetFocus();
         });
       }
@@ -1233,9 +1220,7 @@
         )
         .on("mouseout.tooltip", function () {
           if (state.lock.active) return;
-          state.hover.kind = null;
-          state.hover.item = null;
-          state.label.hoveredNode = null;
+          clearHoverAndLabel();
           updateNodeLabels();
         })
         .on(
@@ -1283,19 +1268,40 @@
       setupNameSearch();
 
       if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
-      if (L) linkLayer.attr("stroke", ({ index: i }) => L[i]);
-      if (T) node.attr("id", ({ index: i }) => "channel_" + T[i]);
 
       const LABEL_SIZE_THRESHOLD = 10;
       let currentTransform = d3.zoomIdentity;
 
+      const LABEL_PADDING_X = 3;
+      const LABEL_PADDING_Y = 2;
+      const LABEL_GAP_PX = 5;
+      const LABEL_LINE_HEIGHT = 6;
+
+      function styleTooltipOverlayBg(sel) {
+        return sel.attr("rx", 4).attr("ry", 4).style("fill", "rgba(255,255,255,1)").attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", "1");
+      }
+
+      function tooltipRectFromLines(line1Node, line2Node, paddingX, paddingY, line2Y) {
+        const bbox1 = line1Node?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
+        const bbox2 = line2Node?.getBBox?.() || { x: 0, y: line2Y, width: 0, height: 0 };
+        const minX = Math.min(bbox1.x, bbox2.x);
+        const minY = Math.min(bbox1.y, bbox2.y);
+        const maxX = Math.max(bbox1.x + bbox1.width, bbox2.x + bbox2.width);
+        const maxY = Math.max(bbox1.y + bbox1.height, bbox2.y + bbox2.height);
+        const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        const bgX = bbox.x - paddingX;
+        const bgY = bbox.y - paddingY;
+        const bgW = bbox.width + 2 * paddingX;
+        const bgH = bbox.height + 2 * paddingY;
+        const bg1Y = bbox1.y - paddingY;
+        const bg1H = bbox1.height + 2 * paddingY;
+        const cy1 = bg1Y + bg1H / 2;
+        return { bgX, bgY, bgW, bgH, cy1 };
+      }
+
       function updateNodeLabels() {
         const k = currentTransform.k;
         const sqrtK = Math.sqrt(k);
-        const PADDING_X = 3;
-        const PADDING_Y = 2;
-        const GAP_PX = 5;
-        const LINE_HEIGHT = 6;
 
         nodeLabelText.each(function (d) {
           // Label visibility should ramp up with zoom level (k), not √k.
@@ -1317,7 +1323,7 @@
           const expanded = shouldShowByHover;
           // Keep label text anchored; on hover we only expand the background under the node.
           const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * sqrtK * 0.6)) : 0;
-          const x = sx + d.radius * sqrtK + GAP_PX;
+          const x = sx + d.radius * sqrtK + LABEL_GAP_PX;
           const y = sy;
 
           const line1 = g.select("text.node-label-line1");
@@ -1327,7 +1333,7 @@
           line2
             .text(expanded ? `${d.cluster || "—"}` : "")
             .attr("display", expanded ? null : "none")
-            .attr("y", LINE_HEIGHT);
+            .attr("y", LABEL_LINE_HEIGHT);
           if (expanded) {
             // Use inline style so CSS rules don't override this.
             line2.style("fill", nodeColor(d));
@@ -1335,35 +1341,15 @@
             line2.style("fill", null);
           }
 
-          // Measure and size background rect.
-          const bbox1 = line1.node()?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
-          let bbox = bbox1;
-          if (expanded) {
-            const bbox2 = line2.node()?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
-            const minX = Math.min(bbox1.x, bbox2.x);
-            const minY = Math.min(bbox1.y, bbox2.y);
-            const maxX = Math.max(bbox1.x + bbox1.width, bbox2.x + bbox2.width);
-            const maxY = Math.max(bbox1.y + bbox1.height, bbox2.y + bbox2.height);
-            bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-          }
-
-          const bgX = bbox.x - PADDING_X;
-          const bgY = bbox.y - PADDING_Y;
-          const bgW = bbox.width + 2 * PADDING_X;
-          const bgH = bbox.height + 2 * PADDING_Y;
-          // IMPORTANT: keep the first line anchored (no vertical jump) when expanding.
-          // We center based on the first line's background box only, then expand the bg around it.
-          const bg1Y = bbox1.y - PADDING_Y;
-          const bg1H = bbox1.height + 2 * PADDING_Y;
-          const cy1 = bg1Y + bg1H / 2;
-          const ty = y - cy1;
+          const rect = tooltipRectFromLines(line1.node(), line2.node(), LABEL_PADDING_X, LABEL_PADDING_Y, LABEL_LINE_HEIGHT);
+          const ty = y - rect.cy1;
           g.attr("transform", `translate(${x},${ty})`);
 
           if (bgEl) {
-            bgEl.setAttribute("x", String(bgX + x - overlapPx));
-            bgEl.setAttribute("y", String(bgY + ty));
-            bgEl.setAttribute("width", String(bgW + overlapPx));
-            bgEl.setAttribute("height", String(bgH));
+            bgEl.setAttribute("x", String(rect.bgX + x - overlapPx));
+            bgEl.setAttribute("y", String(rect.bgY + ty));
+            bgEl.setAttribute("width", String(rect.bgW + overlapPx));
+            bgEl.setAttribute("height", String(rect.bgH));
             bgEl.setAttribute("rx", "4");
             bgEl.setAttribute("ry", "4");
             bgEl.style.fill = expanded ? "rgba(255,255,255,1)" : "rgba(255,255,255,0.7)";
@@ -1392,74 +1378,52 @@
           const d = state.label.hoveredNode;
           const sx = currentTransform.applyX(d.x);
           const overlapPx = Math.min(14, Math.max(6, d.radius * sqrtK * 0.6));
-          const x = sx + d.radius * sqrtK + GAP_PX;
+          const x = sx + d.radius * sqrtK + LABEL_GAP_PX;
           const y = currentTransform.applyY(d.y);
           tooltipOverlayText.select("text.node-label-line1").text(d.label || "");
-          tooltipOverlayText.select("text.node-label-line2").text(d.cluster || "—").attr("display", null).attr("y", LINE_HEIGHT).style("fill", nodeColor(d));
-          const t1 = tooltipOverlayText.select("text.node-label-line1").node();
-          const t2 = tooltipOverlayText.select("text.node-label-line2").node();
-          const bbox1 = t1?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
-          const bbox2 = t2?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
-          const minX = Math.min(bbox1.x, bbox2.x);
-          const minY = Math.min(bbox1.y, bbox2.y);
-          const maxX = Math.max(bbox1.x + bbox1.width, bbox2.x + bbox2.width);
-          const maxY = Math.max(bbox1.y + bbox1.height, bbox2.y + bbox2.height);
-          const bbox = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-          const bgX = bbox.x - PADDING_X;
-          const bgY = bbox.y - PADDING_Y;
-          const bgW = bbox.width + 2 * PADDING_X;
-          const bgH = bbox.height + 2 * PADDING_Y;
-          const bg1Y = bbox1.y - PADDING_Y;
-          const bg1H = bbox1.height + 2 * PADDING_Y;
-          const cy1 = bg1Y + bg1H / 2;
-          const ty = y - cy1;
+          tooltipOverlayText.select("text.node-label-line2").text(d.cluster || "—").attr("display", null).attr("y", LABEL_LINE_HEIGHT).style("fill", nodeColor(d));
+          const rect = tooltipRectFromLines(
+            tooltipOverlayText.select("text.node-label-line1").node(),
+            tooltipOverlayText.select("text.node-label-line2").node(),
+            LABEL_PADDING_X,
+            LABEL_PADDING_Y,
+            LABEL_LINE_HEIGHT
+          );
+          const ty = y - rect.cy1;
           tooltipOverlayText.attr("transform", `translate(${x},${ty})`);
           tooltipOverlayBg
-            .attr("x", bgX + x - overlapPx)
-            .attr("y", bgY + ty)
-            .attr("width", bgW + overlapPx)
-            .attr("height", bgH)
-            .attr("rx", 4)
-            .attr("ry", 4)
-            .style("fill", "rgba(255,255,255,1)")
-            .attr("stroke", "rgba(0,0,0,0.35)")
-            .attr("stroke-width", "1");
+            .attr("x", rect.bgX + x - overlapPx)
+            .attr("y", rect.bgY + ty)
+            .attr("width", rect.bgW + overlapPx)
+            .attr("height", rect.bgH);
+          styleTooltipOverlayBg(tooltipOverlayBg);
           tooltipOverlay.attr("visibility", "visible");
         } else if (state.label.hoveredEdge) {
-          // Edge tooltip in overlay (positioning duplicated from edge block below).
           const l = state.label.hoveredEdge;
-          const s = getNodeFromLinkEnd(l.source);
-          const t = getNodeFromLinkEnd(l.target);
+          const { s, t, sLabel, tLabel } = getEdgeEndpoints(l);
           if (s && t) {
             const mx = (s.x + t.x) / 2;
             const my = (s.y + t.y) / 2;
             const sx = currentTransform.applyX(mx);
             const sy = currentTransform.applyY(my);
-            const x = sx + GAP_PX;
+            const x = sx + LABEL_GAP_PX;
             const y = sy;
-            const sLabel = s.label != null ? s.label : String(s.id);
-            const tLabel = t.label != null ? t.label : String(t.id);
             tooltipOverlayText.select("text.node-label-line1").text(`${sLabel} & ${tLabel}`);
-            tooltipOverlayText.select("text.node-label-line2").text(`Shared photos: ${l.weight ?? "—"}`).attr("display", null).attr("y", LINE_HEIGHT).attr("fill", "#333");
+            tooltipOverlayText.select("text.node-label-line2").text(`Shared photos: ${l.weight ?? "—"}`).attr("display", null).attr("y", LABEL_LINE_HEIGHT).attr("fill", "#333");
             tooltipOverlayText.attr("transform", `translate(${x},${y})`);
-            const el1 = tooltipOverlayText.select("text.node-label-line1").node();
-            const el2 = tooltipOverlayText.select("text.node-label-line2").node();
-            const b1 = el1?.getBBox?.() || { x: 0, y: 0, width: 0, height: 0 };
-            const b2 = el2?.getBBox?.() || { x: 0, y: LINE_HEIGHT, width: 0, height: 0 };
-            const minX = Math.min(b1.x, b2.x);
-            const minY = Math.min(b1.y, b2.y);
-            const maxX = Math.max(b1.x + b1.width, b2.x + b2.width);
-            const maxY = Math.max(b1.y + b1.height, b2.y + b2.height);
+            const rect = tooltipRectFromLines(
+              tooltipOverlayText.select("text.node-label-line1").node(),
+              tooltipOverlayText.select("text.node-label-line2").node(),
+              LABEL_PADDING_X,
+              LABEL_PADDING_Y,
+              LABEL_LINE_HEIGHT
+            );
             tooltipOverlayBg
-              .attr("x", minX - PADDING_X + x)
-              .attr("y", minY - PADDING_Y + y)
-              .attr("width", maxX - minX + 2 * PADDING_X)
-              .attr("height", maxY - minY + 2 * PADDING_Y)
-              .attr("rx", 4)
-              .attr("ry", 4)
-              .style("fill", "rgba(255,255,255,1)")
-              .attr("stroke", "rgba(0,0,0,0.35)")
-              .attr("stroke-width", "1");
+              .attr("x", rect.bgX + x)
+              .attr("y", rect.bgY + y)
+              .attr("width", rect.bgW)
+              .attr("height", rect.bgH);
+            styleTooltipOverlayBg(tooltipOverlayBg);
             tooltipOverlay.attr("visibility", "visible");
           } else {
             tooltipOverlay.attr("visibility", "hidden");
@@ -1480,33 +1444,13 @@
 
       function getSidebarWidthPx() {
         if (typeof window === "undefined") return 0;
-        // Keep overlay behavior on mobile (bottom sheet), so no horizontal offset.
-        if (window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches) return 0;
+        if (isSmallViewport()) return 0;
         const raw = getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width").trim();
         const px = raw.endsWith("px") ? parseFloat(raw) : parseFloat(raw);
         return Number.isFinite(px) ? px : 0;
       }
 
-      function getSvgViewBoxWidth() {
-        const svgEl = document.getElementById("svg");
-        if (!svgEl) return null;
-        const vb = svgEl.getAttribute("viewBox");
-        if (!vb) return null;
-        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
-        if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-        return parts[2];
-      }
-
-      function getSvgViewBoxHeight() {
-        const svgEl = document.getElementById("svg");
-        if (!svgEl) return null;
-        const vb = svgEl.getAttribute("viewBox");
-        if (!vb) return null;
-        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
-        if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
-        return parts[3];
-      }
-      function getSvgViewBoxMin() {
+      function getSvgViewBox() {
         const svgEl = document.getElementById("svg");
         if (!svgEl) return null;
         const vb = svgEl.getAttribute("viewBox");
@@ -1514,6 +1458,14 @@
         const parts = vb.trim().split(/\s+/).map((x) => Number(x));
         if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
         return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+      }
+      function getSvgViewBoxWidth() {
+        const vb = getSvgViewBox();
+        return vb ? vb.width : null;
+      }
+      function getSvgViewBoxHeight() {
+        const vb = getSvgViewBox();
+        return vb ? vb.height : null;
       }
 
       function computeSidebarCenteringTranslateX() {
@@ -1532,9 +1484,7 @@
 
       function computeBottomBarCenteringTranslateY() {
         if (typeof window === "undefined") return 0;
-        // Only for mobile bottom-sheet layout.
-        const isMobile = window.matchMedia && window.matchMedia("(pointer: coarse), (max-width: 640px)").matches;
-        if (!isMobile) return 0;
+        if (!isSmallViewport()) return 0;
         const svgEl = document.getElementById("svg");
         if (!svgEl) return 0;
         const rect = svgEl.getBoundingClientRect();
