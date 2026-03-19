@@ -14,6 +14,8 @@ from PIL import Image
 
 from config import DB_PATH, IMAGE_DIR
 
+# Face bbox area in pixels (width*height*image_width*image_height) statistics from this dataset.
+MEDIAN_BASE_PX = 40000
 
 def init_db():
     """Create/ensure all tables: images, faces (person_id and celebrity_* on faces; people table removed)."""
@@ -265,24 +267,92 @@ def _index_quality_multiplier(index_record: dict) -> float:
     quality = fd.get("Quality") or {}
     pose = fd.get("Pose") or {}
     occluded = (fd.get("FaceOccluded") or {}).get("Value")
+    eyes_open = (fd.get("EyesOpen") or {}).get("Value")
+    eye_dir = fd.get("EyeDirection") or {}
 
     sharpness = float(quality.get("Sharpness") or 0.0)
     brightness = float(quality.get("Brightness") or 0.0)
     yaw = abs(float(pose.get("Yaw") or 0.0))
     pitch = abs(float(pose.get("Pitch") or 0.0))
+    eye_yaw = abs(float(eye_dir.get("Yaw") or 0.0))
+    eye_pitch = abs(float(eye_dir.get("Pitch") or 0.0))
 
     sharp_mult = 0.35 + _clamp(sharpness / 20.0, 0.0, 1.5)
     pose_penalty = math.exp(-((yaw + pitch) / 35.0))
     bright_penalty = 1.0 - _clamp(abs(brightness - 55.0) / 90.0, 0.0, 0.45)
-    occ_penalty = 0.2 if occluded is True else 1.0
+    # Strong penalty for occluded faces (obscured by hair, another person, etc.).
+    sunglasses = (fd.get("Sunglasses") or {}).get("Value")
 
-    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty
+    if occluded and sunglasses:
+        occ_penalty = 0.55  # Sunglasses occlusion — face is visible, just eyes obscured
+    elif occluded:
+        occ_penalty = 0.15  # Structural occlusion — hair, hand, other person, crop
+    else:
+        occ_penalty = 1.0
+    # Eyes closed is often a poor node thumbnail even when sharp/frontal.
+    eyes_penalty = 0.22 if eyes_open is False else 1.0
+    # Strong off-camera gaze also tends to be worse for thumbnails.
+    gaze = eye_yaw + eye_pitch
+    gaze_penalty = math.exp(-(gaze / 55.0))
+
+    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty * eyes_penalty * gaze_penalty
     return _clamp(mult, 0.08, 2.25)
 
 
-def _image_size(path: Path) -> Tuple[int, int]:
-    with Image.open(path) as im:
-        return im.size
+def _index_quality_components(index_record: dict) -> dict:
+    """Return dict of quality multiplier components (for debugging)."""
+    fd = (index_record or {}).get("FaceDetail") or {}
+    quality = fd.get("Quality") or {}
+    pose = fd.get("Pose") or {}
+    occluded = (fd.get("FaceOccluded") or {}).get("Value")
+    eyes_open = (fd.get("EyesOpen") or {}).get("Value")
+    eye_dir = fd.get("EyeDirection") or {}
+
+    sharpness = float(quality.get("Sharpness") or 0.0)
+    brightness = float(quality.get("Brightness") or 0.0)
+    yaw = abs(float(pose.get("Yaw") or 0.0))
+    pitch = abs(float(pose.get("Pitch") or 0.0))
+    eye_yaw = abs(float(eye_dir.get("Yaw") or 0.0))
+    eye_pitch = abs(float(eye_dir.get("Pitch") or 0.0))
+
+    sharp_mult = 0.35 + _clamp(sharpness / 20.0, 0.0, 1.5)
+    pose_penalty = math.exp(-((yaw + pitch) / 35.0))
+    bright_penalty = 1.0 - _clamp(abs(brightness - 55.0) / 90.0, 0.0, 0.45)
+    occ_penalty = 0.05 if occluded is True else 1.0
+    eyes_penalty = 0.22 if eyes_open is False else 1.0
+    gaze = eye_yaw + eye_pitch
+    gaze_penalty = math.exp(-(gaze / 55.0))
+    mult = sharp_mult * pose_penalty * bright_penalty * occ_penalty * eyes_penalty * gaze_penalty
+    return {
+        "sharp_mult": sharp_mult,
+        "pose_penalty": pose_penalty,
+        "bright_penalty": bright_penalty,
+        "occ_penalty": occ_penalty,
+        "eyes_penalty": eyes_penalty,
+        "gaze_penalty": gaze_penalty,
+        "eye_yaw": eye_yaw,
+        "eye_pitch": eye_pitch,
+        "eyes_open": eyes_open,
+        "occluded": occluded,
+        "mult": _clamp(mult, 0.08, 2.25),
+    }
+
+
+def _edge_penalty(left: float, top: float, width: float, height: float) -> float:
+    """
+    Penalize faces close to the image edge (likely cut off when adding head margin).
+    Returns a multiplier in (0, 1]; 1.0 when there is enough margin on all sides.
+    """
+    right = 1.0 - (left + width)
+    bottom = 1.0 - (top + height)
+    min_margin = min(left, right, top, bottom)
+    if min_margin >= 0.15:
+        return 1.0
+    if min_margin >= 0.10:
+        return 0.55
+    if min_margin >= 0.05:
+        return 0.2
+    return 0.06
 
 
 def _crop_face(path: Path, left: float, top: float, width: float, height: float) -> Image.Image:
@@ -314,6 +384,24 @@ def _hamming_distance(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
+def _min_margin(left: float, top: float, width: float, height: float) -> float:
+    right = 1.0 - (left + width)
+    bottom = 1.0 - (top + height)
+    return min(left, right, top, bottom)
+
+
+
+def _size_term(base_px: float) -> float:
+    """
+    Saturating size score:
+    - strong penalty for very small faces
+    - gradual differences once faces are medium/large
+    """
+    if base_px <= 0:
+        return 0.0
+    return base_px / (base_px + MEDIAN_BASE_PX)
+
+
 def pick_best_images(
     conn,
     person_id: str,
@@ -323,24 +411,52 @@ def pick_best_images(
     pool_size: int = 25,
     dhash_size: int = 8,
     min_hamming: int = 10,
+    debug_person_id: Optional[str] = None,
 ) -> List[Tuple[str, float, float, float, float]]:
     """
     Return up to n best (image_name, left, top, width, height) for this person.
 
-    Selection: pool by size (bbox area × image pixels), rerank by size × quality^0.6,
-    then greedily add by dHash diversity.
+    Selection: pool by size (bbox area × image pixels), rerank by size_term × (quality × edge_penalty)^0.6,
+    then greedily add by dHash diversity. Quality includes sharpness, pose, brightness, and a strong
+    penalty for FaceOccluded; edge_penalty down-ranks faces near the image border (cut off risk).
     """
     image_dir = image_dir or IMAGE_DIR
     appearances = get_appearances_for_person(conn, person_id)
     if not appearances:
         return []
 
+    image_names = sorted({str(row[0]) for row in appearances})
+    if not image_names:
+        return []
+    placeholders = ",".join("?" for _ in image_names)
+    rows = conn.execute(
+        f"SELECT image_name, width_px, height_px FROM images WHERE image_name IN ({placeholders})",
+        image_names,
+    ).fetchall()
+    image_dims = {str(name): (w, h) for name, w, h in rows}
+    missing_dims = [
+        name for name in image_names
+        if name not in image_dims
+        or image_dims[name][0] is None
+        or image_dims[name][1] is None
+    ]
+    if missing_dims:
+        examples = ", ".join(missing_dims[:10])
+        more = " ..." if len(missing_dims) > 10 else ""
+        raise RuntimeError(
+            "Missing width_px/height_px in images table for pick_best_images. "
+            "Run scripts/01__dedup_images.py first. "
+            f"Examples: {examples}{more}"
+        )
+
     by_size: List[Tuple[float, Tuple]] = []
     for image_name, left, top, width, height, index_face_record in appearances:
         path = image_dir / image_name
         if not path.is_file():
             raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
-        w, h = _image_size(path)
+        w, h = image_dims[str(image_name)]
+        w = int(w)
+        h = int(h)
         base = (float(width) * float(height)) * (w * h)
         by_size.append(
             (base, (image_name, float(left), float(top), float(width), float(height), index_face_record))
@@ -349,15 +465,45 @@ def pick_best_images(
     pool = [t for _, t in by_size[: max(n, pool_size)]]
 
     scored: List[Tuple[float, Tuple[str, float, float, float, float]]] = []
+    debug_rows: List[dict] = []
     for image_name, left, top, width, height, index_face_record in pool:
         path = image_dir / image_name
-        w, h = _image_size(path)
+        w, h = image_dims[str(image_name)]
+        w = int(w)
+        h = int(h)
         base = (width * height) * (w * h)
         idx = _parse_index_face_record(index_face_record)
         mult = _index_quality_multiplier(idx)
-        score = base * (mult ** 0.6)
+        edge = _edge_penalty(left, top, width, height)
+        size = _size_term(base)
+        score = size * ((mult * edge) ** 0.6)
         scored.append((score, (image_name, left, top, width, height)))
+        if debug_person_id is not None and person_id == debug_person_id:
+            comp = _index_quality_components(idx)
+            debug_rows.append({
+                "image_name": image_name,
+                "left": left, "top": top, "width": width, "height": height,
+                "base": base, "size": size, "edge": edge, "min_margin": _min_margin(left, top, width, height),
+                **comp,
+                "score": score,
+            })
     scored.sort(key=lambda x: x[0], reverse=True)
+
+    if debug_person_id is not None and person_id == debug_person_id and debug_rows:
+        # Print by score rank (desc)
+        by_score = sorted(debug_rows, key=lambda r: r["score"], reverse=True)
+        print(f"\n--- pick_best_images debug: {person_id} ({len(debug_rows)} in pool) ---")
+        for rank, row in enumerate(by_score, 1):
+            print(f"  #{rank} score={row['score']:.4f} base={row['base']:.0f} size={row['size']:.3f} mult={row['mult']:.3f} edge={row['edge']:.3f} "
+                  f"min_margin={row['min_margin']:.3f} occluded={row['occluded']}")
+            print(
+                f"      sharp={row['sharp_mult']:.3f} pose={row['pose_penalty']:.3f} bright={row['bright_penalty']:.3f} "
+                f"occ={row['occ_penalty']:.3f} eyes={row['eyes_penalty']:.3f} gaze={row['gaze_penalty']:.3f} "
+                f"eye_yaw={row['eye_yaw']:.1f} eye_pitch={row['eye_pitch']:.1f} eyes_open={row['eyes_open']}"
+            )
+            print(f"      bbox left={row['left']:.3f} top={row['top']:.3f} w={row['width']:.3f} h={row['height']:.3f}")
+            print(f"      image_name={row['image_name']}")
+        print("---\n")
 
     selected: List[Tuple[str, float, float, float, float]] = []
     selected_hashes: List[int] = []

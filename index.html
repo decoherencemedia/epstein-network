@@ -114,9 +114,20 @@
 
       const EDGE_HIGHLIGHT_WIDTH_MULT = 2;
       const MUTED_NODE_FILL = "#cfcfcf";
+      const NODE_FACE_PATTERN_ID = "epstein-face-pattern";
+      const NODE_FACE_IMAGE_HREF = "epstein_face.webp";
 
       function nodeColor(d) {
         return (d && clusterColorById[d.cluster]) || options.nodeFill;
+      }
+
+      let nodeFacePatternReady = false;
+
+      function nodeFaceFill() {
+        if (nodeFacePatternReady) {
+          return `url(#${NODE_FACE_PATTERN_ID})`;
+        }
+        return "none";
       }
 
       // Tooltips are rendered as Sigma-style label chips in `labelLayer`.
@@ -496,6 +507,33 @@
         return edgeGradient;
       }
 
+      function ensureNodeFacePattern() {
+        if (nodeFacePatternReady) return;
+        const svg = d3.select("#svg");
+        let defs = svg.select("defs");
+        if (defs.empty()) defs = svg.append("defs");
+        const existing = defs.select(`#${NODE_FACE_PATTERN_ID}`);
+        if (!existing.empty()) {
+          nodeFacePatternReady = true;
+          return;
+        }
+        const p = defs
+          .append("pattern")
+          .attr("id", NODE_FACE_PATTERN_ID)
+          .attr("patternUnits", "objectBoundingBox")
+          .attr("patternContentUnits", "objectBoundingBox")
+          .attr("width", 1)
+          .attr("height", 1);
+        p.append("image")
+          .attr("href", NODE_FACE_IMAGE_HREF)
+          .attr("x", 0)
+          .attr("y", 0)
+          .attr("width", 1)
+          .attr("height", 1)
+          .attr("preserveAspectRatio", "xMidYMid slice");
+        nodeFacePatternReady = true;
+      }
+
       function resetFocus() {
         state.label.allowFn = null;
         state.label.hoveredEdge = null;
@@ -505,6 +543,10 @@
           .attr("fill", (d) => nodeColor(d))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
+        nodeImage
+          .attr("visibility", "visible")
+          .attr("opacity", 1)
+          .attr("fill", nodeFaceFill());
 
         // Links.
         linkLayer.data(links, linkKey).order();
@@ -532,6 +574,10 @@
           .attr("fill", (o) => (isInFocusSet(o) ? nodeColor(o) : MUTED_NODE_FILL))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
+        nodeImage
+          .attr("visibility", "visible")
+          .attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0))
+          .attr("fill", nodeFaceFill());
 
         linkLayer
           .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
@@ -554,8 +600,11 @@
         if (!l) return;
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
-        const focusNodes = new Set([s, t]);
-        state.label.allowFn = (o) => focusNodes.has(o);
+        const isEndpoint = (o) => !!o && (
+          (s && o.id === s.id) ||
+          (t && o.id === t.id)
+        );
+        state.label.allowFn = isEndpoint;
         const sColor = nodeColor(s);
         const tColor = nodeColor(t);
         const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
@@ -572,9 +621,16 @@
 
         node
           .attr("opacity", 1)
-          .attr("fill", (o) => (focusNodes.has(o) ? nodeColor(o) : MUTED_NODE_FILL))
+          .attr("fill", (o) => (isEndpoint(o) ? nodeColor(o) : MUTED_NODE_FILL))
           .attr("stroke", options.nodeStroke)
           .attr("stroke-width", options.nodeStrokeWidth);
+        nodeImage
+          .attr("visibility", "visible")
+          .attr("opacity", (o) => (isEndpoint(o) ? 1 : 0))
+          .attr("fill", nodeFaceFill());
+        // Hide top clones during edge focus (edge tooltip mode).
+        hoveredNodeClone.attr("visibility", "hidden");
+        hoveredNodeImageClone.attr("visibility", "hidden");
 
         linkLayer
           .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
@@ -1008,6 +1064,7 @@
       // Hovered node circle drawn on top of the tooltip so it stays visible.
       const hoveredNodeOnTop = labelLayer.append("g").attr("class", "hovered-node-on-top");
       const hoveredNodeClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-clone").attr("visibility", "hidden").attr("stroke", "none");
+      const hoveredNodeImageClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-image-clone").attr("visibility", "hidden").attr("stroke", "none");
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
       const VIEWBOX = { x: -200, y: -200, width: 400, height: 400 };
@@ -1023,6 +1080,7 @@
           .attr("preserveAspectRatio", "xMidYMid meet");
       }
       setViewBox();
+      ensureNodeFacePattern();
       if (typeof window !== "undefined") {
         window.addEventListener("resize", setViewBox);
       }
@@ -1169,7 +1227,7 @@
         .data(nodes)
         .join("circle")
         .style("cursor", "pointer")
-        .attr("fill", (d) => (d && clusterColorById[d.cluster]) || options.nodeFill)
+        .attr("fill", (d) => nodeColor(d))
         .attr("r", (d) => d.radius)
         .on("mouseover.tooltip", function (event, d) {
           if (state.lock.active) return;
@@ -1230,6 +1288,16 @@
             resetFocus();
           }
         );
+
+      const nodeImage = zoomLayer
+        .append("g")
+        .attr("class", "node-images")
+        .style("pointer-events", "none")
+        .selectAll("circle")
+        .data(nodes)
+        .join("circle")
+        .attr("fill", nodeFaceFill())
+        .attr("r", (d) => d.radius);
 
       const nodeLabelText = labelTextLayer
         .selectAll("g.node-label")
@@ -1363,14 +1431,22 @@
           const d = state.label.hoveredNode;
           const sx = currentTransform.applyX(d.x);
           const sy = currentTransform.applyY(d.y);
+          const rr = d.radius * sqrtK;
           hoveredNodeClone
             .attr("visibility", "visible")
             .attr("cx", sx)
             .attr("cy", sy)
-            .attr("r", d.radius * sqrtK)
+            .attr("r", rr)
             .attr("fill", nodeColor(d));
+          hoveredNodeImageClone
+            .attr("visibility", "visible")
+            .attr("cx", sx)
+            .attr("cy", sy)
+            .attr("r", rr)
+            .attr("fill", nodeFaceFill());
         } else {
           hoveredNodeClone.attr("visibility", "hidden");
+          hoveredNodeImageClone.attr("visibility", "hidden");
         }
 
         // Draw expanded node or edge tooltip in overlay (above all labels) so it is never covered.
@@ -1408,8 +1484,14 @@
             const sy = currentTransform.applyY(my);
             const x = sx + LABEL_GAP_PX;
             const y = sy;
-            tooltipOverlayText.select("text.node-label-line1").text(`${sLabel} & ${tLabel}`);
-            tooltipOverlayText.select("text.node-label-line2").text(`Shared photos: ${l.weight ?? "—"}`).attr("display", null).attr("y", LABEL_LINE_HEIGHT).attr("fill", "#333");
+            tooltipOverlayText.select("text.node-label-line1")
+              .text(`${sLabel} & ${tLabel}`)
+              .style("fill", "#111");
+            tooltipOverlayText.select("text.node-label-line2")
+              .text(`Shared photos: ${l.weight ?? "—"}`)
+              .attr("display", null)
+              .attr("y", LABEL_LINE_HEIGHT)
+              .style("fill", "#333");
             tooltipOverlayText.attr("transform", `translate(${x},${y})`);
             const rect = tooltipRectFromLines(
               tooltipOverlayText.select("text.node-label-line1").node(),
@@ -1507,6 +1589,7 @@
           const sqrtK = Math.sqrt(currentTransform.k);
           // Sigma-like zoom sizing: nodes and edge thickness scale with √k instead of k.
           node.attr("r", (d) => d.radius / sqrtK);
+          nodeImage.attr("r", (d) => d.radius / sqrtK);
 
           // Re-apply focus styles (includes scaled edge widths).
           if (state.lock.active) {
@@ -1576,6 +1659,7 @@
           .attr("x2", (d) => d.target.x)
           .attr("y2", (d) => d.target.y);
         node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+        nodeImage.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
       }
     }).catch(function (err) {
       document.body.innerHTML = `<pre style="padding:2rem;color:#c00;font:14px/1.6 monospace">Failed to load data:\n${err}</pre>`;
