@@ -1,7 +1,7 @@
 :root {
   --sidebar-width: 390px;
-  --sidebar-bg-rgb: 255, 255, 255;
-  --sidebar-bg-alpha: 0.95;
+  --panel-bg-rgb: 238, 241, 245;
+  --panel-bg-alpha: 0.95;
 }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 .svg-container {
@@ -32,8 +32,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   bottom: 0;
   width: var(--sidebar-width);
   max-width: calc(100vw - 24px);
-  background: rgba(var(--sidebar-bg-rgb), var(--sidebar-bg-alpha));
-  border: 1px solid #e3e3e3;
+  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+  border: 1px solid rgba(182, 190, 202, 0.9);
   border-radius: 0;
   box-shadow: 0 10px 28px rgba(0,0,0,0.15);
   padding: 14px 14px 16px;
@@ -121,30 +121,42 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
 
 #name-search {
   position: fixed;
-  top: 12px;
-  right: 12px;
+  top: 0;
+  right: 0;
   z-index: 50;
-  width: 320px;
-  max-width: min(420px, calc(100vw - 24px));
+  width: 380px;
+  max-width: min(520px, calc(100vw - 8px));
   pointer-events: auto;
+  padding: 12px;
+  border-radius: 0 0 0 14px;
+  background: rgba(var(--panel-bg-rgb), 0.92);
+  border: 1px solid rgba(182, 190, 202, 0.9);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.14);
+  box-sizing: border-box;
 }
 #name-search-input {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #e3e3e3;
-  border-radius: 999px;
-  padding: 9px 12px;
+  border-radius: 0;
+  padding: 9px 16px 9px 12px;
   font: 13px/1.2 sans-serif;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 10px 28px rgba(0,0,0,0.10);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: none;
   outline: none;
+}
+#name-search-input::-webkit-search-cancel-button {
+  cursor: pointer;
+  transform: scale(1.35);
+  transform-origin: center;
+  margin-right: -2px;
 }
 #name-search-input:focus {
   border-color: #1565c0;
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.18), 0 10px 28px rgba(0,0,0,0.12);
+  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.18);
 }
 #name-search-results {
-  margin-top: 8px;
+  margin-top: 6px;
   border: 1px solid #e3e3e3;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.96);
@@ -385,9 +397,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   #name-search {
     left: 50%;
     right: auto;
-    top: 10px;
+    top: 0;
     transform: translateX(-50%);
     width: min(420px, calc(100vw - 20px));
+    max-width: calc(100vw - 20px);
+    border-radius: 0 0 14px 14px;
   }
   #thumb-preview {
     left: 10px;
