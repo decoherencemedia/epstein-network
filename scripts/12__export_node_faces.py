@@ -31,6 +31,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = SCRIPT_DIR.parent / "images"
 TOP_FACES_DIR = IMAGES_DIR / "node_faces_top5"
 TOP_K = 5
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 # Face bbox is typically eyes-to-chin; expand more above for full head. Fraction of bbox dimension.
 MARGIN_TOP = 0.65
@@ -168,6 +169,21 @@ def _square_crop_region(
     return (x0, y0, x1, y1)
 
 
+def _label_from_export_filename(
+    path: Path,
+    sanitized_to_label: dict[str, str],
+) -> str | None:
+    """
+    Parse `<sanitized_label>__NNN.ext` and map back to display label.
+    Returns None if filename does not match expected pattern or label unknown.
+    """
+    stem = path.stem
+    if "__" not in stem:
+        return None
+    sanitized_label = stem.rsplit("__", 1)[0]
+    return sanitized_to_label.get(sanitized_label)
+
+
 if __name__ == "__main__":
     con = sqlite3.connect(DB_PATH)
 
@@ -192,14 +208,39 @@ if __name__ == "__main__":
     if not include_person_ids:
         raise RuntimeError("No person_ids loaded from Matches/Unknowns sheets (after ignore list).")
 
-    if TOP_FACES_DIR.exists():
-        rmtree(TOP_FACES_DIR)
-    TOP_FACES_DIR.mkdir(parents=True)
+    TOP_FACES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Build stable mapping between display labels and sanitized filename labels.
+    label_by_person_id = {pid: (names.get(pid) or pid) for pid in include_person_ids}
+    sanitized_to_label: dict[str, str] = {}
+    for label in label_by_person_id.values():
+        s = _sanitize_label_for_filename(label)
+        prev = sanitized_to_label.get(s)
+        if prev is not None and prev != label:
+            raise RuntimeError(
+                "Sanitized label collision while mapping existing exports: "
+                f"{prev!r} and {label!r} both map to {s!r}"
+            )
+        sanitized_to_label[s] = label
+
+    # Determine which labels already have exported top-K images.
+    existing_labels: set[str] = set()
+    for p in TOP_FACES_DIR.iterdir():
+        if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        lbl = _label_from_export_filename(p, sanitized_to_label)
+        if lbl is not None:
+            existing_labels.add(lbl)
 
     top_count = 0
+    exported_people_count = 0
+    skipped_existing = 0
     failed_exports: list[tuple[str, str, str]] = []
     for person_id in sorted(include_person_ids):
-        label = names.get(person_id) or person_id
+        label = label_by_person_id[person_id]
+        if label in existing_labels:
+            skipped_existing += 1
+            continue
 
         if DEBUG_PERSON_ID and person_id == DEBUG_PERSON_ID:
             pick_best_images(
@@ -260,6 +301,8 @@ if __name__ == "__main__":
                 top_count += 1
         if exported_for_person == 0:
             failed_exports.append((person_id, label, "no top-K crops could be exported"))
+        else:
+            exported_people_count += 1
 
     if failed_exports:
         print("FAILED NODE FACE EXPORTS:")
@@ -270,4 +313,8 @@ if __name__ == "__main__":
             "See list above."
         )
 
-    print(f"Wrote {top_count} top-{TOP_K} node face crops to {TOP_FACES_DIR}.")
+    print(f"Skipped {skipped_existing} person_id(s) with existing top-K exports in {TOP_FACES_DIR}.")
+    print(
+        f"Wrote {top_count} top-{TOP_K} node face crops for "
+        f"{exported_people_count} different people to {TOP_FACES_DIR}."
+    )

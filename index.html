@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="styles.css">
 <div class="svg-container">
   <svg id="svg">
@@ -79,6 +80,13 @@
     const linkTarget = (d) => d.target;
 
     const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
+    const IS_LOCAL_DEV =
+      typeof window !== "undefined" &&
+      (
+        window.location.protocol === "file:" ||
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1"
+      );
     // Central place for user-tweakable visualization constants.
     const TWEAK = {
       nodeScaling: 2.5,
@@ -138,7 +146,9 @@
 
       const EDGE_HIGHLIGHT_WIDTH_MULT = TWEAK.edgeHighlightWidthMult;
       const MUTED_NODE_FILL = TWEAK.mutedNodeFill;
-      const NODE_ATLAS_IMAGE_HREF = `${SPACES_CDN_BASE}/atlas/atlas.webp`;
+      const NODE_ATLAS_IMAGE_HREF = IS_LOCAL_DEV
+        ? "images/atlas.webp"
+        : `${SPACES_CDN_BASE}/atlas/atlas.webp`;
 
       function computeAtlasDims(manifest) {
         if (!manifest || typeof manifest !== "object") {
