@@ -41,6 +41,9 @@ IMAGE_DATA_PATH = VIZ_DATA_DIR / "image_data.json"
 ATLAS_WEBP_PATH = REPO_DIR / "images" / "atlas.webp"
 ATLAS_MANIFEST_PATH = VIZ_DATA_DIR / "atlas_manifest.json"
 SYNC_PREFIXES = ("images/", "thumbnails/", "atlas/")
+FORCE_UPLOAD_KEYS = {"atlas/atlas.webp", "atlas/atlas_manifest.json"}
+ATLAS_IMAGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
+ATLAS_MANIFEST_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 
 
 def get_spaces_client():
@@ -88,15 +91,24 @@ def load_image_data():
     return sorted(filenames)
 
 
-def upload_file(s3, bucket: str, local_path: Path, key: str) -> None:
+def upload_file(
+    s3,
+    bucket: str,
+    local_path: Path,
+    key: str,
+    cache_control: str | None = None,
+) -> None:
     if not local_path.is_file():
         raise FileNotFoundError(f"Required file missing for upload: {local_path}")
     print(f"Uploading {local_path} -> s3://{bucket}/{key}")
+    extra_args: dict[str, str] = {"ACL": "public-read"}
+    if cache_control is not None:
+        extra_args["CacheControl"] = cache_control
     s3.upload_file(
         Filename=str(local_path),
         Bucket=bucket,
         Key=key,
-        ExtraArgs={"ACL": "public-read"},
+        ExtraArgs=extra_args,
     )
 
 
@@ -157,6 +169,24 @@ def main():
     uploaded = 0
     skipped = 0
     for key, local_path in desired.items():
+        if key in FORCE_UPLOAD_KEYS:
+            # Atlas files are small and frequently replaced. Force upload to
+            # avoid false "unchanged" skips when file size happens to match.
+            cache_control = (
+                ATLAS_IMAGE_CACHE_CONTROL
+                if key == "atlas/atlas.webp"
+                else ATLAS_MANIFEST_CACHE_CONTROL
+            )
+            upload_file(
+                s3,
+                bucket,
+                local_path,
+                key,
+                cache_control=cache_control,
+            )
+            uploaded += 1
+            continue
+
         local_size = local_path.stat().st_size
         remote_size = remote.get(key)
         if remote_size is not None and remote_size == local_size:

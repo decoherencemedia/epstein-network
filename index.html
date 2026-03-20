@@ -91,6 +91,7 @@
     const TWEAK = {
       nodeScaling: 2.5,
       initialZoomK: 1.2,
+      nodeZoomScaleExp: 0.35,
       edgeHighlightWidthMult: 2,
       mutedNodeFill: "#cfcfcf",
       mediaSmallViewport: "(pointer: coarse), (max-width: 640px)",
@@ -129,6 +130,7 @@
       };
       const nodeScaling = TWEAK.nodeScaling;
       const INITIAL_ZOOM_K = TWEAK.initialZoomK;
+      const NODE_ZOOM_SCALE_EXP = TWEAK.nodeZoomScaleExp;
 
       function isConnected(a, b) {
         return (
@@ -687,11 +689,11 @@
         linkLayer.data(links, linkKey).order();
         linkHitbox.data(links, linkKey).order();
         linkHitbox.attr("display", null);
-        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
+        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
         linkLayer
           .attr("stroke", options.linkStroke)
           .attr("stroke-opacity", options.linkStrokeOpacity)
-          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)) / sqrtK);
+          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)) / zoomScale);
 
         updateNodeLabels();
       }
@@ -702,7 +704,7 @@
         const isInFocusSet = (o) => isConnected(d, o);
         const isIncident = (l) => l.source === d || l.target === d;
         state.label.allowFn = isInFocusSet;
-        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
+        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
 
         node
           .attr("opacity", 1)
@@ -718,7 +720,7 @@
           // Sigma-like: hide non-incident edges.
           .attr("stroke-opacity", (l) => (isIncident(l) ? 1 : 0))
           .attr("stroke-width", (l, i) => {
-            const base = (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) / sqrtK;
+            const base = (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) / zoomScale;
             return isIncident(l) ? EDGE_HIGHLIGHT_WIDTH_MULT * base : base;
           });
         linkHitbox.attr("display", (l) => (isIncident(l) ? null : "none"));
@@ -741,7 +743,7 @@
         state.label.allowFn = isEndpoint;
         const sColor = nodeColor(s);
         const tColor = nodeColor(t);
-        const sqrtK = Math.sqrt(currentTransform?.k ?? 1);
+        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
 
         const grad = ensureEdgeGradient();
         grad
@@ -769,7 +771,7 @@
           .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
           .attr("stroke-opacity", (o) => (o === l ? 1 : 0))
           .attr("stroke-width", (o, i) => {
-            const base = (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) / sqrtK;
+            const base = (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) / zoomScale;
             return o === l ? EDGE_HIGHLIGHT_WIDTH_MULT * base : base;
           });
         linkHitbox.attr("display", (o) => (o === l ? null : "none"));
@@ -1475,6 +1477,14 @@
       const LABEL_SIZE_THRESHOLD = TWEAK.labelSizeThreshold;
       let currentTransform = d3.zoomIdentity;
 
+      function zoomScaleFactor(k) {
+        return Math.pow(k, NODE_ZOOM_SCALE_EXP);
+      }
+
+      function nodeScreenScaleFactor(k) {
+        return Math.pow(k, 1 - NODE_ZOOM_SCALE_EXP);
+      }
+
       const LABEL_PADDING_X = TWEAK.labelPaddingX;
       const LABEL_PADDING_Y = TWEAK.labelPaddingY;
       const LABEL_GAP_PX = TWEAK.labelGapPx;
@@ -1507,7 +1517,7 @@
 
       function updateNodeLabels() {
         const k = currentTransform.k;
-        const sqrtK = Math.sqrt(k);
+        const nodeScreenScale = nodeScreenScaleFactor(k);
         const labelZoomK = Math.pow(k, LABEL_ZOOM_RESPONSE_EXP);
 
         nodeLabelText.each(function (d) {
@@ -1529,8 +1539,8 @@
           const sy = currentTransform.applyY(d.y);
           const expanded = shouldShowByHover;
           // Keep label text anchored; on hover we only expand the background under the node.
-          const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * sqrtK * 0.6)) : 0;
-          const x = sx + d.radius * sqrtK + LABEL_GAP_PX;
+          const overlapPx = expanded ? Math.min(14, Math.max(6, d.radius * nodeScreenScale * 0.6)) : 0;
+          const x = sx + d.radius * nodeScreenScale + LABEL_GAP_PX;
           const y = sy;
 
           const line1 = g.select("text.node-label-line1");
@@ -1570,7 +1580,7 @@
           const d = state.label.hoveredNode;
           const sx = currentTransform.applyX(d.x);
           const sy = currentTransform.applyY(d.y);
-          const rr = d.radius * sqrtK;
+          const rr = d.radius * nodeScreenScale;
           hoveredNodeClone
             .attr("visibility", "visible")
             .attr("cx", sx)
@@ -1592,8 +1602,8 @@
         if (state.label.hoveredNode) {
           const d = state.label.hoveredNode;
           const sx = currentTransform.applyX(d.x);
-          const overlapPx = Math.min(14, Math.max(6, d.radius * sqrtK * 0.6));
-          const x = sx + d.radius * sqrtK + LABEL_GAP_PX;
+          const overlapPx = Math.min(14, Math.max(6, d.radius * nodeScreenScale * 0.6));
+          const x = sx + d.radius * nodeScreenScale + LABEL_GAP_PX;
           const y = currentTransform.applyY(d.y);
           tooltipOverlayText.select("text.node-label-line1").text(d.label || "");
           tooltipOverlayText.select("text.node-label-line2").text(d.cluster || "—").attr("display", null).attr("y", LABEL_LINE_HEIGHT).style("fill", nodeColor(d));
@@ -1725,10 +1735,10 @@
         .on("zoom", (e) => {
           currentTransform = e.transform;
           zoomLayer.attr("transform", e.transform);
-          const sqrtK = Math.sqrt(currentTransform.k);
-          // Sigma-like zoom sizing: nodes and edge thickness scale with √k instead of k.
-          node.attr("r", (d) => d.radius / sqrtK);
-          nodeImage.attr("r", (d) => d.radius / sqrtK);
+          const zoomScale = zoomScaleFactor(currentTransform.k);
+          // Zoom sizing with configurable exponent.
+          node.attr("r", (d) => d.radius / zoomScale);
+          nodeImage.attr("r", (d) => d.radius / zoomScale);
 
           // Re-apply focus styles (includes scaled edge widths).
           if (state.lock.active) {
