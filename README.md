@@ -1,5 +1,27 @@
 # Epstein Photo Network Visualization
 
+## Website (static site)
+
+HTML is assembled from fragments under `site/`:
+
+- **`site/partials/`** — shared head, nav (per route), footer, closing tags
+- **`site/pages/`** — page bodies (`home-inner.html` is the D3 graph; edit there for viz changes)
+- **`site/build.sh`** — concatenates into `dist/` and copies `styles.css`, `favicon.svg`, `viz_data/` (and `images/` if present)
+
+Run from repo root:
+
+```bash
+./site/build.sh
+```
+
+Preview locally (needs `viz_data/` inside `dist/`):
+
+```bash
+cd dist && python3 -m http.server 8000
+```
+
+GitHub Actions runs `./site/build.sh` and deploys **`dist/`** to GitHub Pages.
+
 ## Pipeline order
 
 Run from `scripts/` (or set paths accordingly). `all_images` is at repo root.

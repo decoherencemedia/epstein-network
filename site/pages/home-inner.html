@@ -1,14 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Epstein Network</title>
-  <meta name="description" content="Interactive network visualization of people appearing in the DOJ's Epstein Library, with node and edge exploration." />
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
+<div class="site-home-graph">
 <div class="svg-container">
   <svg id="svg">
     <g class="full-network-graph"></g>
@@ -62,6 +52,7 @@
       <div class="thumb-legend" id="thumb-legend" style="display:none"></div>
     </div>
   </div>
+</div>
 </div>
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -252,6 +243,7 @@
       const previewImgEl = document.getElementById("thumb-img");
       const previewEmptyEl = document.getElementById("thumb-empty");
       const previewTitleEl = document.getElementById("thumb-title");
+      const thumbHeaderEl = document.querySelector("#thumb-preview .thumb-header");
       const previewMetaEl = document.getElementById("thumb-meta");
       const previewCategorySwatchEl = document.getElementById("thumb-category-swatch");
       const previewCategoryTextEl = document.getElementById("thumb-category-text");
@@ -320,7 +312,8 @@
       if (!previewLegendEl) throw new Error("Missing #thumb-legend");
 
       function showDefaultPanel() {
-        previewTitleEl.textContent = "Epstein Network";
+        previewTitleEl.textContent = "";
+        if (thumbHeaderEl) thumbHeaderEl.style.display = "none";
         previewMetaEl.style.display = "none";
         previewCategoryTextEl.textContent = "";
         previewTotalEl.style.display = "none";
@@ -526,6 +519,7 @@
         const origUrl = toOriginalImageUrl(filename);
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
+        if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
         if (categoryLabel) {
           previewMetaEl.style.display = "flex";
           previewCategoryTextEl.textContent = categoryLabel;
@@ -1796,21 +1790,58 @@
       }
       // Render under overlays, but center the graph in the visible region.
       // IMPORTANT: translate values are in SVG user units (viewBox), not screen pixels.
+      // After adding a site header + flex layout, one rAF can run before the SVG has a
+      // non-zero height; applying the zoom then locks in the wrong transform. Wait until
+      // #svg has stable dimensions (ResizeObserver + double rAF fallback).
       let appliedInitialViewportCentering = false;
-      function applyInitialViewportCentering() {
-        if (appliedInitialViewportCentering) return;
+      function tryApplyInitialViewportCentering() {
+        if (appliedInitialViewportCentering) return true;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return false;
+        const rect = svgEl.getBoundingClientRect();
+        if (
+          !Number.isFinite(rect.width) ||
+          !Number.isFinite(rect.height) ||
+          rect.width < 20 ||
+          rect.height < 20
+        ) {
+          return false;
+        }
         const dx = computeSidebarCenteringTranslateX();
         const dy = computeBottomBarCenteringTranslateY();
-        if (!dx && !dy && TWEAK.initialZoomK === 1) return;
+        if (!dx && !dy && TWEAK.initialZoomK === 1) {
+          appliedInitialViewportCentering = true;
+          return true;
+        }
         appliedInitialViewportCentering = true;
         d3.select("#svg").call(zoom.transform, d3.zoomIdentity.translate(dx, dy).scale(TWEAK.initialZoomK));
+        updateNodeLabels({ recomputeLayout: false });
+        return true;
       }
-      // Defer one frame so layout (esp. mobile bottom sheet) has final dimensions.
-      if (typeof window !== "undefined" && window.requestAnimationFrame) {
-        window.requestAnimationFrame(applyInitialViewportCentering);
-      } else {
-        applyInitialViewportCentering();
+      function scheduleInitialViewportCentering() {
+        if (typeof window === "undefined") {
+          tryApplyInitialViewportCentering();
+          return;
+        }
+        const svgEl = document.getElementById("svg");
+        let ro = null;
+        const attempt = () => {
+          if (tryApplyInitialViewportCentering()) {
+            if (ro) {
+              ro.disconnect();
+              ro = null;
+            }
+          }
+        };
+        if (svgEl && typeof ResizeObserver !== "undefined") {
+          ro = new ResizeObserver(attempt);
+          ro.observe(svgEl);
+        }
+        requestAnimationFrame(() => {
+          requestAnimationFrame(attempt);
+        });
       }
+      scheduleInitialViewportCentering();
       updateNodeLabels();
 
       function ticked() {
@@ -1832,5 +1863,3 @@
     });
 
   </script>
-</body>
-</html>

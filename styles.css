@@ -2,8 +2,132 @@
   --sidebar-width: 390px;
   --panel-bg-rgb: 238, 241, 245;
   --panel-bg-alpha: 0.95;
+  --site-header-height: 48px;
+  /* Inset search panel from header + viewport corner (reads better with site nav). */
+  --name-search-edge-gap: 10px;
 }
-html, body { margin: 0; height: 100%; overflow: hidden; }
+/* Needed so body.page-home height: 100% and flex graph column resolve to the real viewport. */
+html {
+  height: 100%;
+}
+html, body {
+  margin: 0;
+}
+body.page-home {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+body.page-people,
+body.page-about {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f6f7f9;
+  color: #1a1a1a;
+}
+body.page-people .site-page,
+body.page-about .site-page {
+  flex: 1 0 auto;
+}
+
+/* Site chrome (shared nav) */
+.site-header {
+  flex: 0 0 var(--site-header-height);
+  height: var(--site-header-height);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  background: rgba(var(--panel-bg-rgb), 0.97);
+  border-bottom: 1px solid rgba(182, 190, 202, 0.85);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  z-index: 200;
+}
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  width: 100%;
+  font: 14px/1.2 system-ui, -apple-system, Segoe UI, sans-serif;
+}
+.site-nav-brand {
+  font-weight: 700;
+  color: #111;
+  text-decoration: none;
+  margin-right: 8px;
+}
+.site-nav-brand:hover {
+  color: #1565c0;
+}
+.site-nav-link {
+  color: #333;
+  text-decoration: none;
+  padding: 6px 4px;
+  border-radius: 4px;
+}
+.site-nav-link:hover {
+  color: #1565c0;
+  background: rgba(21, 101, 192, 0.08);
+}
+.site-nav-active {
+  color: #0d47a1;
+  font-weight: 600;
+}
+
+.site-home-graph {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+}
+
+.site-footer {
+  margin-top: auto;
+  padding: 20px 20px 28px;
+  border-top: 1px solid rgba(182, 190, 202, 0.6);
+  background: rgba(var(--panel-bg-rgb), 0.6);
+}
+.site-footer-note {
+  margin: 0;
+  font: 12px/1.4 system-ui, sans-serif;
+  color: #555;
+  text-align: center;
+}
+.site-footer-note a {
+  color: #1565c0;
+}
+
+.site-page {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+  box-sizing: border-box;
+}
+.site-page-title {
+  margin: 0 0 12px;
+  font: 700 1.75rem/1.2 system-ui, sans-serif;
+  color: #111;
+}
+.site-page-lead {
+  margin: 0;
+  font: 16px/1.5 system-ui, sans-serif;
+  color: #444;
+}
+.site-prose {
+  font: 16px/1.65 system-ui, sans-serif;
+  color: #333;
+}
+.site-prose p {
+  margin: 0 0 1rem;
+}
+.site-prose a {
+  color: #1565c0;
+}
+
 .svg-container {
   width: 100%;
   height: 100%;
@@ -42,6 +166,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   height: 100vh;
   overflow: auto;
   box-sizing: border-box;
+}
+body.page-home #thumb-preview {
+  top: var(--site-header-height);
+  height: calc(100vh - var(--site-header-height));
+  /* Avoid double line: #thumb-preview border + .site-header border-bottom meet here. */
+  border-top: none;
 }
 #thumb-preview.visible { display: block; }
 #thumb-preview .thumb-header {
@@ -123,7 +253,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 50;
+  z-index: 150;
   width: 380px;
   max-width: min(520px, calc(100vw - 8px));
   pointer-events: auto;
@@ -133,6 +263,14 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   border: 1px solid rgba(182, 190, 202, 0.9);
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
   box-sizing: border-box;
+}
+/* Graph page: pull away from header + corner so it doesn’t collide with the nav bar. */
+body.page-home #name-search {
+  top: calc(var(--site-header-height) + var(--name-search-edge-gap));
+  right: var(--name-search-edge-gap);
+  max-width: min(520px, calc(100vw - 2 * var(--name-search-edge-gap)));
+  /* Was flush to top-right with only bottom-left rounded; now a small floating panel. */
+  border-radius: 12px;
 }
 #name-search-input {
   width: 100%;
@@ -402,6 +540,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
     width: min(420px, calc(100vw - 20px));
     max-width: calc(100vw - 20px);
     border-radius: 0 0 14px 14px;
+  }
+  body.page-home #name-search {
+    top: calc(var(--site-header-height) + var(--name-search-edge-gap));
+    border-radius: 12px;
   }
   #thumb-preview {
     left: 10px;

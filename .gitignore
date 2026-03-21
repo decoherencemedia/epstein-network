@@ -3,6 +3,7 @@ thumbnails/
 jupyter/
 graphml/
 person_to_files/
+dist/
 .cursor/
 node_faces/
 node_faces_top5/
