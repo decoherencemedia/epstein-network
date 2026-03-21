@@ -528,7 +528,8 @@ body.page-home #name-search {
   background: #d6ecfb;
 }
 
-@media (pointer: coarse), (max-width: 640px) {
+/* Mobile / narrow: keep in sync with TWEAK.mediaSmallViewport in home-inner.html */
+@media (pointer: coarse), (max-width: 768px) {
   :root {
     --sidebar-width: 0px;
   }
@@ -541,8 +542,13 @@ body.page-home #name-search {
     max-width: calc(100vw - 20px);
     border-radius: 0 0 14px 14px;
   }
+  /* Undo desktop .page-home search positioning (higher-specificity rules above). */
   body.page-home #name-search {
     top: calc(var(--site-header-height) + var(--name-search-edge-gap));
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    max-width: min(420px, calc(100vw - 20px));
     border-radius: 12px;
   }
   #thumb-preview {
@@ -557,6 +563,21 @@ body.page-home #name-search {
     max-height: 40vh;
     height: auto;
     border-radius: 8px;
+  }
+  /*
+   * Undo body.page-home #thumb-preview (desktop left sidebar): that rule is more specific than
+   * #thumb-preview here, so without this we get a full-height column on the left on mobile.
+   */
+  body.page-home #thumb-preview {
+    top: auto;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: 40vh;
+    border-top: 1px solid rgba(182, 190, 202, 0.9);
   }
   #thumb-preview.visible {
     display: flex;
