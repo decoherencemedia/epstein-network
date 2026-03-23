@@ -18,7 +18,7 @@ from config import DB_PATH, IMAGE_DIR
 MEDIAN_BASE_PX = 40000
 
 def init_db():
-    """Create/ensure all tables: images, faces (person_id and celebrity_* on faces; people table removed)."""
+    """Create/ensure all tables: images, faces, people (sheet sync + celebrity_check_done)."""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -55,8 +55,8 @@ def init_db():
     _ensure_images_moderation_column(conn)
     _ensure_images_duplicate_of_column(conn)
     _ensure_images_width_height_columns(conn)
-    _migrate_people_to_faces_if_exists(conn)
-    c.execute("DROP TABLE IF EXISTS people")
+    _migrate_legacy_face_people_to_faces_if_exists(conn)
+    _ensure_people_table_and_migrate_celebrity_done(conn)
     conn.commit()
     return conn
 
@@ -122,13 +122,18 @@ def _ensure_images_width_height_columns(conn):
                 raise
 
 
-def _migrate_people_to_faces_if_exists(conn):
-    """If people table exists, copy person_id and celebrity_* into faces then drop people."""
+def _migrate_legacy_face_people_to_faces_if_exists(conn):
+    """
+    Legacy: an old `people` table keyed by face_id. Copy into faces, then drop.
+    Skip if `people` already has the new schema (person_id PK, no face_id).
+    """
     c = conn.cursor()
-    c.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='people'"
-    )
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='people'")
     if not c.fetchone():
+        return
+    c.execute("PRAGMA table_info(people)")
+    cols = [row[1] for row in c.fetchall()]
+    if "face_id" not in cols:
         return
     c.execute("""
         UPDATE faces SET
@@ -138,7 +143,91 @@ def _migrate_people_to_faces_if_exists(conn):
             celebrity_confidence = (SELECT celebrity_confidence FROM people p WHERE p.face_id = faces.face_id)
         WHERE face_id IN (SELECT face_id FROM people)
     """)
+    c.execute("DROP TABLE people")
     conn.commit()
+
+
+def _ensure_people_table_and_migrate_celebrity_done(conn):
+    """
+    New `people` table: one row per Rekognition person_id.
+    - celebrity_check_done: 1 after 07__recognize_celebrities has processed this person
+      (replaces old person_celebrity_check_done).
+    - name, include_in_network: filled by sync_people_from_google_sheets (and 09).
+    """
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS people (
+            person_id TEXT PRIMARY KEY,
+            celebrity_check_done INTEGER NOT NULL DEFAULT 0,
+            name TEXT,
+            include_in_network INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='person_celebrity_check_done'"
+    )
+    if c.fetchone():
+        c.execute("SELECT person_id FROM person_celebrity_check_done")
+        for (pid,) in c.fetchall():
+            c.execute(
+                """
+                INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
+                VALUES (?, 1, NULL, 0)
+                ON CONFLICT(person_id) DO UPDATE SET celebrity_check_done = 1
+                """,
+                (pid,),
+            )
+        c.execute("DROP TABLE person_celebrity_check_done")
+    conn.commit()
+
+
+def sync_people_from_google_sheets(conn, gc) -> None:
+    """
+    Upsert `people` from Matches / Unknowns / Ignore sheets (see sheets_common).
+    - name: from Matches (person_id -> display name)
+    - include_in_network: 1 if person_id appears on Matches or Unknowns, else 0 (e.g. Ignore only)
+    Does not clear celebrity_check_done.
+    """
+    from sheets_common import load_ignore, load_names, load_person_ids_matches_and_unknowns
+
+    names = load_names(gc)
+    include_ids = load_person_ids_matches_and_unknowns(gc)
+    ignore_ids = load_ignore(gc)
+
+    all_ids = set(names.keys()) | include_ids | ignore_ids
+    c = conn.cursor()
+    for pid in all_ids:
+        if pid in ignore_ids:
+            inc = 0
+        elif pid in include_ids:
+            inc = 1
+        else:
+            inc = 0
+        nm = names.get(pid)
+        c.execute(
+            """
+            INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
+            VALUES (?, 0, ?, ?)
+            ON CONFLICT(person_id) DO UPDATE SET
+                name = excluded.name,
+                include_in_network = excluded.include_in_network
+            """,
+            (pid, nm, inc),
+        )
+    conn.commit()
+
+
+def upsert_celebrity_check_done(conn, person_id: str) -> None:
+    """Mark person_id as processed by 07__recognize_celebrities (insert row if missing)."""
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
+        VALUES (?, 1, NULL, 0)
+        ON CONFLICT(person_id) DO UPDATE SET celebrity_check_done = 1
+        """,
+        (person_id,),
+    )
 
 
 def get_image_status(conn, image_name):

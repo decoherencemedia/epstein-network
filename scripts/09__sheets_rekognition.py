@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Google Sheet + AWS Rekognition: maintain a spreadsheet of people with face comparison results.
 
+- Syncs Matches / Unknowns / Ignore into the SQLite `people` table (name, include_in_network).
 - Initializes the sheet with columns and formatting (frozen header, style).
 - For each row missing Confidence: downloads reference image, runs CompareFaces
   (reference vs local Image Path), writes Confidence and full JSON to the sheet.
@@ -21,6 +22,7 @@ import requests
 from PIL import Image, ImageDraw
 from gspread_formatting import format_cell_range, set_frozen, CellFormat, TextFormat, Color
 
+from faces_db import init_db, sync_people_from_google_sheets
 from sheets_common import get_sheet_client, get_workbook
 
 try:
@@ -354,6 +356,12 @@ def show_match(
 
 def main():
     gc = get_sheet_client()
+    conn = init_db()
+    try:
+        sync_people_from_google_sheets(conn, gc)
+    finally:
+        conn.close()
+
     worksheet = get_or_create_sheet(gc)
     init_spreadsheet(worksheet)
 

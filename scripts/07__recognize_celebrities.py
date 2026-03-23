@@ -22,7 +22,7 @@ import boto3
 from PIL import Image
 
 from config import IMAGE_DIR, REKOGNITION_REGION
-from faces_db import init_db, pick_best_images
+from faces_db import init_db, pick_best_images, upsert_celebrity_check_done
 
 # ---------------- CONFIG ----------------
 
@@ -69,27 +69,18 @@ def bbox_iou(a: dict, b: dict) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def ensure_tables(conn):
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS person_celebrity_check_done (
-            person_id TEXT PRIMARY KEY
-        )
-    """)
-    conn.commit()
-
-
 def get_person_ids(conn, skip_already_done=True):
     """Return list of person_id in decreasing frequency (most appearances first).
-    If skip_already_done, omit those in person_celebrity_check_done.
+    If skip_already_done, omit those with people.celebrity_check_done = 1.
     """
     c = conn.cursor()
     if skip_already_done:
         c.execute("""
             SELECT f.person_id
             FROM faces f
-            LEFT JOIN person_celebrity_check_done d ON f.person_id = d.person_id
-            WHERE f.person_id IS NOT NULL AND d.person_id IS NULL
+            LEFT JOIN people p ON f.person_id = p.person_id
+            WHERE f.person_id IS NOT NULL
+              AND (p.person_id IS NULL OR p.celebrity_check_done = 0)
             GROUP BY f.person_id
             ORDER BY COUNT(*) DESC
         """)
@@ -141,10 +132,7 @@ def process_person(person_id: str, conn) -> Optional[str]:
             "UPDATE faces SET celebrity_name = NULL, celebrity_id = NULL, celebrity_confidence = NULL WHERE person_id = ?",
             (person_id,),
         )
-        c.execute(
-            "INSERT OR IGNORE INTO person_celebrity_check_done (person_id) VALUES (?)",
-            (person_id,),
-        )
+        upsert_celebrity_check_done(conn, person_id)
         conn.commit()
         return None
 
@@ -195,17 +183,13 @@ def process_person(person_id: str, conn) -> Optional[str]:
             (person_id,),
         )
         result_name = None
-    c.execute(
-        "INSERT OR IGNORE INTO person_celebrity_check_done (person_id) VALUES (?)",
-        (person_id,),
-    )
+    upsert_celebrity_check_done(conn, person_id)
     conn.commit()
     return result_name
 
 
 def main():
     conn = init_db()
-    ensure_tables(conn)
     if not IMAGE_DIR.is_dir():
         raise RuntimeError(f"IMAGE_DIR not a directory: {IMAGE_DIR}")
 
