@@ -2,9 +2,9 @@ name: epstein-network
 region: sfo3
 static_sites:
   - name: web
-    environment_slug: html
+    environment_slug: node-js
     source_dir: .
-    build_command: ./site/build.sh
+    build_command: npm run build
     output_dir: dist
     routes:
       - path: /

@@ -1,0 +1,7 @@
+{
+  "name": "epstein-network",
+  "private": true,
+  "scripts": {
+    "build": "bash ./site/build.sh"
+  }
+}
