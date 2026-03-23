@@ -279,10 +279,14 @@
         const show = !previewCollapsedByUser;
         previewEl.classList.toggle("visible", show);
         previewEl.setAttribute("aria-hidden", show ? "false" : "true");
+        // Make visibility deterministic across environments (local vs prod)
+        // even when media query evaluation differs.
+        previewEl.style.display = show ? "" : "none";
         if (previewCollapsedBarEl) {
           const showCollapsedBar = !show;
           previewCollapsedBarEl.hidden = !showCollapsedBar;
           previewCollapsedBarEl.setAttribute("aria-hidden", showCollapsedBar ? "false" : "true");
+          previewCollapsedBarEl.style.display = showCollapsedBar ? "flex" : "none";
         }
         if (previewCollapsedTitleEl) {
           previewCollapsedTitleEl.textContent = getEffectivePreviewTitle();
