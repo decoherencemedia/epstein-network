@@ -193,6 +193,47 @@ body.page-home #thumb-preview {
 #thumb-collapsed-bar[hidden] {
   display: none !important;
 }
+#thumb-collapsed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 220;
+  padding: 8px 10px;
+  border: 1px solid rgba(182, 190, 202, 0.9);
+  border-radius: 8px;
+  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+  box-shadow: 0 10px 28px rgba(0,0,0,0.15);
+  box-sizing: border-box;
+}
+#thumb-collapsed-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 700 17px/1.15 sans-serif;
+  color: #222;
+}
+#thumb-open-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #9aa9ba;
+  background: #fff;
+  color: #222;
+  border-radius: 4px;
+  font: 700 16px/1 system-ui, sans-serif;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
 .thumb-meta {
   display: flex;
   align-items: center;
@@ -645,47 +686,6 @@ body.page-home #name-search {
     font: 700 16px/1 system-ui, sans-serif;
     cursor: pointer;
     flex: 0 0 auto;
-  }
-  #thumb-open-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    padding: 0;
-    border: 1px solid #9aa9ba;
-    background: #fff;
-    color: #222;
-    border-radius: 4px;
-    font: 700 16px/1 system-ui, sans-serif;
-    cursor: pointer;
-    flex: 0 0 auto;
-  }
-  #thumb-collapsed-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    position: fixed;
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    z-index: 220;
-    padding: 8px 10px;
-    border: 1px solid rgba(182, 190, 202, 0.9);
-    border-radius: 8px;
-    background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
-    box-shadow: 0 10px 28px rgba(0,0,0,0.15);
-    box-sizing: border-box;
-  }
-  #thumb-collapsed-title {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font: 700 17px/1.15 sans-serif;
-    color: #222;
   }
   .thumb-meta,
   .thumb-total,

@@ -280,7 +280,7 @@
         previewEl.classList.toggle("visible", show);
         previewEl.setAttribute("aria-hidden", show ? "false" : "true");
         if (previewCollapsedBarEl) {
-          const showCollapsedBar = !show && isSmallViewport();
+          const showCollapsedBar = !show;
           previewCollapsedBarEl.hidden = !showCollapsedBar;
           previewCollapsedBarEl.setAttribute("aria-hidden", showCollapsedBar ? "false" : "true");
         }
