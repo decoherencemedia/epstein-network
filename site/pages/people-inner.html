@@ -1,4 +1,380 @@
-<main class="site-page" id="main">
+<main class="site-page people-page" id="main">
   <h1 class="site-page-title">People</h1>
-  <p class="site-page-lead">This page will list photos by person. Content coming later.</p>
+  <p class="site-page-lead">Select one or more people, then search for photos where they all appear together.</p>
+
+  <section class="people-toolbar" aria-label="Select people">
+    <div class="people-autocomplete-wrap">
+      <label class="people-label" for="people-search-input">Add by name</label>
+      <div class="people-autocomplete">
+        <input
+          id="people-search-input"
+          type="text"
+          class="people-search-input"
+          placeholder="Type a name…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-autocomplete="list"
+          aria-controls="people-search-listbox"
+          aria-expanded="false"
+          role="combobox"
+        />
+        <ul id="people-search-listbox" class="people-search-results" role="listbox" hidden></ul>
+      </div>
+    </div>
+
+    <div class="people-selected" id="people-selected" aria-label="Selected people"></div>
+
+    <div class="people-actions">
+      <button type="button" class="people-search-btn" id="people-run-search" disabled>Search photos</button>
+    </div>
+  </section>
+
+  <p class="people-status" id="people-status" role="status" aria-live="polite"></p>
+
+  <section class="people-results-wrap" id="people-results-wrap" hidden>
+    <h2 class="people-results-heading">Photos</h2>
+    <div class="people-masonry" id="people-masonry"></div>
+  </section>
 </main>
+
+<script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
+<script>
+(function () {
+  const API_BASE =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+      ? "http://127.0.0.1:5000"
+      : "https://api.epstein.photos";
+  async function fetchPeopleNamesJson() {
+    let res = await fetch(API_BASE + "/people", { credentials: "omit" });
+    if (res.status === 404) {
+      res = await fetch(API_BASE + "/people/names", { credentials: "omit" });
+    }
+    return res;
+  }
+  const PHOTOS_URL = API_BASE + "/photos";
+  const CDN_IMAGES = "https://epstein.sfo3.cdn.digitaloceanspaces.com/images/";
+  const CDN_THUMBNAILS = "https://epstein.sfo3.cdn.digitaloceanspaces.com/thumbnails/";
+
+  const inputEl = document.getElementById("people-search-input");
+  const listboxEl = document.getElementById("people-search-listbox");
+  const selectedEl = document.getElementById("people-selected");
+  const searchBtn = document.getElementById("people-run-search");
+  const statusEl = document.getElementById("people-status");
+  const resultsWrap = document.getElementById("people-results-wrap");
+  const masonryEl = document.getElementById("people-masonry");
+
+  /** @type {any} */
+  let peopleMasonryInstance = null;
+  let masonryResizeTimer = null;
+
+  function destroyPeopleMasonry() {
+    if (peopleMasonryInstance) {
+      peopleMasonryInstance.destroy();
+      peopleMasonryInstance = null;
+    }
+  }
+
+  /** @type {{ person_id: string, name: string | null }[]} */
+  let selected = [];
+  /** @type {{ person_id: string, label: string }[]} */
+  let nameIndex = [];
+  /** Raw person_id -> name from API (value may be null). */
+  let namesById = {};
+  let namesLoaded = false;
+  let activeIndex = -1;
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg || "";
+    statusEl.classList.toggle("people-status-error", !!isError);
+  }
+
+  function updateSearchButton() {
+    searchBtn.disabled = selected.length === 0;
+  }
+
+  function renderSelected() {
+    selectedEl.innerHTML = "";
+    selected.forEach((p, i) => {
+      const card = document.createElement("div");
+      card.className = "people-chip";
+      card.setAttribute("data-person-id", p.person_id);
+      const label = document.createElement("span");
+      label.className = "people-chip-label";
+      label.textContent = p.name || p.person_id;
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "people-chip-remove";
+      rm.setAttribute("aria-label", "Remove " + (p.name || p.person_id));
+      rm.textContent = "×";
+      rm.addEventListener("click", () => {
+        selected.splice(i, 1);
+        renderSelected();
+        updateSearchButton();
+      });
+      card.appendChild(label);
+      card.appendChild(rm);
+      selectedEl.appendChild(card);
+    });
+    updateSearchButton();
+  }
+
+  function buildIndex(dataObj) {
+    namesById = dataObj || {};
+    nameIndex = Object.keys(namesById).map((person_id) => {
+      const n = namesById[person_id];
+      const label = n != null && String(n).trim() ? String(n).trim() : person_id;
+      return { person_id, label };
+    });
+    nameIndex.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+  }
+
+  async function loadNames() {
+    if (namesLoaded) return;
+    setStatus("Loading names…");
+    const res = await fetchPeopleNamesJson();
+    if (!res.ok) throw new Error("Failed to load people (" + res.status + ")");
+    const json = await res.json();
+    const data = json.data;
+    if (!data || typeof data !== "object") throw new Error("Unexpected response from /people/names");
+    buildIndex(data);
+    namesLoaded = true;
+    setStatus("");
+  }
+
+  function filterMatches(q) {
+    const query = (q || "").trim().toLowerCase();
+    if (!query) return [];
+    return nameIndex.filter(
+      (row) =>
+        row.label.toLowerCase().includes(query) || row.person_id.toLowerCase().includes(query)
+    ).slice(0, 40);
+  }
+
+  function renderListbox(matches) {
+    listboxEl.innerHTML = "";
+    if (!matches.length) {
+      listboxEl.hidden = true;
+      inputEl.setAttribute("aria-expanded", "false");
+      activeIndex = -1;
+      return;
+    }
+    matches.forEach((row, i) => {
+      const li = document.createElement("li");
+      li.setAttribute("role", "option");
+      li.id = "people-opt-" + i;
+      li.dataset.personId = row.person_id;
+      li.className = "people-search-option";
+      li.textContent = row.label + " (" + row.person_id + ")";
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        pickPerson(row.person_id);
+      });
+      listboxEl.appendChild(li);
+    });
+    listboxEl.hidden = false;
+    inputEl.setAttribute("aria-expanded", "true");
+    activeIndex = -1;
+  }
+
+  function pickPerson(person_id) {
+    if (selected.some((p) => p.person_id === person_id)) return;
+    const raw = namesById[person_id];
+    const name =
+      raw != null && String(raw).trim() ? String(raw).trim() : null;
+    selected.push({ person_id, name });
+    inputEl.value = "";
+    listboxEl.hidden = true;
+    inputEl.setAttribute("aria-expanded", "false");
+    renderSelected();
+  }
+
+  function getSelectedPersonIds() {
+    return selected.map((p) => p.person_id);
+  }
+
+  function syncPeopleQueryToUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const ids = getSelectedPersonIds();
+    if (ids.length) {
+      params.set("person_ids", ids.join(","));
+    } else {
+      params.delete("person_ids");
+    }
+    const qs = params.toString();
+    const nextUrl =
+      window.location.pathname +
+      (qs ? "?" + qs : "") +
+      window.location.hash;
+    window.history.replaceState(null, "", nextUrl);
+  }
+
+  inputEl.addEventListener("input", () => {
+    if (!namesLoaded) return;
+    renderListbox(filterMatches(inputEl.value));
+  });
+
+  inputEl.addEventListener("focus", async () => {
+    try {
+      await loadNames();
+      renderListbox(filterMatches(inputEl.value));
+    } catch (e) {
+      setStatus(String(e.message || e), true);
+    }
+  });
+
+  inputEl.addEventListener("keydown", (e) => {
+    const opts = listboxEl.querySelectorAll(".people-search-option");
+    if (!opts.length) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIndex = Math.min(activeIndex + 1, opts.length - 1);
+      opts.forEach((el, i) => el.classList.toggle("people-search-option-active", i === activeIndex));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIndex = Math.max(activeIndex - 1, 0);
+      opts.forEach((el, i) => el.classList.toggle("people-search-option-active", i === activeIndex));
+    } else if (e.key === "Enter" && activeIndex >= 0) {
+      e.preventDefault();
+      const li = opts[activeIndex];
+      pickPerson(li.dataset.personId);
+    } else if (e.key === "Escape") {
+      listboxEl.hidden = true;
+      inputEl.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".people-autocomplete")) {
+      listboxEl.hidden = true;
+      inputEl.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  window.addEventListener("resize", function () {
+    if (!peopleMasonryInstance) return;
+    clearTimeout(masonryResizeTimer);
+    masonryResizeTimer = setTimeout(function () {
+      if (peopleMasonryInstance) {
+        peopleMasonryInstance.reloadItems();
+        peopleMasonryInstance.layout();
+      }
+    }, 150);
+  });
+
+  async function runSearch(options) {
+    const opts = options || {};
+    const shouldSyncUrl = opts.syncUrl !== false;
+    if (!selected.length) return;
+    if (shouldSyncUrl) {
+      syncPeopleQueryToUrl();
+    }
+    const params = new URLSearchParams();
+    params.set("person_ids", selected.map((p) => p.person_id).join(","));
+    const url = PHOTOS_URL + "?" + params.toString();
+    setStatus("Searching…");
+    resultsWrap.hidden = true;
+    destroyPeopleMasonry();
+    masonryEl.innerHTML = "";
+    try {
+      const res = await fetch(url, { credentials: "omit" });
+      if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+      const json = await res.json();
+      const raw = json.data;
+      if (!Array.isArray(raw)) throw new Error("Unexpected response shape");
+      const files = raw
+        .map((x) =>
+          typeof x === "string" ? x : x && (x.image_name || x.filename)
+        )
+        .filter(Boolean);
+      if (files.length === 0) {
+        setStatus("No photos found for this combination.");
+        return;
+      }
+
+      const sizer = document.createElement("div");
+      sizer.className = "people-masonry-sizer";
+      sizer.setAttribute("aria-hidden", "true");
+      masonryEl.appendChild(sizer);
+
+      const frag = document.createDocumentFragment();
+      files.forEach((name) => {
+        const item = document.createElement("div");
+        item.className = "people-masonry-item";
+        const img = document.createElement("img");
+        const encodedName = encodeURIComponent(String(name));
+        const thumbSrc = CDN_THUMBNAILS + encodedName;
+        const fullSrc = CDN_IMAGES + encodedName;
+        img.src = thumbSrc;
+        img.alt = "";
+        img.loading = "lazy";
+        img.decoding = "async";
+        const a = document.createElement("a");
+        a.href = fullSrc;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.appendChild(img);
+        item.appendChild(a);
+        frag.appendChild(item);
+      });
+      masonryEl.appendChild(frag);
+      resultsWrap.hidden = false;
+
+      peopleMasonryInstance = new Masonry(masonryEl, {
+        itemSelector: ".people-masonry-item",
+        columnWidth: ".people-masonry-sizer",
+        percentPosition: true,
+        gutter: 12,
+        transitionDuration: 0,
+      });
+
+      imagesLoaded(masonryEl, function () {
+        if (peopleMasonryInstance) peopleMasonryInstance.layout();
+      });
+
+      setStatus(files.length + " photo" + (files.length === 1 ? "" : "s") + " found.");
+    } catch (e) {
+      setStatus(String(e.message || e), true);
+    }
+  }
+
+  searchBtn.addEventListener("click", async () => {
+    await runSearch({ syncUrl: true });
+  });
+
+  async function initFromQueryString() {
+    const params = new URLSearchParams(window.location.search);
+    const personIdsRaw = params.get("person_ids");
+    if (!personIdsRaw) return;
+    const personIds = personIdsRaw
+      .split(",")
+      .map((x) => String(x || "").trim())
+      .filter(Boolean);
+    if (!personIds.length) return;
+    const seen = new Set();
+    const dedupedIds = personIds.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    try {
+      await loadNames();
+    } catch (e) {
+      setStatus(String(e.message || e), true);
+    }
+    selected = dedupedIds.map((person_id) => {
+      const raw = namesById[person_id];
+      const name =
+        raw != null && String(raw).trim() ? String(raw).trim() : null;
+      return { person_id, name };
+    });
+    renderSelected();
+    if (selected.length) {
+      await runSearch({ syncUrl: false });
+    }
+  }
+
+  initFromQueryString();
+})();
+</script>

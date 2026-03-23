@@ -1,0 +1,10 @@
+name: epstein-network
+region: sfo3
+static_sites:
+  - name: web
+    environment_slug: html
+    source_dir: .
+    build_command: ./site/build.sh
+    output_dir: dist
+    routes:
+      - path: /

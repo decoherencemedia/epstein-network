@@ -7,8 +7,8 @@ set -euo pipefail
 # Requires ImageMagick (magick) with WebP support.
 # Ubuntu: sudo apt-get update && sudo apt-get install -y imagemagick webp
 
-IN_DIR="${1:-../images/filtered_images}"   # pass a different input dir as $1 if you want
-OUT_DIR="${2:-../images/thumbnails}"       # pass a different output dir as $2 if you want
+IN_DIR="${1:-../../../all_images_with_faces}"   # pass a different input dir as $1 if you want
+OUT_DIR="${2:-../../../all_images_with_faces_thumbnails}"       # pass a different output dir as $2 if you want
 MAX_PX="${MAX_PX:-500}"          # override: MAX_PX=500 ./make_thumbnails.sh
 QUALITY="${QUALITY:-82}"         # override: QUALITY=82 ./make_thumbnails.sh
 

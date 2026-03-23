@@ -32,10 +32,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_DIR = SCRIPT_DIR.parent
 
 # Originals live in the pipeline's configured IMAGE_DIR (often outside the repo).
-ALL_IMAGES_DIR = IMAGE_DIR
+ALL_IMAGES_DIR = Path("/home/tristan/Documents/misc/epstein/all_images_with_faces_webp/images")
 
 # These are produced inside this repo by the graph pipeline.
-THUMBS_DIR = REPO_DIR / "images" / "thumbnails"
+THUMBS_DIR = Path("/home/tristan/Documents/misc/epstein/all_images_with_faces_thumbnails/images")
 VIZ_DATA_DIR = REPO_DIR / "viz_data"
 IMAGE_DATA_PATH = VIZ_DATA_DIR / "image_data.json"
 
@@ -148,73 +148,23 @@ def delete_keys(s3, bucket: str, keys: list[str]) -> None:
 
 def main():
     s3, bucket = get_spaces_client()
-    filenames = load_image_data()
 
-    desired: dict[str, Path] = {}
+    filenames = ALL_IMAGES_DIR.glob("*.webp")
     for filename in filenames:
         # Original image
-        orig_path = ALL_IMAGES_DIR / filename
-        orig_key = f"images/{filename}"
-        desired[orig_key] = orig_path
+        orig_path = filename
+        orig_key = f"images/{filename.name}"
+        print(orig_path, orig_key)
+        upload_file(s3, bucket, orig_path, orig_key)
 
-        # Thumbnail: thumbnails/<stem>.webp
-        stem = Path(filename).stem
-        thumb_path = THUMBS_DIR / f"{stem}.webp"
-        thumb_key = f"thumbnails/{stem}.webp"
-        desired[thumb_key] = thumb_path
 
-    # Atlas: used by index.html to render per-node faces without many HTTP requests.
-    desired["atlas/atlas.webp"] = ATLAS_WEBP_PATH
-    desired["atlas/atlas_manifest.json"] = ATLAS_MANIFEST_PATH
-
-    # Validate all desired local files before mutating remote state.
-    for key, local_path in desired.items():
-        if not local_path.is_file():
-            raise FileNotFoundError(f"Required file missing for upload key={key}: {local_path}")
-
-    remote = list_remote_objects(s3, bucket, SYNC_PREFIXES)
-
-    # Upload only missing/changed files.
-    uploaded = 0
-    skipped = 0
-    for key, local_path in desired.items():
-        if key in FORCE_UPLOAD_KEYS:
-            # Atlas files are small and frequently replaced. Force upload to
-            # avoid false "unchanged" skips when file size happens to match.
-            cache_control = (
-                ATLAS_IMAGE_CACHE_CONTROL
-                if key == "atlas/atlas.webp"
-                else ATLAS_MANIFEST_CACHE_CONTROL
-            )
-            upload_file(
-                s3,
-                bucket,
-                local_path,
-                key,
-                cache_control=cache_control,
-            )
-            uploaded += 1
-            continue
-
-        local_size = local_path.stat().st_size
-        remote_size = remote.get(key)
-        if remote_size is not None and remote_size == local_size:
-            skipped += 1
-            continue
-        upload_file(s3, bucket, local_path, key)
-        uploaded += 1
-
-    # Delete stale remote files in managed prefixes.
-    desired_keys = set(desired.keys())
-    remote_keys = set(remote.keys())
-    stale_keys = sorted(remote_keys - desired_keys)
-    delete_keys(s3, bucket, stale_keys)
-
-    print(
-        "Spaces sync complete. "
-        f"desired={len(desired_keys)} uploaded={uploaded} skipped={skipped} deleted={len(stale_keys)}"
-    )
-
+    thumbnails = THUMBS_DIR.glob("*.webp")
+    for thumbnail in thumbnails:
+        # Thumbnail image
+        thumb_path = thumbnail
+        thumb_key = f"thumbnails/{thumbnail.name}"
+        print(thumb_path, thumb_key)
+        upload_file(s3, bucket, thumb_path, thumb_key)
 
 if __name__ == "__main__":
     main()
