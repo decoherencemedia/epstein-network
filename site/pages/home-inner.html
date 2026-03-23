@@ -10,6 +10,7 @@
   <div id="thumb-preview" aria-hidden="true">
     <div class="thumb-header">
       <div class="thumb-title" id="thumb-title"></div>
+      <button id="thumb-collapse-btn" type="button" aria-label="Hide info panel" title="Hide info panel">▾</button>
     </div>
     <div class="thumb-meta" id="thumb-meta" style="display:none">
       <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
@@ -51,6 +52,10 @@
       </div>
       <div class="thumb-legend" id="thumb-legend" style="display:none"></div>
     </div>
+  </div>
+  <div id="thumb-collapsed-bar" hidden aria-hidden="true">
+    <div id="thumb-collapsed-title">Epstein Photo Network</div>
+    <button id="thumb-open-btn" type="button" aria-label="Show info panel" title="Show info panel">▴</button>
   </div>
 </div>
 </div>
@@ -253,12 +258,45 @@
       const previewLegendEl = document.getElementById("thumb-legend");
       const previewBboxEl = document.getElementById("thumb-bbox");
       const previewBboxBEl = document.getElementById("thumb-bbox-b");
+      const previewCollapseBtnEl = document.getElementById("thumb-collapse-btn");
+      const previewOpenBtnEl = document.getElementById("thumb-open-btn");
+      const previewCollapsedBarEl = document.getElementById("thumb-collapsed-bar");
+      const previewCollapsedTitleEl = document.getElementById("thumb-collapsed-title");
 
       const isCoarsePointer =
         (typeof window !== "undefined" &&
           window.matchMedia &&
           window.matchMedia("(pointer: coarse)").matches) ||
         (typeof window !== "undefined" && "ontouchstart" in window);
+      let previewCollapsedByUser = false;
+
+      function getEffectivePreviewTitle() {
+        const raw = (previewTitleEl && previewTitleEl.textContent ? previewTitleEl.textContent : "").trim();
+        return raw || "Epstein Photo Network";
+      }
+
+      function applyPreviewVisibility() {
+        const show = !previewCollapsedByUser;
+        previewEl.classList.toggle("visible", show);
+        previewEl.setAttribute("aria-hidden", show ? "false" : "true");
+        if (previewCollapsedBarEl) {
+          const showCollapsedBar = !show && isSmallViewport();
+          previewCollapsedBarEl.hidden = !showCollapsedBar;
+          previewCollapsedBarEl.setAttribute("aria-hidden", showCollapsedBar ? "false" : "true");
+        }
+        if (previewCollapsedTitleEl) {
+          previewCollapsedTitleEl.textContent = getEffectivePreviewTitle();
+        }
+        if (previewOpenBtnEl) {
+          previewOpenBtnEl.setAttribute("aria-label", "Show info panel: " + getEffectivePreviewTitle());
+          previewOpenBtnEl.setAttribute("title", getEffectivePreviewTitle());
+        }
+      }
+
+      function setPreviewCollapsedByUser(collapsed) {
+        previewCollapsedByUser = !!collapsed;
+        applyPreviewVisibility();
+      }
 
       function toWebpThumbPath(filename) {
         if (!filename) return null;
@@ -312,8 +350,8 @@
       if (!previewLegendEl) throw new Error("Missing #thumb-legend");
 
       function showDefaultPanel() {
-        previewTitleEl.textContent = "";
-        if (thumbHeaderEl) thumbHeaderEl.style.display = "none";
+        previewTitleEl.textContent = isSmallViewport() ? "Epstein Photo Network" : "";
+        if (thumbHeaderEl) thumbHeaderEl.style.display = isSmallViewport() ? "flex" : "none";
         previewMetaEl.style.display = "none";
         previewCategoryTextEl.textContent = "";
         previewTotalEl.style.display = "none";
@@ -329,8 +367,7 @@
         if (previewBboxEl) previewBboxEl.style.display = "none";
         if (previewBboxBEl) previewBboxBEl.style.display = "none";
         previewDefaultEl.style.display = "block";
-        previewEl.classList.add("visible");
-        previewEl.setAttribute("aria-hidden", "false");
+        applyPreviewVisibility();
       }
 
       function renderLegend({ categories, colorByCategory, nodesForSizing }) {
@@ -559,12 +596,26 @@
           previewEmptyEl.style.display = "block";
         }
         setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle, onNavigateToNeighbor);
-        previewEl.classList.add("visible");
-        previewEl.setAttribute("aria-hidden", "false");
+        applyPreviewVisibility();
       }
 
       function hidePreview() {
         showDefaultPanel();
+      }
+
+      if (previewCollapseBtnEl) {
+        previewCollapseBtnEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setPreviewCollapsedByUser(true);
+        });
+      }
+      if (previewOpenBtnEl) {
+        previewOpenBtnEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setPreviewCollapsedByUser(false);
+        });
       }
 
       function openOriginalImage(filename) {
@@ -1218,6 +1269,12 @@
       setViewBox();
       if (typeof window !== "undefined") {
         window.addEventListener("resize", setViewBox);
+        window.addEventListener("resize", () => {
+          if (!isSmallViewport() && previewCollapsedByUser) {
+            previewCollapsedByUser = false;
+            applyPreviewVisibility();
+          }
+        });
       }
 
       const linkLayer = zoomLayer

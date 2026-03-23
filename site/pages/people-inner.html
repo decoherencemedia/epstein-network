@@ -35,17 +35,93 @@
     <h2 class="people-results-heading">Photos</h2>
     <div class="people-masonry" id="people-masonry"></div>
   </section>
+
+  <div class="people-lightbox" id="people-lightbox" hidden aria-hidden="true">
+    <div class="people-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <button type="button" class="people-lightbox-close" id="people-lightbox-close" aria-label="Close viewer">×</button>
+      <button type="button" class="people-lightbox-nav people-lightbox-prev" id="people-lightbox-prev" aria-label="Previous photo">‹</button>
+      <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+      <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">›</button>
+      <p class="people-lightbox-count" id="people-lightbox-count"></p>
+    </div>
+  </div>
 </main>
+
+<style>
+.people-lightbox[hidden] { display: none; }
+.people-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.people-lightbox-dialog {
+  position: relative;
+  width: min(96vw, 1400px);
+  height: min(92vh, 1000px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.people-lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.people-lightbox-close,
+.people-lightbox-nav {
+  position: absolute;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+}
+.people-lightbox-close {
+  top: -10px;
+  right: -10px;
+  width: 44px;
+  height: 44px;
+  font-size: 28px;
+  line-height: 1;
+}
+.people-lightbox-nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  font-size: 30px;
+  line-height: 1;
+}
+.people-lightbox-prev { left: -8px; }
+.people-lightbox-next { right: -8px; }
+.people-lightbox-count {
+  position: absolute;
+  left: 50%;
+  bottom: -34px;
+  transform: translateX(-50%);
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+}
+@media (max-width: 800px) {
+  .people-lightbox { padding: 10px; }
+  .people-lightbox-prev { left: 4px; }
+  .people-lightbox-next { right: 4px; }
+  .people-lightbox-close { top: 4px; right: 4px; }
+  .people-lightbox-count { bottom: 10px; }
+}
+</style>
 
 <script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
-  const API_BASE =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-      ? "http://127.0.0.1:5000"
-      : "https://api.epstein.photos";
+  const API_BASE = "https://api.epstein.photos";
   async function fetchPeopleNamesJson() {
     let res = await fetch(API_BASE + "/people", { credentials: "omit" });
     if (res.status === 404) {
@@ -56,6 +132,8 @@
   const PHOTOS_URL = API_BASE + "/photos";
   const CDN_IMAGES = "https://epstein.sfo3.cdn.digitaloceanspaces.com/images/";
   const CDN_THUMBNAILS = "https://epstein.sfo3.cdn.digitaloceanspaces.com/thumbnails/";
+  const PEOPLE_NAMES_CACHE_KEY = "people_names_cache_v1";
+  const PEOPLE_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
   const inputEl = document.getElementById("people-search-input");
   const listboxEl = document.getElementById("people-search-listbox");
@@ -64,6 +142,12 @@
   const statusEl = document.getElementById("people-status");
   const resultsWrap = document.getElementById("people-results-wrap");
   const masonryEl = document.getElementById("people-masonry");
+  const lightboxEl = document.getElementById("people-lightbox");
+  const lightboxImgEl = document.getElementById("people-lightbox-image");
+  const lightboxCountEl = document.getElementById("people-lightbox-count");
+  const lightboxCloseBtn = document.getElementById("people-lightbox-close");
+  const lightboxPrevBtn = document.getElementById("people-lightbox-prev");
+  const lightboxNextBtn = document.getElementById("people-lightbox-next");
 
   /** @type {any} */
   let peopleMasonryInstance = null;
@@ -84,6 +168,45 @@
   let namesById = {};
   let namesLoaded = false;
   let activeIndex = -1;
+  let lightboxFiles = [];
+  let lightboxIndex = -1;
+
+  function renderLightboxImage() {
+    if (!lightboxFiles.length || lightboxIndex < 0) return;
+    lightboxImgEl.src = lightboxFiles[lightboxIndex];
+    lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + lightboxFiles.length;
+  }
+
+  function openLightbox(files, index) {
+    if (!Array.isArray(files) || !files.length) return;
+    lightboxFiles = files.slice();
+    lightboxIndex = Math.max(0, Math.min(index, lightboxFiles.length - 1));
+    renderLightboxImage();
+    lightboxEl.hidden = false;
+    lightboxEl.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    lightboxEl.hidden = true;
+    lightboxEl.setAttribute("aria-hidden", "true");
+    lightboxImgEl.src = "";
+    lightboxFiles = [];
+    lightboxIndex = -1;
+    document.body.style.overflow = "";
+  }
+
+  function showPrevLightboxImage() {
+    if (!lightboxFiles.length) return;
+    lightboxIndex = (lightboxIndex - 1 + lightboxFiles.length) % lightboxFiles.length;
+    renderLightboxImage();
+  }
+
+  function showNextLightboxImage() {
+    if (!lightboxFiles.length) return;
+    lightboxIndex = (lightboxIndex + 1) % lightboxFiles.length;
+    renderLightboxImage();
+  }
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg || "";
@@ -130,17 +253,51 @@
     nameIndex.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
   }
 
-  async function loadNames() {
+  function readNamesCache() {
+    try {
+      const raw = window.localStorage.getItem(PEOPLE_NAMES_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return null;
+      if (typeof parsed.ts !== "number") return null;
+      if (!parsed.data || typeof parsed.data !== "object") return null;
+      if (Date.now() - parsed.ts > PEOPLE_NAMES_CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeNamesCache(dataObj) {
+    try {
+      window.localStorage.setItem(
+        PEOPLE_NAMES_CACHE_KEY,
+        JSON.stringify({ ts: Date.now(), data: dataObj })
+      );
+    } catch (_) {
+      // Ignore localStorage errors (quota/private mode/etc).
+    }
+  }
+
+  async function loadNames(options) {
     if (namesLoaded) return;
-    setStatus("Loading names…");
+    const opts = options || {};
+    const cached = readNamesCache();
+    if (cached) {
+      buildIndex(cached);
+      namesLoaded = true;
+      return;
+    }
+    if (!opts.silent) setStatus("Loading names…");
     const res = await fetchPeopleNamesJson();
     if (!res.ok) throw new Error("Failed to load people (" + res.status + ")");
     const json = await res.json();
     const data = json.data;
     if (!data || typeof data !== "object") throw new Error("Unexpected response from /people/names");
     buildIndex(data);
+    writeNamesCache(data);
     namesLoaded = true;
-    setStatus("");
+    if (!opts.silent) setStatus("");
   }
 
   function filterMatches(q) {
@@ -166,7 +323,7 @@
       li.id = "people-opt-" + i;
       li.dataset.personId = row.person_id;
       li.className = "people-search-option";
-      li.textContent = row.label + " (" + row.person_id + ")";
+      li.textContent = row.label;
       li.addEventListener("mousedown", (e) => {
         e.preventDefault();
         pickPerson(row.person_id);
@@ -252,6 +409,26 @@
     }
   });
 
+  lightboxCloseBtn.addEventListener("click", closeLightbox);
+  lightboxPrevBtn.addEventListener("click", showPrevLightboxImage);
+  lightboxNextBtn.addEventListener("click", showNextLightboxImage);
+  lightboxEl.addEventListener("click", (e) => {
+    if (e.target === lightboxEl) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (lightboxEl.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeLightbox();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      showPrevLightboxImage();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      showNextLightboxImage();
+    }
+  });
+
   window.addEventListener("resize", function () {
     if (!peopleMasonryInstance) return;
     clearTimeout(masonryResizeTimer);
@@ -288,6 +465,7 @@
           typeof x === "string" ? x : x && (x.image_name || x.filename)
         )
         .filter(Boolean);
+      const fullImageUrls = files.map((name) => CDN_IMAGES + encodeURIComponent(String(name)));
       if (files.length === 0) {
         setStatus("No photos found for this combination.");
         return;
@@ -299,21 +477,23 @@
       masonryEl.appendChild(sizer);
 
       const frag = document.createDocumentFragment();
-      files.forEach((name) => {
+      files.forEach((name, idx) => {
         const item = document.createElement("div");
         item.className = "people-masonry-item";
         const img = document.createElement("img");
         const encodedName = encodeURIComponent(String(name));
         const thumbSrc = CDN_THUMBNAILS + encodedName;
-        const fullSrc = CDN_IMAGES + encodedName;
+        const fullSrc = fullImageUrls[idx];
         img.src = thumbSrc;
         img.alt = "";
         img.loading = "lazy";
         img.decoding = "async";
         const a = document.createElement("a");
         a.href = fullSrc;
-        a.target = "_blank";
-        a.rel = "noopener noreferrer";
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          openLightbox(fullImageUrls, idx);
+        });
         a.appendChild(img);
         item.appendChild(a);
         frag.appendChild(item);
@@ -375,6 +555,15 @@
     }
   }
 
-  initFromQueryString();
+  async function initPage() {
+    try {
+      await loadNames({ silent: true });
+    } catch (e) {
+      setStatus(String(e.message || e), true);
+    }
+    await initFromQueryString();
+  }
+
+  initPage();
 })();
 </script>
