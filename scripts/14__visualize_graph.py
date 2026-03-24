@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     _nodes_df["degree"] = (_nodes_df["degree_root_2"] ** 2).astype(int)
 
-    nodes_df = _nodes_df[["x", "y", "label", "size", "degree", "category", "total"]].copy()
+    nodes_df = _nodes_df[["x", "y", "label", "size", "degree", "category", "total", "person_id"]].copy()
     edges_df = _edges_df[["source", "target", "weight"]].copy()
 
     label_to_index = {

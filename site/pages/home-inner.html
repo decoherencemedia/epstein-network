@@ -562,10 +562,12 @@
         topNeighborsTitle,
         totalLabel,
         bboxes,
-        onNavigateToNeighbor
+        onNavigateToNeighbor,
+        peopleIdsForPreviewLink
       ) {
         const src = toWebpThumbPath(filename);
-        const origUrl = toOriginalImageUrl(filename);
+        const peopleUrl = peopleUrlForPersonIds(peopleIdsForPreviewLink);
+        const origUrl = peopleUrl || toOriginalImageUrl(filename);
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
@@ -634,6 +636,30 @@
         const url = toOriginalImageUrl(filename);
         if (!url) return;
         window.open(url, "_blank", "noopener,noreferrer");
+      }
+
+      function peopleUrlForPersonIds(personIds) {
+        const ids = Array.isArray(personIds)
+          ? personIds.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        if (!ids.length) return null;
+        const params = new URLSearchParams();
+        params.set("person_ids", ids.join(","));
+        return `/people/?${params.toString()}`;
+      }
+
+      function openPeopleForPersonIds(personIds) {
+        const url = peopleUrlForPersonIds(personIds);
+        if (!url) return;
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+
+      function personIdForNode(nodeObj) {
+        if (!nodeObj) return null;
+        const pid = nodeObj.person_id;
+        if (pid == null) return null;
+        const s = String(pid).trim();
+        return s || null;
       }
 
       // Sigma-style focus+context highlighting.
@@ -892,6 +918,7 @@
           id: N[i],
           radius: R[i],
           label: raw.label,
+          person_id: raw.person_id,
           cluster: raw.category,
           total: raw.total,
           x,
@@ -1004,7 +1031,8 @@
             const t = nodeById.get(neighbor.id);
             if (!t) return;
             showNodeInSidebar(t);
-          }
+          },
+          [personIdForNode(targetNode)]
         );
         applyLockedNodeHighlight(targetNode);
       }
@@ -1232,7 +1260,8 @@
             const target = nodeById.get(n.id);
             if (!target) return;
             showNodeInSidebar(target);
-          }
+          },
+          [personIdForNode(s), personIdForNode(t)]
         );
       }
 
@@ -1359,6 +1388,11 @@
         .on("click.open", function (event, d) {
           event.preventDefault();
           event.stopPropagation();
+          if (event.detail >= 2) {
+            const { s, t } = getEdgeEndpoints(d);
+            openPeopleForPersonIds([personIdForNode(s), personIdForNode(t)]);
+            return;
+          }
           const { sLabel, tLabel } = getEdgeEndpoints(d);
           const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
           const filename = edgeEntry ? edgeEntry.filename : null;
@@ -1446,6 +1480,10 @@
         .on("click.open", function (event, d) {
           event.preventDefault();
           event.stopPropagation();
+          if (event.detail >= 2) {
+            openPeopleForPersonIds([personIdForNode(d)]);
+            return;
+          }
           const nodeEntry = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
           const filename = Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null);
           const bbox = Array.isArray(nodeEntry) ? nodeEntry[1] : null;
@@ -1469,7 +1507,7 @@
             const target = nodeById.get(neighbor.id);
             if (!target) return;
             showNodeInSidebar(target);
-          });
+          }, [personIdForNode(d)]);
           applyLockedNodeHighlight(d);
         })
         .on(
@@ -1842,6 +1880,7 @@
 
       d3.select("#svg")
         .call(zoom)
+        .on("dblclick.zoom", null)
         .on("click.previewDismiss", function (event) {
           // Ignore clicks that were part of drag/zoom.
           if (event.defaultPrevented) return;

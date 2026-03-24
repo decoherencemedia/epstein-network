@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Upload selected graph images and thumbnails to DigitalOcean Spaces.
+Upload graph assets to DigitalOcean Spaces.
 
-- Reads image_data.json written by 10__create_graph.py:
-    {"nodes": {name: filename_or_null, ...}, "edges": {"A-B": filename_or_null, ...}}
-- Uploads originals from all_images/ to:   images/<filename>
-- Uploads thumbnails from thumbnails/ to:  thumbnails/<stem>.webp
+- Uploads atlas files used by the graph UI:
+    atlas/atlas.webp
+    atlas/atlas_manifest.json
+
+Note: originals/thumbnails are already hosted and are no longer managed by this script.
 
 DigitalOcean Spaces is S3-compatible. Configure via environment variables:
 
@@ -18,30 +19,21 @@ DigitalOcean Spaces is S3-compatible. Configure via environment variables:
 
 from __future__ import annotations
 
-import json
 import mimetypes
 import os
 from pathlib import Path
 
 import boto3
 
-from config import IMAGE_DIR
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_DIR = SCRIPT_DIR.parent
 
-# Originals live in the pipeline's configured IMAGE_DIR (often outside the repo).
-ALL_IMAGES_DIR = IMAGE_DIR
-
-# These are produced inside this repo by the graph pipeline.
-THUMBS_DIR = REPO_DIR / "images" / "thumbnails"
 VIZ_DATA_DIR = REPO_DIR / "viz_data"
-IMAGE_DATA_PATH = VIZ_DATA_DIR / "image_data.json"
 
 ATLAS_WEBP_PATH = REPO_DIR / "images" / "atlas.webp"
 ATLAS_MANIFEST_PATH = VIZ_DATA_DIR / "atlas_manifest.json"
-SYNC_PREFIXES = ("images/", "thumbnails/", "atlas/")
+SYNC_PREFIXES = ("atlas/",)
 FORCE_UPLOAD_KEYS = {"atlas/atlas.webp", "atlas/atlas_manifest.json"}
 ATLAS_IMAGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 ATLAS_MANIFEST_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
@@ -72,24 +64,6 @@ def get_spaces_client():
         aws_secret_access_key=secret,
     )
     return s3, bucket
-
-
-def load_image_data():
-    if not IMAGE_DATA_PATH.is_file():
-        raise RuntimeError(f"image_data.json not found at {IMAGE_DATA_PATH}")
-    with IMAGE_DATA_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    nodes = data.get("nodes") or {}
-    edges = data.get("edges") or {}
-    # nodes values are [filename, bbox] or null; edges values are [filename, bbox_a, bbox_b] or null.
-    filenames: set[str] = set()
-    for v in nodes.values():
-        if v:
-            filenames.add(v[0])
-    for v in edges.values():
-        if v:
-            filenames.add(v[0])
-    return sorted(filenames)
 
 
 def upload_file(
@@ -148,21 +122,8 @@ def delete_keys(s3, bucket: str, keys: list[str]) -> None:
 
 def main():
     s3, bucket = get_spaces_client()
-    filenames = load_image_data()
 
     desired: dict[str, Path] = {}
-    for filename in filenames:
-        # Original image
-        orig_path = ALL_IMAGES_DIR / filename
-        orig_key = f"images/{filename}"
-        desired[orig_key] = orig_path
-
-        # Thumbnail: thumbnails/<stem>.webp
-        stem = Path(filename).stem
-        thumb_path = THUMBS_DIR / f"{stem}.webp"
-        thumb_key = f"thumbnails/{stem}.webp"
-        desired[thumb_key] = thumb_path
-
     # Atlas: used by index.html to render per-node faces without many HTTP requests.
     desired["atlas/atlas.webp"] = ATLAS_WEBP_PATH
     desired["atlas/atlas_manifest.json"] = ATLAS_MANIFEST_PATH

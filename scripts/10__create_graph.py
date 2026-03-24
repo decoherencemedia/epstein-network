@@ -2,10 +2,7 @@ import sqlite3
 import json
 from collections import defaultdict
 from pathlib import Path
-from shutil import copy, rmtree
 from typing import Any
-
-from PIL import Image
 
 import pandas as pd
 from itertools import combinations
@@ -19,12 +16,11 @@ from sheets_common import (
     load_names,
     load_person_ids_matches_and_unknowns,
 )
-from config import DB_PATH, IMAGE_DIR
+from config import DB_PATH
 from faces_db import pick_best_images
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-FILTERED_IMAGE_DIR = SCRIPT_DIR.parent / "images" / "filtered_images"
 VIZ_DATA_DIR = SCRIPT_DIR.parent / "viz_data"
 
 OUTPUT_GRAPHML = SCRIPT_DIR.parent / "graphml" / "epstein_photo_people.graphml"
@@ -44,43 +40,9 @@ def _is_explicit_moderation(moderation_result: str | None) -> bool:
     return False
 
 
-def _extract_roll(index_face_record: str | None) -> float | None:
-    if not index_face_record:
-        return None
-    return json.loads(index_face_record)["FaceDetail"]["Pose"]["Roll"]
-
-
-def _rotation_for_image(rolls: list[float]) -> int:
-    """Return rotation code to correct a sideways image (0, 90, or -90)."""
-    if not rolls:
-        return 0
-    s = sorted(rolls)
-    median = (s[len(s) // 2] + s[(len(s) - 1) // 2]) / 2
-    if abs(median) < 45:
-        return 0
-    return -90 if median > 0 else 90
-
-
-def _rotate_bbox(
-    left: float, top: float, width: float, height: float, rotation: int
-) -> tuple[float, float, float, float]:
-    """Adjust normalized bbox for image rotation."""
-    if rotation == 0:
-        return (left, top, width, height)
-    if rotation == -90:  # PIL ROTATE_90 (CCW): (x,y) -> (y, 1-x)
-        return (top, 1 - left - width, height, width)
-    if rotation == 90:   # PIL ROTATE_270 (CW): (x,y) -> (1-y, x)
-        return (1 - top - height, left, height, width)
-    raise ValueError(f"Unsupported rotation: {rotation}")
-
-
-def _copy_image(src: Path, dst: Path, rotation: int) -> None:
-    if rotation == 0:
-        copy(src, dst)
-        return
-    transpose = Image.Transpose.ROTATE_90 if rotation == -90 else Image.Transpose.ROTATE_270
-    with Image.open(src) as img:
-        img.transpose(transpose).save(dst)
+def _to_webp_filename(image_name: str) -> str:
+    p = Path(image_name)
+    return str(p.with_suffix(".webp"))
 
 
 def _has_minor_face(age_low: Any, age_high: Any) -> bool:
@@ -95,9 +57,6 @@ def _has_minor_face(age_low: Any, age_high: Any) -> bool:
 
 
 if __name__ == "__main__":
-    if FILTERED_IMAGE_DIR.exists():
-        rmtree(FILTERED_IMAGE_DIR)
-
     # Names and ignore list from the shared Google Spreadsheet (Matches / Ignore sheets).
     gc = get_sheet_client()
     PEOPLE_NAMES = load_names(gc)
@@ -164,14 +123,6 @@ if __name__ == "__main__":
     # Ground truth names from Matches sheet; unnamed person_ids keep their ID as label.
     df["label"] = df["person_id"].apply(lambda pid: PEOPLE_NAMES.get(pid) or pid)
 
-    # Build per-image rotation correction from face Roll angles.
-    image_rolls: dict[str, list[float]] = defaultdict(list)
-    for _, row in df.iterrows():
-        roll = _extract_roll(row.get("index_face_record"))
-        if roll is not None:
-            image_rolls[row["image_name"]].append(roll)
-    image_rotation = {img: _rotation_for_image(rolls) for img, rolls in image_rolls.items()}
-
     # Build per (image_name, label) -> bbox of the largest face.
     best_face_idx = df.groupby(["image_name", "label"])["face_area"].idxmax()
     face_bbox_lookup: dict[tuple[str, str], tuple[float, float, float, float]] = (
@@ -220,9 +171,8 @@ if __name__ == "__main__":
         best_list = pick_best_images(con, person_id, n=10)
         for image_name, left, top, width, height in best_list:
             if image_name not in disallowed_images:
-                rotation = image_rotation.get(image_name, 0)
-                bbox = list(_rotate_bbox(left, top, width, height, rotation))
-                node_images[label] = [image_name, bbox]
+                bbox = [left, top, width, height]
+                node_images[label] = [_to_webp_filename(image_name), bbox]
                 break
         else:
             node_images[label] = None
@@ -232,6 +182,7 @@ if __name__ == "__main__":
     degree_root_3 = {k: v ** (1/3.0) for k, v in dict(G.degree()).items()}
     nx.set_node_attributes(G=G, values=degree_root_2, name="degree_root_2")
     nx.set_node_attributes(G=G, values=degree_root_3, name="degree_root_3")
+    nx.set_node_attributes(G=G, values=label_to_person, name="person_id")
 
     # Total number of distinct images associated with each person/label.
     total_images_by_label = (
@@ -261,32 +212,14 @@ if __name__ == "__main__":
         candidates = sorted(candidates, key=lambda x: x[0], reverse=True)
         for _prod, img in candidates:
             if img not in disallowed_images:
-                rotation = image_rotation.get(img, 0)
                 raw_a = face_bbox_lookup[(img, a)]
                 raw_b = face_bbox_lookup[(img, b)]
-                bbox_a = list(_rotate_bbox(*raw_a, rotation))
-                bbox_b = list(_rotate_bbox(*raw_b, rotation))
-                edge_images["-".join(edge)] = [img, bbox_a, bbox_b]
+                bbox_a = list(raw_a)
+                bbox_b = list(raw_b)
+                edge_images["-".join(edge)] = [_to_webp_filename(img), bbox_a, bbox_b]
                 break
         else:
             edge_images["-".join(edge)] = None
-
-    FILTERED_IMAGE_DIR.mkdir(exist_ok=True)
-
-    all_filenames = set()
-    for v in node_images.values():
-        if v is not None:
-            all_filenames.add(v[0])
-    for v in edge_images.values():
-        if v is not None:
-            all_filenames.add(v[0])
-
-    rotated = sum(1 for f in all_filenames if image_rotation.get(f, 0) != 0)
-    if rotated:
-        print(f"Rotating {rotated} sideways image(s).")
-
-    for filename in all_filenames:
-        _copy_image(IMAGE_DIR / filename, FILTERED_IMAGE_DIR / filename, image_rotation.get(filename, 0))
 
     image_data = {
         "nodes": node_images,
