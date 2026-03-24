@@ -565,7 +565,7 @@
         peopleIdsForPreviewLink
       ) {
         const src = toWebpThumbPath(filename);
-        const peopleUrl = peopleUrlForPersonIds(peopleIdsForPreviewLink);
+        const peopleUrl = peopleUrlForPersonIdsWithPhoto(peopleIdsForPreviewLink, filename);
         const origUrl = peopleUrl || toOriginalImageUrl(filename);
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
@@ -648,6 +648,35 @@
         const params = new URLSearchParams();
         params.set("person_ids", ids.join(","));
         return `/people/?${params.toString()}`;
+      }
+
+      function peopleUrlForPersonIdsWithPhoto(personIds, photoFilename) {
+        const base = peopleUrlForPersonIds(personIds);
+        if (!base) return null;
+        const photo = String(photoFilename || "").trim();
+        if (!photo) return base;
+        const url = new URL(base, window.location.origin);
+        url.searchParams.set("photo", photo);
+        return url.pathname + url.search + url.hash;
+      }
+
+      function syncSidebarPersonToUrl(personId) {
+        const params = new URLSearchParams(window.location.search);
+        const pid = String(personId || "").trim();
+        if (pid) {
+          params.set("person_id", pid);
+        } else {
+          params.delete("person_id");
+        }
+        const qs = params.toString();
+        const nextUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+        window.history.replaceState(null, "", nextUrl);
+      }
+
+      function sidebarPersonIdFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const pid = String(params.get("person_id") || "").trim();
+        return pid || null;
       }
 
       function openOriginalImage(filename) {
@@ -916,6 +945,7 @@
         state.lock.highlightNode = null;
         hidePreview();
         clearEdgeHighlight();
+        syncSidebarPersonToUrl(null);
       }
 
       function clearEdgeHighlight() {
@@ -1094,6 +1124,7 @@
           },
           [personIdForNode(targetNode)]
         );
+        syncSidebarPersonToUrl(personIdForNode(targetNode));
         applyLockedNodeHighlight(targetNode);
       }
 
@@ -1324,6 +1355,7 @@
           },
           personIdsForEdge(d)
         );
+        syncSidebarPersonToUrl(null);
       }
 
       links.forEach((d) => {
@@ -1970,6 +2002,16 @@
         });
       }
       scheduleInitialViewportCentering();
+      const initialSidebarPersonId = sidebarPersonIdFromUrl();
+      if (initialSidebarPersonId) {
+        const initialNode = nodes.find((n) => personIdForNode(n) === initialSidebarPersonId) || null;
+        if (initialNode) {
+          showNodeInSidebar(initialNode);
+          centerNodeInViewport(initialNode, { durationMs: 0 });
+        } else {
+          syncSidebarPersonToUrl(null);
+        }
+      }
       updateNodeLabels();
 
       function ticked() {
