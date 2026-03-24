@@ -68,6 +68,7 @@
 </div>
 </div>
 
+  <script src="js/shared.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
 
@@ -527,8 +528,7 @@
           row.appendChild(weight);
           let clickTimeout = null;
           row.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            consumeEvent(e);
             if (e.detail === 2) return;
             if (clickTimeout) clearTimeout(clickTimeout);
             clickTimeout = setTimeout(() => {
@@ -537,8 +537,7 @@
             }, 250);
           });
           row.addEventListener("dblclick", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            consumeEvent(e);
             if (clickTimeout) {
               clearTimeout(clickTimeout);
               clickTimeout = null;
@@ -619,47 +618,80 @@
 
       if (previewCollapseBtnEl) {
         previewCollapseBtnEl.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+          consumeEvent(e);
           setPreviewCollapsedByUser(true);
         });
       }
       if (previewOpenBtnEl) {
         previewOpenBtnEl.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
+          consumeEvent(e);
           setPreviewCollapsedByUser(false);
         });
       }
 
-      function openOriginalImage(filename) {
-        const url = toOriginalImageUrl(filename);
-        if (!url) return;
-        window.open(url, "_blank", "noopener,noreferrer");
+      function openInNewTab(url) {
+        const s = String(url || "").trim();
+        if (!s) return;
+        if (window.SiteShared && typeof window.SiteShared.openInNewTab === "function") {
+          window.SiteShared.openInNewTab(s);
+        } else {
+          window.open(s, "_blank", "noopener,noreferrer");
+        }
       }
 
       function peopleUrlForPersonIds(personIds) {
-        const ids = Array.isArray(personIds)
-          ? personIds.map((x) => String(x || "").trim()).filter(Boolean)
-          : [];
+        if (window.SiteShared && typeof window.SiteShared.peopleUrlForPersonIds === "function") {
+          return window.SiteShared.peopleUrlForPersonIds(personIds);
+        }
+        const ids = Array.isArray(personIds) ? personIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
         if (!ids.length) return null;
         const params = new URLSearchParams();
         params.set("person_ids", ids.join(","));
         return `/people/?${params.toString()}`;
       }
 
+      function openOriginalImage(filename) {
+        openInNewTab(toOriginalImageUrl(filename));
+      }
+
       function openPeopleForPersonIds(personIds) {
-        const url = peopleUrlForPersonIds(personIds);
-        if (!url) return;
-        window.open(url, "_blank", "noopener,noreferrer");
+        openInNewTab(peopleUrlForPersonIds(personIds));
       }
 
       function personIdForNode(nodeObj) {
-        if (!nodeObj) return null;
-        const pid = nodeObj.person_id;
-        if (pid == null) return null;
-        const s = String(pid).trim();
+        const s = String(nodeObj && nodeObj.person_id != null ? nodeObj.person_id : "").trim();
         return s || null;
+      }
+
+      function shouldOpenOriginalFromModifier(event) {
+        return !!(event && (event.metaKey || event.ctrlKey));
+      }
+
+      function isDoubleClick(event) {
+        return !!(event && event.detail >= 2);
+      }
+
+      function consumeEvent(event) {
+        if (!event) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+
+      function handlePrimaryClickWithOriginal(event, filename, onRegularClick) {
+        if (shouldOpenOriginalFromModifier(event)) {
+          openOriginalImage(filename);
+          return;
+        }
+        onRegularClick();
+      }
+
+      function handleGraphOpenClick(event, personIds, filename, onRegularClick) {
+        consumeEvent(event);
+        if (isDoubleClick(event)) {
+          openPeopleForPersonIds(personIds);
+          return;
+        }
+        handlePrimaryClickWithOriginal(event, filename, onRegularClick);
       }
 
       // Sigma-style focus+context highlighting.
@@ -1000,10 +1032,38 @@
         return { s, t, sLabel, tLabel };
       }
 
+      function getNodePreviewEntry(nodeObj) {
+        const nodeEntry = imageData && imageData.nodes ? imageData.nodes[nodeObj.label] : null;
+        return {
+          filename: Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null),
+          bbox: Array.isArray(nodeEntry) ? nodeEntry[1] : null,
+        };
+      }
+
+      function getEdgePreviewEntry(edgeObj) {
+        const { sLabel, tLabel } = getEdgeEndpoints(edgeObj);
+        const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
+        return {
+          sLabel,
+          tLabel,
+          filename: edgeEntry ? edgeEntry.filename : null,
+          edgeBboxes: edgeEntry ? [edgeEntry.bboxA, edgeEntry.bboxB].filter(Boolean) : null,
+        };
+      }
+
+      function personIdsForEdge(edgeObj) {
+        const { s, t } = getEdgeEndpoints(edgeObj);
+        return [personIdForNode(s), personIdForNode(t)];
+      }
+
+      function resolveNeighborNode(neighbor) {
+        return neighbor ? nodeById.get(neighbor.id) : null;
+      }
+
       function showNodeInSidebar(targetNode) {
-        const nodeEntry = imageData && imageData.nodes ? imageData.nodes[targetNode.label] : null;
-        const filename = Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null);
-        const bbox = Array.isArray(nodeEntry) ? nodeEntry[1] : null;
+        const entry = getNodePreviewEntry(targetNode);
+        const filename = entry.filename;
+        const bbox = entry.bbox;
         state.lock.active = true;
         state.lock.kind = "node";
         state.lock.item = targetNode;
@@ -1020,7 +1080,7 @@
           neighbors,
           (neighbor) => {
             if (!state.lock.active || state.lock.kind !== "node" || state.lock.item !== targetNode) return;
-            const t = nodeById.get(neighbor.id);
+            const t = resolveNeighborNode(neighbor);
             if (!t) return;
             applyLockedNodeHighlight(t);
           },
@@ -1028,7 +1088,7 @@
           "Photos",
           bbox ? [bbox] : null,
           (neighbor) => {
-            const t = nodeById.get(neighbor.id);
+            const t = resolveNeighborNode(neighbor);
             if (!t) return;
             showNodeInSidebar(t);
           },
@@ -1148,8 +1208,7 @@
             e.preventDefault();
           });
           btn.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            consumeEvent(e);
             showNodeInSidebar(item.node);
             centerNodeInViewport(item.node);
             searchState.inputEl.value = item.label;
@@ -1224,22 +1283,24 @@
       }
 
       function pinEdge(d) {
-        const { s, t, sLabel, tLabel } = getEdgeEndpoints(d);
-        const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
-        const filename = edgeEntry ? edgeEntry.filename : null;
-        const edgeBboxes = edgeEntry ? [edgeEntry.bboxA, edgeEntry.bboxB].filter(Boolean) : null;
-        const total = d.weight;
+        const { s, t } = getEdgeEndpoints(d);
+        const edgePreview = getEdgePreviewEntry(d);
         state.lock.active = true;
         state.lock.kind = "edge";
         state.lock.item = d;
         highlightEdge(d);
+        const sLabel = edgePreview.sLabel;
+        const tLabel = edgePreview.tLabel;
+        const filename = edgePreview.filename;
+        const edgeBboxes = edgePreview.edgeBboxes;
+        const total = d.weight;
         // bboxA = alphabetically first label (green), bboxB = second (yellow)
-        const BBOX_COLORS = sLabel <= tLabel
+        const bboxColors = sLabel <= tLabel
           ? { [sLabel]: "rgba(60, 220, 60, 0.95)", [tLabel]: "rgba(255, 220, 0, 0.95)" }
           : { [tLabel]: "rgba(60, 220, 60, 0.95)", [sLabel]: "rgba(255, 220, 0, 0.95)" };
         const endpoints = [
-          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—", color: BBOX_COLORS[sLabel] },
-          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—", color: BBOX_COLORS[tLabel] },
+          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—", color: bboxColors[sLabel] },
+          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—", color: bboxColors[tLabel] },
         ];
         showPreview(
           `${[sLabel, tLabel].sort().join(" & ")}`,
@@ -1249,7 +1310,7 @@
           total,
           endpoints,
           (n) => {
-            const target = nodeById.get(n.id);
+            const target = resolveNeighborNode(n);
             if (!target) return;
             applyLockedNodeHighlight(target);
           },
@@ -1257,11 +1318,11 @@
           "Shared photos",
           edgeBboxes,
           (n) => {
-            const target = nodeById.get(n.id);
+            const target = resolveNeighborNode(n);
             if (!target) return;
             showNodeInSidebar(target);
           },
-          [personIdForNode(s), personIdForNode(t)]
+          personIdsForEdge(d)
         );
       }
 
@@ -1381,26 +1442,13 @@
         })
         .on("touchstart.tap", function (event, d) {
           if (!isCoarsePointer) return;
-          event.preventDefault();
-          event.stopPropagation();
+          consumeEvent(event);
           pinEdge(d);
         })
         .on("click.open", function (event, d) {
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.detail >= 2) {
-            const { s, t } = getEdgeEndpoints(d);
-            openPeopleForPersonIds([personIdForNode(s), personIdForNode(t)]);
-            return;
-          }
-          const { sLabel, tLabel } = getEdgeEndpoints(d);
-          const edgeEntry = lookupEdgeEntry(sLabel, tLabel);
-          const filename = edgeEntry ? edgeEntry.filename : null;
-          if (event.metaKey || event.ctrlKey) {
-            openOriginalImage(filename);
-            return;
-          }
-          pinEdge(d);
+          handleGraphOpenClick(event, personIdsForEdge(d), getEdgePreviewEntry(d).filename, function () {
+            pinEdge(d);
+          });
         });
 
       // Safety: if the pointer leaves the SVG (or the window blurs), clear hover focus.
@@ -1478,37 +1526,9 @@
           updateNodeLabels();
         })
         .on("click.open", function (event, d) {
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.detail >= 2) {
-            openPeopleForPersonIds([personIdForNode(d)]);
-            return;
-          }
-          const nodeEntry = imageData && imageData.nodes ? imageData.nodes[d.label] : null;
-          const filename = Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null);
-          const bbox = Array.isArray(nodeEntry) ? nodeEntry[1] : null;
-          if (event.metaKey || event.ctrlKey) {
-            openOriginalImage(filename);
-            return;
-          }
-          state.lock.active = true;
-          state.lock.kind = "node";
-          state.lock.item = d;
-          const category = d.cluster || "";
-          const color = category ? clusterColorById[category] || options.nodeFill : null;
-          const total = typeof d.total === "number" ? d.total : null;
-          const neighbors = topNeighborsForNode(d, 10);
-          showPreview(d.label, filename, category, color, total, neighbors, (neighbor) => {
-            if (!state.lock.active || state.lock.kind !== "node" || state.lock.item !== d) return;
-            const target = nodeById.get(neighbor.id);
-            if (!target) return;
-            applyLockedNodeHighlight(target);
-          }, "Top connections", "Photos", bbox ? [bbox] : null, (neighbor) => {
-            const target = nodeById.get(neighbor.id);
-            if (!target) return;
-            showNodeInSidebar(target);
-          }, [personIdForNode(d)]);
-          applyLockedNodeHighlight(d);
+          handleGraphOpenClick(event, [personIdForNode(d)], getNodePreviewEntry(d).filename, function () {
+            showNodeInSidebar(d);
+          });
         })
         .on(
           "mouseover.fade",

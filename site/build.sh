@@ -31,8 +31,6 @@ cat "$SITE/partials/head-about.html" \
 cp "$ROOT/styles.css" "$DIST/"
 cp "$ROOT/favicon.svg" "$DIST/"
 cp -r "$ROOT/viz_data" "$DIST/"
-if [[ -d "$ROOT/images" ]]; then
-  cp -r "$ROOT/images" "$DIST/"
-fi
+cp -r "$SITE/js" "$DIST/"
 
 echo "Built static site → $DIST"
