@@ -1,16 +1,16 @@
 <main class="site-page people-page" id="main">
   <h1 class="site-page-title">People</h1>
-  <p class="site-page-lead">Select one or more people, then search for photos where they all appear together.</p>
+  <p class="site-page-lead">Select one or more people, then search for photos where they all appear together</p>
 
   <section class="people-toolbar" aria-label="Select people">
     <div class="people-autocomplete-wrap">
-      <label class="people-label" for="people-search-input">Add by name</label>
       <div class="people-autocomplete">
         <input
           id="people-search-input"
           type="text"
           class="people-search-input"
           placeholder="Type a name…"
+          aria-label="Search people by name"
           autocomplete="off"
           spellcheck="false"
           aria-autocomplete="list"
@@ -38,13 +38,26 @@
 
   <div class="people-lightbox" id="people-lightbox" hidden aria-hidden="true">
     <div class="people-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
-      <button type="button" class="people-lightbox-close" id="people-lightbox-close" aria-label="Close viewer">×</button>
-      <button type="button" class="people-lightbox-nav people-lightbox-prev" id="people-lightbox-prev" aria-label="Previous photo">‹</button>
+      <button type="button" class="people-lightbox-close" id="people-lightbox-close" aria-label="Close viewer">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M6 6l12 12"></path>
+          <path d="M18 6l-12 12"></path>
+        </svg>
+      </button>
+      <button type="button" class="people-lightbox-nav people-lightbox-prev" id="people-lightbox-prev" aria-label="Previous photo">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M15 18l-6-6 6-6"></path>
+        </svg>
+      </button>
       <div class="people-lightbox-stage" id="people-lightbox-stage">
         <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
         <div id="people-lightbox-bboxes" class="people-lightbox-bboxes" aria-hidden="true"></div>
       </div>
-      <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">›</button>
+      <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M9 6l6 6-6 6"></path>
+        </svg>
+      </button>
       <div class="people-lightbox-footer">
         <p class="people-lightbox-count" id="people-lightbox-count"></p>
         <p class="people-lightbox-filename" id="people-lightbox-filename"></p>
@@ -150,22 +163,44 @@
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
   cursor: pointer;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+  appearance: none;
+  -webkit-appearance: none;
 }
 .people-lightbox-close {
   top: -10px;
   right: -10px;
   width: 44px;
   height: 44px;
-  font-size: 28px;
-  line-height: 1;
 }
 .people-lightbox-nav {
   top: 50%;
   transform: translateY(-50%);
   width: 48px;
   height: 48px;
-  font-size: 30px;
-  line-height: 1;
+}
+.people-lightbox-close svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.people-lightbox-nav svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+.people-lightbox-close svg path,
+.people-lightbox-nav svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .people-lightbox-prev { left: -8px; }
 .people-lightbox-next { right: -8px; }
@@ -201,6 +236,10 @@
 }
 .people-lightbox-pdf-link[hidden] {
   display: none;
+}
+.people-thumb-bboxes .people-face-box {
+  cursor: default;
+  pointer-events: none;
 }
 @media (max-width: 800px) {
   .people-lightbox { padding: 10px; }
@@ -421,12 +460,6 @@
       box.style.width = w * 100 + "%";
       box.style.height = h * 100 + "%";
       box.style.borderColor = colorMap[pid] || "#888";
-      box.title = "Open " + displayNameForPersonId(pid);
-      box.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        openPersonPage(pid);
-      });
       overlayEl.appendChild(box);
     });
   }
@@ -1034,7 +1067,7 @@
         if (peopleMasonryInstance) peopleMasonryInstance.layout();
       });
 
-      setStatus(photoItems.length + " photo" + (photoItems.length === 1 ? "" : "s") + " found.");
+      setStatus(photoItems.length + " photo" + (photoItems.length === 1 ? "" : "s") + " found");
     } catch (e) {
       setStatus(String(e.message || e), true);
     }
