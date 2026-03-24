@@ -158,6 +158,7 @@
 .people-lightbox-close,
 .people-lightbox-nav {
   position: absolute;
+  z-index: 2;
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.2);
@@ -748,6 +749,8 @@
   /** @type {{ url: string, image: string, faces: Record<string, {left:number,top:number,width:number,height:number}> }[]} */
   let lightboxPhotos = [];
   let lightboxIndex = -1;
+  let lightboxTouchStartX = null;
+  let lightboxTouchStartY = null;
 
   function updateLightboxMeta(item, totalCount) {
     lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + totalCount;
@@ -820,6 +823,8 @@
     resetLightboxMeta();
     lightboxPhotos = [];
     lightboxIndex = -1;
+    lightboxTouchStartX = null;
+    lightboxTouchStartY = null;
     document.body.style.overflow = "";
   }
 
@@ -847,6 +852,33 @@
     if (direction === "close") {
       closeLightbox();
     }
+  }
+
+  function onLightboxTouchStart(e) {
+    if (lightboxEl.hidden) return;
+    if (!e.touches || e.touches.length !== 1) {
+      lightboxTouchStartX = null;
+      lightboxTouchStartY = null;
+      return;
+    }
+    lightboxTouchStartX = e.touches[0].clientX;
+    lightboxTouchStartY = e.touches[0].clientY;
+  }
+
+  function onLightboxTouchEnd(e) {
+    if (lightboxEl.hidden) return;
+    if (lightboxTouchStartX == null || lightboxTouchStartY == null) return;
+    if (!e.changedTouches || !e.changedTouches.length) return;
+    const endX = e.changedTouches[0].clientX;
+    const endY = e.changedTouches[0].clientY;
+    const dx = endX - lightboxTouchStartX;
+    const dy = endY - lightboxTouchStartY;
+    lightboxTouchStartX = null;
+    lightboxTouchStartY = null;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    if (absDx < 40 || absDx <= absDy) return;
+    navigateLightbox(dx < 0 ? "next" : "prev");
   }
 
   function setStatus(msg, isError) {
@@ -1059,6 +1091,12 @@
   lightboxCloseBtn.addEventListener("click", () => navigateLightbox("close"));
   lightboxPrevBtn.addEventListener("click", () => navigateLightbox("prev"));
   lightboxNextBtn.addEventListener("click", () => navigateLightbox("next"));
+  lightboxStageEl.addEventListener("touchstart", onLightboxTouchStart, { passive: true });
+  lightboxStageEl.addEventListener("touchend", onLightboxTouchEnd, { passive: true });
+  lightboxStageEl.addEventListener("touchcancel", function () {
+    lightboxTouchStartX = null;
+    lightboxTouchStartY = null;
+  }, { passive: true });
   lightboxEl.addEventListener("click", (e) => {
     if (e.target === lightboxEl) navigateLightbox("close");
   });
