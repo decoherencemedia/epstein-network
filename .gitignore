@@ -9,6 +9,7 @@ node_faces/
 node_faces_top5/
 node_faces__automatic/
 node_faces__without_background/
+clustering_debug/
 
 scripts/map_person_ids/*
 !scripts/map_person_ids/*.py

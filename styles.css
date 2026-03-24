@@ -3,6 +3,8 @@
   --panel-bg-rgb: 238, 241, 245;
   --panel-bg-alpha: 0.95;
   --site-header-height: 48px;
+  /* Nav active link, People “Search photos” button border/fill family — single source of truth. */
+  --site-accent: #00646F;
   /* Inset search panel from header + viewport corner (reads better with site nav). */
   --name-search-edge-gap: 10px;
 }
@@ -79,7 +81,7 @@ body.page-about .site-page {
   background: rgba(21, 101, 192, 0.08);
 }
 .site-nav-active {
-  color: #0d47a1;
+  color: var(--site-accent);
   font-weight: 600;
 }
 
@@ -306,16 +308,17 @@ body.page-home #thumb-preview {
   max-height: 55vh;
   object-fit: contain;
 }
+/* Default borders match SiteShared.personColorPalette[0] / [1]; JS sets borderColor in updateBboxOverlay. */
 .thumb-bbox {
   position: absolute;
   display: none;
   pointer-events: none;
-  border: 2px solid rgba(60, 220, 60);
-  border-radius: 2px;
+  border: 2px solid rgba(0, 189, 0, 0.95);
+  border-radius: 0;
   box-sizing: border-box;
 }
 .thumb-bbox.thumb-bbox-b {
-  border-color: rgba(255, 220, 0);
+  border-color: rgba(255, 66, 204, 0.95);
 }
 
 #name-search {
@@ -851,7 +854,7 @@ body.page-home #name-search {
   gap: 12px;
 }
 .people-graph-btn {
-  font: 13px/1.2 system-ui, sans-serif;
+  font: 14px/1.2 system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: 0.01em;
   padding: 10px 14px;
@@ -881,16 +884,16 @@ body.page-home #name-search {
   letter-spacing: 0.01em;
   padding: 10px 18px;
   border-radius: 0;
-  border: 1px solid #466cb0;
-  background: linear-gradient(180deg, #5a7dc8 0%, #4b6fb5 100%);
+  border: 1px solid var(--site-accent);
+  background: var(--site-accent);
   color: #fff;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(28, 57, 112, 0.28);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--site-accent) 35%, transparent);
   transition: transform 80ms ease, box-shadow 120ms ease, filter 120ms ease;
 }
 .people-search-btn:hover:not(:disabled) {
   filter: brightness(1.04);
-  box-shadow: 0 3px 10px rgba(28, 57, 112, 0.34);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--site-accent) 42%, transparent);
 }
 .people-search-btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -991,7 +994,7 @@ body.page-home #name-search {
     padding: 12px 20px;
   }
   .people-graph-btn {
-    font-size: 15px;
+    font-size: 16px;
     padding: 12px 14px;
   }
   .people-status {

@@ -14,9 +14,13 @@ from config import REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
 
 # ---------------- CONFIG ----------------
 
-SIMILARITY_THRESHOLD = 99.0
+# Store richer SearchFaces neighborhoods for offline analysis/debugging.
+SEARCH_FACES_STORE_THRESHOLD = 0.0
 MAX_FACES_PER_SEARCH = 100
 API_DELAY_SECONDS = 0.2
+
+# Use this stricter threshold for cluster edge creation.
+CLUSTER_SIMILARITY_THRESHOLD = 99.0
 
 # --------------------------------------
 
@@ -52,7 +56,7 @@ def cluster_faces(conn):
         response = rekognition.search_faces(
             CollectionId=REKOGNITION_COLLECTION_ID,
             FaceId=face_id,
-            FaceMatchThreshold=SIMILARITY_THRESHOLD,
+            FaceMatchThreshold=SEARCH_FACES_STORE_THRESHOLD,
             MaxFaces=MAX_FACES_PER_SEARCH,
         )
 
@@ -63,6 +67,9 @@ def cluster_faces(conn):
         )
 
         for match in response["FaceMatches"]:
+            similarity = float(match.get("Similarity") or 0.0)
+            if similarity < CLUSTER_SIMILARITY_THRESHOLD:
+                continue
             other = match["Face"]["FaceId"]
             uf.union(face_id, other)
 

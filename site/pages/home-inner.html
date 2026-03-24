@@ -120,6 +120,9 @@
       labelZoomResponseExp: 0.7,
     };
 
+    const EDGE_BBOX_COLOR_ALPHABETIC_FIRST = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[0], 0.95);
+    const EDGE_BBOX_COLOR_ALPHABETIC_SECOND = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[1], 0.95);
+
     Promise.all([
       d3.json("viz_data/dataset.json"),
       d3.json("viz_data/image_data.json"),
@@ -354,9 +357,16 @@
         const offsetY = (containerH - displayH) / 2;
         if (previewBboxEl && currentBboxes[0]) {
           positionBboxEl(previewBboxEl, currentBboxes[0], displayW, displayH, offsetX, offsetY);
+          previewBboxEl.style.borderColor = EDGE_BBOX_COLOR_ALPHABETIC_FIRST;
         }
-        if (previewBboxBEl && currentBboxes[1]) {
-          positionBboxEl(previewBboxBEl, currentBboxes[1], displayW, displayH, offsetX, offsetY);
+        if (previewBboxBEl) {
+          if (currentBboxes[1]) {
+            positionBboxEl(previewBboxBEl, currentBboxes[1], displayW, displayH, offsetX, offsetY);
+            previewBboxBEl.style.borderColor = EDGE_BBOX_COLOR_ALPHABETIC_SECOND;
+          } else {
+            previewBboxBEl.style.display = "none";
+            previewBboxBEl.style.borderColor = "";
+          }
         }
       }
 
@@ -381,8 +391,14 @@
         previewNeighborsEl.style.display = "none";
         previewNeighborsEl.innerHTML = "";
         currentBboxes = [];
-        if (previewBboxEl) previewBboxEl.style.display = "none";
-        if (previewBboxBEl) previewBboxBEl.style.display = "none";
+        if (previewBboxEl) {
+          previewBboxEl.style.display = "none";
+          previewBboxEl.style.borderColor = "";
+        }
+        if (previewBboxBEl) {
+          previewBboxBEl.style.display = "none";
+          previewBboxBEl.style.borderColor = "";
+        }
         previewDefaultEl.style.display = "block";
         applyPreviewVisibility();
       }
@@ -436,9 +452,8 @@
 
         const photoCounts = [5000, 500, 50, 5];
         // The dataset generator's node `size` is a transformed function of photo counts.
-        // For the legend, we assume the intended relationship is √(photos) up to a single
-        // global scale factor, and we *learn that factor* from the actual nodes so the
-        // legend matches the on-screen radii used by the visualization.
+        // For the legend, we assume radius ∝ ∛(photos) up to a single global scale factor,
+        // and we *learn that factor* from the actual nodes so the legend matches on-screen radii.
         const samples = Array.isArray(nodesForSizing) ? nodesForSizing : [];
         const ratios = [];
         for (const n of samples) {
@@ -447,13 +462,13 @@
           // Ignore non-positive totals and tiny/clamped nodes when estimating the scale.
           if (!t || !r || t <= 0 || r <= 0) continue;
           if (t < 12) continue;
-          ratios.push(r / Math.sqrt(t));
+          ratios.push(r / Math.cbrt(t));
         }
         ratios.sort((a, b) => a - b);
         const medianRatio = ratios.length ? ratios[Math.floor(ratios.length / 2)] : 1;
         const scale = Number.isFinite(medianRatio) && medianRatio > 0 ? medianRatio : 1;
 
-        const radii = photoCounts.map((n) => scale * Math.sqrt(n));
+        const radii = photoCounts.map((n) => scale * Math.cbrt(n));
         const rMax = Math.max(...radii);
         const pad = 6;
         const box = 2 * (rMax + pad);
@@ -1382,10 +1397,10 @@
         const filename = edgePreview.filename;
         const edgeBboxes = edgePreview.edgeBboxes;
         const total = d.weight;
-        // bboxA = alphabetically first label (green), bboxB = second (yellow)
+        // Alphabetically first label = palette[0], second = palette[1] (same as /people chip order convention)
         const bboxColors = sLabel <= tLabel
-          ? { [sLabel]: "rgba(60, 220, 60, 0.95)", [tLabel]: "rgba(255, 220, 0, 0.95)" }
-          : { [tLabel]: "rgba(60, 220, 60, 0.95)", [sLabel]: "rgba(255, 220, 0, 0.95)" };
+          ? { [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND }
+          : { [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND };
         const endpoints = [
           { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—", color: bboxColors[sLabel] },
           { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—", color: bboxColors[tLabel] },

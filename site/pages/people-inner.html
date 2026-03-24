@@ -132,7 +132,7 @@
   z-index: 2;
   box-sizing: border-box;
   border: 2px solid;
-  border-radius: 2px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.06);
   cursor: pointer;
   pointer-events: auto;
@@ -294,25 +294,14 @@
   const lightboxPrevBtn = document.getElementById("people-lightbox-prev");
   const lightboxNextBtn = document.getElementById("people-lightbox-next");
 
-  /** Same order as chips: first selected = index 0, … */
-  const PERSON_COLOR_PALETTE = ['#018700', '#b500ff', '#05acc6', '#97ff00', '#ffa52f', '#ff8ec8', '#79525e', '#00fdcf', '#afa5ff'];
-
-  function hexToRgb(hex) {
-    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
-    if (!m) return null;
-    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
-  }
+  const PERSON_COLOR_PALETTE = SiteShared.personColorPalette;
+  const hexToRgb = SiteShared.hexToRgb;
+  const rgbaWithAlpha = SiteShared.rgbaWithAlpha;
 
   function chipBackgroundTint(hex) {
     const rgb = hexToRgb(hex);
     if (!rgb) return "rgba(0, 0, 0, 0.06)";
     return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.2)";
-  }
-
-  function rgbaWithAlpha(hex, alpha) {
-    const rgb = hexToRgb(hex);
-    if (!rgb) return "rgba(0, 0, 0, " + alpha + ")";
-    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
   }
 
   function displayNameForPersonId(personId) {
