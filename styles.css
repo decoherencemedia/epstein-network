@@ -230,9 +230,22 @@ body.page-home #thumb-preview {
   background: #fff;
   color: #222;
   border-radius: 4px;
-  font: 700 16px/1 system-ui, sans-serif;
   cursor: pointer;
   flex: 0 0 auto;
+}
+#thumb-collapse-btn svg,
+#thumb-open-btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+#thumb-collapse-btn svg path,
+#thumb-open-btn svg path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .thumb-meta {
   display: flex;
@@ -683,7 +696,6 @@ body.page-home #name-search {
     background: #fff;
     color: #222;
     border-radius: 4px;
-    font: 700 16px/1 system-ui, sans-serif;
     cursor: pointer;
     flex: 0 0 auto;
   }
@@ -774,11 +786,10 @@ body.page-home #name-search {
   align-items: center;
   gap: 6px;
   padding: 6px 8px 6px 12px;
-  background: rgba(21, 101, 192, 0.1);
-  border: 1px solid rgba(21, 101, 192, 0.25);
+  /* border/background/color set in JS to match face box accent (yellow, light green, pink, …) */
   border-radius: 999px;
   font: 13px/1.2 system-ui, sans-serif;
-  color: #0d47a1;
+  box-sizing: border-box;
 }
 .people-chip-remove {
   border: 0;
@@ -793,7 +804,7 @@ body.page-home #name-search {
   padding: 0;
 }
 .people-chip-remove:hover {
-  background: rgba(21, 101, 192, 0.2);
+  background: rgba(0, 0, 0, 0.1);
 }
 .people-actions {
   margin-bottom: 8px;

@@ -40,9 +40,16 @@
     <div class="people-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
       <button type="button" class="people-lightbox-close" id="people-lightbox-close" aria-label="Close viewer">×</button>
       <button type="button" class="people-lightbox-nav people-lightbox-prev" id="people-lightbox-prev" aria-label="Previous photo">‹</button>
-      <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+      <div class="people-lightbox-stage" id="people-lightbox-stage">
+        <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+        <div id="people-lightbox-bboxes" class="people-lightbox-bboxes" aria-hidden="true"></div>
+      </div>
       <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">›</button>
-      <p class="people-lightbox-count" id="people-lightbox-count"></p>
+      <div class="people-lightbox-footer">
+        <p class="people-lightbox-count" id="people-lightbox-count"></p>
+        <p class="people-lightbox-filename" id="people-lightbox-filename"></p>
+        <a class="people-lightbox-pdf-link" id="people-lightbox-pdf-link" href="#" target="_blank" rel="noopener">View original PDF</a>
+      </div>
     </div>
   </div>
 </main>
@@ -66,11 +73,74 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding-bottom: 78px;
+  box-sizing: border-box;
+}
+.people-lightbox-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: calc(100% - 8px);
 }
 .people-lightbox-image {
+  display: block;
   max-width: 100%;
-  max-height: 100%;
+  max-height: calc(min(92vh, 1000px) - 92px);
+  width: auto;
+  height: auto;
   object-fit: contain;
+}
+.people-lightbox-bboxes {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.people-thumb-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.people-thumb-bboxes {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.people-face-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.people-face-label {
+  position: absolute;
+  padding: 1px 6px;
+  font: 700 12px/1.15 system-ui, sans-serif;
+  color: #000;
+  border-radius: 0;
+  white-space: nowrap;
+  text-shadow: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  pointer-events: auto;
+}
+@media (max-width: 800px) {
+  .people-face-label {
+    font-size: 10px;
+    max-width: 150px;
+  }
 }
 .people-lightbox-close,
 .people-lightbox-nav {
@@ -100,20 +170,46 @@
 .people-lightbox-prev { left: -8px; }
 .people-lightbox-next { right: -8px; }
 .people-lightbox-count {
+  margin: 0 0 2px;
+  color: #fff;
+  font-size: 13px;
+}
+.people-lightbox-footer {
   position: absolute;
   left: 50%;
-  bottom: -34px;
+  bottom: 10px;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: min(92vw, 900px);
+}
+.people-lightbox-filename {
   margin: 0;
-  color: #fff;
-  font-size: 14px;
+  color: #ddd;
+  font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: min(92vw, 900px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.people-lightbox-pdf-link {
+  color: #9ad0ff;
+  font: 12px/1.2 system-ui, sans-serif;
+  text-decoration: underline;
+}
+.people-lightbox-pdf-link[hidden] {
+  display: none;
 }
 @media (max-width: 800px) {
   .people-lightbox { padding: 10px; }
+  .people-lightbox-dialog { padding-bottom: 62px; }
   .people-lightbox-prev { left: 4px; }
   .people-lightbox-next { right: 4px; }
   .people-lightbox-close { top: 4px; right: 4px; }
-  .people-lightbox-count { bottom: 10px; }
+  .people-lightbox-footer { bottom: 10px; }
+  .people-lightbox-filename, .people-lightbox-pdf-link, .people-lightbox-count { font-size: 11px; }
 }
 </style>
 
@@ -143,11 +239,360 @@
   const resultsWrap = document.getElementById("people-results-wrap");
   const masonryEl = document.getElementById("people-masonry");
   const lightboxEl = document.getElementById("people-lightbox");
+  const lightboxStageEl = document.getElementById("people-lightbox-stage");
   const lightboxImgEl = document.getElementById("people-lightbox-image");
+  const lightboxBboxesEl = document.getElementById("people-lightbox-bboxes");
   const lightboxCountEl = document.getElementById("people-lightbox-count");
+  const lightboxFilenameEl = document.getElementById("people-lightbox-filename");
+  const lightboxPdfLinkEl = document.getElementById("people-lightbox-pdf-link");
   const lightboxCloseBtn = document.getElementById("people-lightbox-close");
   const lightboxPrevBtn = document.getElementById("people-lightbox-prev");
   const lightboxNextBtn = document.getElementById("people-lightbox-next");
+
+  /** Same order as chips: first selected = index 0, … */
+  const PERSON_COLOR_PALETTE = ['#018700', '#b500ff', '#05acc6', '#97ff00', '#ffa52f', '#ff8ec8', '#79525e', '#00fdcf', '#afa5ff'];
+
+  function hexToRgb(hex) {
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
+    if (!m) return null;
+    return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+  }
+
+  function chipBackgroundTint(hex) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return "rgba(0, 0, 0, 0.06)";
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.2)";
+  }
+
+  function rgbaWithAlpha(hex, alpha) {
+    const rgb = hexToRgb(hex);
+    if (!rgb) return "rgba(0, 0, 0, " + alpha + ")";
+    return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
+  }
+
+  function displayNameForPersonId(personId) {
+    const selectedMatch = selected.find(function (p) {
+      return p.person_id === personId;
+    });
+    if (selectedMatch && selectedMatch.name && String(selectedMatch.name).trim()) {
+      return String(selectedMatch.name).trim();
+    }
+    const raw = namesById[personId];
+    if (raw != null && String(raw).trim()) {
+      return String(raw).trim();
+    }
+    return /^person_\d+$/i.test(String(personId)) ? "Unidentified" : String(personId);
+  }
+
+  function openPersonPage(personId) {
+    const pid = String(personId || "").trim();
+    if (!pid) return;
+    const params = new URLSearchParams();
+    params.set("person_ids", pid);
+    window.open("/people/?" + params.toString(), "_blank", "noopener");
+  }
+
+  function getDatasetNumber(number) {
+    if (number <= 3158) return 1;
+    if (number <= 3857) return 2;
+    if (number <= 5586) return 3;
+    if (number <= 8320) return 4;
+    if (number <= 8528) return 5;
+    if (number <= 8998) return 6;
+    if (number <= 9664) return 7;
+    if (number <= 39023) return 8;
+    if (number <= 1262781) return 9;
+    if (number <= 2212882) return 10;
+    if (number <= 2730262) return 11;
+    if (number <= 2731790) return 12;
+    return null;
+  }
+
+  function buildOriginalPdfUrl(imageFile) {
+    const image = String(imageFile || "");
+    if (!image) return null;
+    const fileId = image.split("-")[0];
+    if (!fileId) return null;
+    const numberRaw = fileId.replace(/\D+/g, "");
+    const number = Number.parseInt(numberRaw, 10);
+    if (!Number.isFinite(number)) return null;
+    const dataset = getDatasetNumber(number);
+    if (!dataset) return null;
+    const pdfName = fileId + ".pdf";
+    return "https://www.justice.gov/epstein/files/DataSet%20" + dataset + "/" + encodeURIComponent(pdfName);
+  }
+
+  /**
+   * Specified people (in `selected`) use the same colors as their chips (palette by index).
+   * Everyone else in `faces` cycles through palette entries not used by any specified person,
+   * in stable order (sorted person_id), so an unspecified face never shares a color with a
+   * specified person. If no palette slots remain, uses extra hues not in the specified set.
+   * @param {Record<string, unknown>} faces
+   * @returns {Record<string, string>}
+   */
+  function buildFaceColorMap(faces) {
+    const map = Object.create(null);
+    if (!faces || typeof faces !== "object") return map;
+
+    const n = PERSON_COLOR_PALETTE.length;
+    const specifiedColors = selected.map(function (_, i) {
+      return PERSON_COLOR_PALETTE[i % n];
+    });
+    const usedBySpecified = new Set(specifiedColors);
+
+    selected.forEach(function (p, i) {
+      map[p.person_id] = PERSON_COLOR_PALETTE[i % n];
+    });
+
+    const unspecifiedIds = Object.keys(faces).filter(function (pid) {
+      return selected.every(function (p) {
+        return p.person_id !== pid;
+      });
+    });
+    unspecifiedIds.sort();
+
+    const unusedFromPalette = PERSON_COLOR_PALETTE.filter(function (c) {
+      return !usedBySpecified.has(c);
+    });
+
+    const OVERFLOW_EXTRAS = [
+      "#5c6bc0",
+      "#26a69a",
+      "#ef5350",
+      "#ab47bc",
+      "#29b6f6",
+      "#78909c",
+      "#8d6e63",
+      "#546e7a",
+      "#90a4ae",
+    ];
+
+    unspecifiedIds.forEach(function (pid, j) {
+      if (unusedFromPalette.length > 0) {
+        map[pid] = unusedFromPalette[j % unusedFromPalette.length];
+        return;
+      }
+      const pool = OVERFLOW_EXTRAS.filter(function (c) {
+        return !usedBySpecified.has(c);
+      });
+      if (pool.length > 0) {
+        map[pid] = pool[j % pool.length];
+        return;
+      }
+      const hue = (j * 53 + String(pid).length * 17) % 360;
+      map[pid] = "hsl(" + hue + ", 42%, 44%)";
+    });
+
+    return map;
+  }
+
+  /**
+   * @param {unknown} row
+   * @returns {{ image: string, faces: Record<string, {left:number,top:number,width:number,height:number}> }}
+   */
+  function normalizePhotoRow(row) {
+    if (typeof row === "string") {
+      return { image: row, faces: {} };
+    }
+    if (!row || typeof row !== "object") {
+      return { image: "", faces: {} };
+    }
+    const image = row.image || row.image_name || row.filename || "";
+    const faces = row.faces && typeof row.faces === "object" ? row.faces : {};
+    return { image: String(image), faces };
+  }
+
+  function appendThumbFaceBoxes(overlayEl, faces) {
+    overlayEl.innerHTML = "";
+    if (!faces || typeof faces !== "object") return;
+    const colorMap = buildFaceColorMap(faces);
+    Object.keys(faces).forEach(function (pid) {
+      const b = faces[pid];
+      if (!b || typeof b !== "object") return;
+      const left = Number(b.left);
+      const top = Number(b.top);
+      const w = Number(b.width);
+      const h = Number(b.height);
+      if (![left, top, w, h].every(function (x) { return Number.isFinite(x); })) return;
+      const box = document.createElement("div");
+      box.className = "people-face-box";
+      box.style.left = left * 100 + "%";
+      box.style.top = top * 100 + "%";
+      box.style.width = w * 100 + "%";
+      box.style.height = h * 100 + "%";
+      box.style.borderColor = colorMap[pid] || "#888";
+      box.title = "Open " + displayNameForPersonId(pid);
+      box.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPersonPage(pid);
+      });
+      overlayEl.appendChild(box);
+    });
+  }
+
+  /** Pixel geometry of the image bitmap as drawn with object-fit: contain inside the img element. */
+  function getContainedImageRect(img) {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const cw = img.clientWidth;
+    const ch = img.clientHeight;
+    if (!nw || !nh || !cw || !ch) return null;
+    const scale = Math.min(cw / nw, ch / nh);
+    const dw = nw * scale;
+    const dh = nh * scale;
+    const ox = (cw - dw) / 2;
+    const oy = (ch - dh) / 2;
+    return { ox, oy, dw, dh };
+  }
+
+  function rectsOverlap(a, b) {
+    return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+  }
+
+  function placeLabelWithoutOverlap(labelEl, desiredLeft, desiredTop, bounds, occupied, anchor) {
+    const w = labelEl.offsetWidth;
+    const h = labelEl.offsetHeight;
+    // Keep label within image bounds and horizontally overlapping its own bbox domain.
+    // Allow left/right movement as long as the label is not completely outside the bbox x-domain.
+    const minLeft = Math.max(bounds.left, anchor.left - w);
+    const maxLeft = Math.min(bounds.right - w, anchor.right);
+    const clampedMinLeft = Math.min(minLeft, maxLeft);
+    const clampedMaxLeft = Math.max(minLeft, maxLeft);
+    const minTop = bounds.top;
+    const maxTop = Math.max(minTop, bounds.bottom - h);
+    const top = Math.max(minTop, Math.min(desiredTop, maxTop));
+    const step = Math.max(8, Math.round(w * 0.65));
+
+    function candidateAtLeft(rawLeft) {
+      const left = Math.max(clampedMinLeft, Math.min(rawLeft, clampedMaxLeft));
+      return { left, top, right: left + w, bottom: top + h };
+    }
+
+    function overlapArea(a, b) {
+      const iw = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+      const ih = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      return iw * ih;
+    }
+
+    function scoreCandidate(c) {
+      let overlap = 0;
+      for (let i = 0; i < occupied.length; i++) {
+        overlap += overlapArea(c, occupied[i]);
+      }
+      // Tiny distance tie-breaker: keep near desired placement unless overlap says otherwise.
+      const distancePenalty = Math.abs(c.left - desiredLeft) * 0.001;
+      return overlap + distancePenalty;
+    }
+
+    const rawCandidates = [desiredLeft, anchor.left, anchor.right - w, anchor.left - w, anchor.right];
+    for (let k = 1; k <= 10; k++) {
+      rawCandidates.push(desiredLeft + step * k);
+      rawCandidates.push(desiredLeft - step * k);
+    }
+
+    let candidate = candidateAtLeft(rawCandidates[0]);
+    let bestScore = scoreCandidate(candidate);
+    for (let i = 1; i < rawCandidates.length; i++) {
+      const c = candidateAtLeft(rawCandidates[i]);
+      const s = scoreCandidate(c);
+      if (s < bestScore) {
+        candidate = c;
+        bestScore = s;
+      }
+      if (bestScore === 0) break;
+    }
+
+    labelEl.style.left = candidate.left + "px";
+    labelEl.style.top = candidate.top + "px";
+    occupied.push(candidate);
+  }
+
+  function renderLightboxFaceBoxes() {
+    lightboxBboxesEl.innerHTML = "";
+    if (!lightboxPhotos.length || lightboxIndex < 0) return;
+    const item = lightboxPhotos[lightboxIndex];
+    const faces = item.faces;
+    if (!faces || typeof faces !== "object") return;
+    const rect = getContainedImageRect(lightboxImgEl);
+    if (!rect) return;
+    const ox = rect.ox;
+    const oy = rect.oy;
+    const dw = rect.dw;
+    const dh = rect.dh;
+    const colorMap = buildFaceColorMap(faces);
+    const faceIds = Object.keys(faces).sort(function (a, b) {
+      const ay = Number(faces[a] && faces[a].top);
+      const by = Number(faces[b] && faces[b].top);
+      if (Number.isFinite(ay) && Number.isFinite(by) && ay !== by) return ay - by;
+      return a.localeCompare(b);
+    });
+    const labelQueue = [];
+    const occupiedRects = [];
+    const bounds = { left: ox, top: oy, right: ox + dw, bottom: oy + dh };
+    faceIds.forEach(function (pid) {
+      const b = faces[pid];
+      if (!b || typeof b !== "object") return;
+      const left = Number(b.left);
+      const top = Number(b.top);
+      const w = Number(b.width);
+      const h = Number(b.height);
+      if (![left, top, w, h].every(function (x) { return Number.isFinite(x); })) return;
+      const box = document.createElement("div");
+      box.className = "people-face-box";
+      box.style.left = ox + left * dw + "px";
+      box.style.top = oy + top * dh + "px";
+      box.style.width = w * dw + "px";
+      box.style.height = h * dh + "px";
+      const color = colorMap[pid] || "#888";
+      box.style.borderColor = color;
+      box.title = "Open " + displayNameForPersonId(pid);
+      box.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPersonPage(pid);
+      });
+      lightboxBboxesEl.appendChild(box);
+      occupiedRects.push({
+        left: ox + left * dw,
+        top: oy + top * dh,
+        right: ox + (left + w) * dw,
+        bottom: oy + (top + h) * dh,
+      });
+
+      const label = document.createElement("div");
+      label.className = "people-face-label";
+      label.textContent = displayNameForPersonId(pid);
+      label.style.background = rgbaWithAlpha(color, 0.9);
+      label.title = "Open " + displayNameForPersonId(pid);
+      label.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openPersonPage(pid);
+      });
+      lightboxBboxesEl.appendChild(label);
+      labelQueue.push({
+        el: label,
+        left: ox + left * dw,
+        top: oy + (top + h) * dh,
+        anchorLeft: ox + left * dw,
+        anchorRight: ox + (left + w) * dw,
+      });
+    });
+
+    labelQueue.forEach(function (entry) {
+      placeLabelWithoutOverlap(
+        entry.el,
+        entry.left,
+        entry.top,
+        bounds,
+        occupiedRects,
+        { left: entry.anchorLeft, right: entry.anchorRight }
+      );
+    });
+  }
+
+  let lightboxResizeObserver = null;
 
   /** @type {any} */
   let peopleMasonryInstance = null;
@@ -160,6 +605,13 @@
     }
   }
 
+  function clearSearchResults() {
+    destroyPeopleMasonry();
+    masonryEl.innerHTML = "";
+    resultsWrap.hidden = true;
+    setStatus("");
+  }
+
   /** @type {{ person_id: string, name: string | null }[]} */
   let selected = [];
   /** @type {{ person_id: string, label: string }[]} */
@@ -168,43 +620,89 @@
   let namesById = {};
   let namesLoaded = false;
   let activeIndex = -1;
-  let lightboxFiles = [];
+  /** @type {{ url: string, image: string, faces: Record<string, {left:number,top:number,width:number,height:number}> }[]} */
+  let lightboxPhotos = [];
   let lightboxIndex = -1;
 
   function renderLightboxImage() {
-    if (!lightboxFiles.length || lightboxIndex < 0) return;
-    lightboxImgEl.src = lightboxFiles[lightboxIndex];
-    lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + lightboxFiles.length;
+    if (!lightboxPhotos.length || lightboxIndex < 0) return;
+    const item = lightboxPhotos[lightboxIndex];
+    lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + lightboxPhotos.length;
+    lightboxFilenameEl.textContent = item.image || "";
+    const pdfUrl = buildOriginalPdfUrl(item.image);
+    if (pdfUrl) {
+      lightboxPdfLinkEl.href = pdfUrl;
+      lightboxPdfLinkEl.hidden = false;
+    } else {
+      lightboxPdfLinkEl.href = "#";
+      lightboxPdfLinkEl.hidden = true;
+    }
+
+    function applyFacesWhenReady() {
+      if (lightboxImgEl.naturalWidth && lightboxImgEl.naturalHeight) {
+        renderLightboxFaceBoxes();
+      }
+    }
+
+    lightboxImgEl.onload = function () {
+      applyFacesWhenReady();
+    };
+    lightboxImgEl.src = item.url;
+    if (lightboxImgEl.complete) {
+      applyFacesWhenReady();
+    } else {
+      lightboxBboxesEl.innerHTML = "";
+    }
   }
 
-  function openLightbox(files, index) {
-    if (!Array.isArray(files) || !files.length) return;
-    lightboxFiles = files.slice();
-    lightboxIndex = Math.max(0, Math.min(index, lightboxFiles.length - 1));
+  function openLightbox(photos, index) {
+    if (!Array.isArray(photos) || !photos.length) return;
+    lightboxPhotos = photos.slice();
+    lightboxIndex = Math.max(0, Math.min(index, lightboxPhotos.length - 1));
+    lightboxBboxesEl.innerHTML = "";
+    if (lightboxResizeObserver && lightboxStageEl) {
+      lightboxResizeObserver.disconnect();
+      lightboxResizeObserver = null;
+    }
     renderLightboxImage();
     lightboxEl.hidden = false;
     lightboxEl.setAttribute("aria-hidden", "false");
     document.body.style.overflow = "hidden";
+    if (typeof ResizeObserver !== "undefined" && lightboxStageEl) {
+      lightboxResizeObserver = new ResizeObserver(function () {
+        if (!lightboxEl.hidden) renderLightboxFaceBoxes();
+      });
+      lightboxResizeObserver.observe(lightboxStageEl);
+    }
   }
 
   function closeLightbox() {
+    if (lightboxResizeObserver) {
+      lightboxResizeObserver.disconnect();
+      lightboxResizeObserver = null;
+    }
     lightboxEl.hidden = true;
     lightboxEl.setAttribute("aria-hidden", "true");
     lightboxImgEl.src = "";
-    lightboxFiles = [];
+    lightboxImgEl.onload = null;
+    lightboxBboxesEl.innerHTML = "";
+    lightboxFilenameEl.textContent = "";
+    lightboxPdfLinkEl.href = "#";
+    lightboxPdfLinkEl.hidden = true;
+    lightboxPhotos = [];
     lightboxIndex = -1;
     document.body.style.overflow = "";
   }
 
   function showPrevLightboxImage() {
-    if (!lightboxFiles.length) return;
-    lightboxIndex = (lightboxIndex - 1 + lightboxFiles.length) % lightboxFiles.length;
+    if (!lightboxPhotos.length) return;
+    lightboxIndex = (lightboxIndex - 1 + lightboxPhotos.length) % lightboxPhotos.length;
     renderLightboxImage();
   }
 
   function showNextLightboxImage() {
-    if (!lightboxFiles.length) return;
-    lightboxIndex = (lightboxIndex + 1) % lightboxFiles.length;
+    if (!lightboxPhotos.length) return;
+    lightboxIndex = (lightboxIndex + 1) % lightboxPhotos.length;
     renderLightboxImage();
   }
 
@@ -223,6 +721,10 @@
       const card = document.createElement("div");
       card.className = "people-chip";
       card.setAttribute("data-person-id", p.person_id);
+      const accent = PERSON_COLOR_PALETTE[i % PERSON_COLOR_PALETTE.length];
+      card.style.border = "2px solid " + accent;
+      card.style.background = chipBackgroundTint(accent);
+      card.style.color = "#1a1a1a";
       const label = document.createElement("span");
       label.className = "people-chip-label";
       label.textContent = p.name || p.person_id;
@@ -235,6 +737,7 @@
         selected.splice(i, 1);
         renderSelected();
         updateSearchButton();
+        clearSearchResults();
       });
       card.appendChild(label);
       card.appendChild(rm);
@@ -430,6 +933,9 @@
   });
 
   window.addEventListener("resize", function () {
+    if (!lightboxEl.hidden) {
+      renderLightboxFaceBoxes();
+    }
     if (!peopleMasonryInstance) return;
     clearTimeout(masonryResizeTimer);
     masonryResizeTimer = setTimeout(function () {
@@ -460,13 +966,21 @@
       const json = await res.json();
       const raw = json.data;
       if (!Array.isArray(raw)) throw new Error("Unexpected response shape");
-      const files = raw
-        .map((x) =>
-          typeof x === "string" ? x : x && (x.image_name || x.filename)
-        )
-        .filter(Boolean);
-      const fullImageUrls = files.map((name) => CDN_IMAGES + encodeURIComponent(String(name)));
-      if (files.length === 0) {
+      const photoItems = raw
+        .map(function (x) {
+          return normalizePhotoRow(x);
+        })
+        .filter(function (p) {
+          return p.image && String(p.image).trim();
+        });
+      const lightboxPayload = photoItems.map(function (p) {
+        return {
+          url: CDN_IMAGES + encodeURIComponent(String(p.image)),
+          image: String(p.image),
+          faces: p.faces,
+        };
+      });
+      if (photoItems.length === 0) {
         setStatus("No photos found for this combination.");
         return;
       }
@@ -477,24 +991,31 @@
       masonryEl.appendChild(sizer);
 
       const frag = document.createDocumentFragment();
-      files.forEach((name, idx) => {
+      photoItems.forEach(function (photo, idx) {
         const item = document.createElement("div");
         item.className = "people-masonry-item";
         const img = document.createElement("img");
-        const encodedName = encodeURIComponent(String(name));
+        const encodedName = encodeURIComponent(String(photo.image));
         const thumbSrc = CDN_THUMBNAILS + encodedName;
-        const fullSrc = fullImageUrls[idx];
+        const fullSrc = lightboxPayload[idx].url;
         img.src = thumbSrc;
         img.alt = "";
         img.loading = "lazy";
         img.decoding = "async";
+        const wrap = document.createElement("div");
+        wrap.className = "people-thumb-wrap";
+        const bboxes = document.createElement("div");
+        bboxes.className = "people-thumb-bboxes";
+        appendThumbFaceBoxes(bboxes, photo.faces);
+        wrap.appendChild(img);
+        wrap.appendChild(bboxes);
         const a = document.createElement("a");
         a.href = fullSrc;
-        a.addEventListener("click", (e) => {
+        a.addEventListener("click", function (e) {
           e.preventDefault();
-          openLightbox(fullImageUrls, idx);
+          openLightbox(lightboxPayload, idx);
         });
-        a.appendChild(img);
+        a.appendChild(wrap);
         item.appendChild(a);
         frag.appendChild(item);
       });
@@ -513,7 +1034,7 @@
         if (peopleMasonryInstance) peopleMasonryInstance.layout();
       });
 
-      setStatus(files.length + " photo" + (files.length === 1 ? "" : "s") + " found.");
+      setStatus(photoItems.length + " photo" + (photoItems.length === 1 ? "" : "s") + " found.");
     } catch (e) {
       setStatus(String(e.message || e), true);
     }
