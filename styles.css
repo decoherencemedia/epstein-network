@@ -384,6 +384,9 @@ body.page-home #name-search {
 .name-search-result.active {
   background: rgba(21, 101, 192, 0.10);
 }
+.name-search-result-top {
+  background: rgba(21, 101, 192, 0.14);
+}
 .name-search-result:focus-visible {
   outline: 2px solid #1565c0;
   outline-offset: -2px;
@@ -801,6 +804,9 @@ body.page-home #name-search {
 .people-search-option:hover,
 .people-search-option-active {
   background: rgba(90, 121, 184, 0.14);
+}
+.people-search-option-top {
+  background: rgba(90, 121, 184, 0.2);
 }
 .people-selected {
   display: flex;

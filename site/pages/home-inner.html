@@ -40,8 +40,12 @@
     <div id="thumb-default" style="display:none">
       <div class="thumb-default-body">
         <div>This is a visualization of the people whose faces are in the <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are people, and the lines (edges) between them are when two people are in the same photograph together.</div>
-        <div>A node's area is proportional to the number of people they're connected to, and nodes are colored based on the person's category.</div>
-        <div>Hovering over or clicking on a node or edge shows you information about that person or the connection between the two people.</div>
+        <div>A node's size is related to the number of photos they appear in, and nodes are colored based on the person's category.</div>
+        <ul>
+            <li>Hovering over a node or edge shows you information about that person or the connection between the two people</li>
+            <li>Clicking on a node or edge opens a sidebar with more information about that person or people, including a photograph</li>
+            <li>Double-clicking on a node or edge opens up a new tab showing all photos containing that person or people</li>
+        </ul>
         <div>
           Data was taken from
           <a href="https://ddosecrets.org/article/epstein-files" target="_blank" rel="noopener noreferrer">DDoSecrets</a>,
@@ -99,8 +103,8 @@
       );
     // Central place for user-tweakable visualization constants.
     const TWEAK = {
-      nodeScaling: 2.5,
-      initialZoomK: 1.2,
+      nodeScaling: 2.75,
+      initialZoomK: 1,
       nodeZoomScaleExp: 0.35,
       edgeHighlightWidthMult: 2,
       mutedNodeFill: "#cfcfcf",
@@ -1131,6 +1135,9 @@
       }
 
       function showNodeInSidebar(targetNode) {
+        if (nameSearchInputEl) {
+          nameSearchInputEl.value = "";
+        }
         const entry = getNodePreviewEntry(targetNode);
         const filename = entry.filename;
         const bbox = entry.bbox;
@@ -1270,7 +1277,7 @@
         items.forEach((item) => {
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "name-search-result";
+          btn.className = "name-search-result" + (searchState.resultsEl.children.length === 0 ? " name-search-result-top" : "");
           btn.setAttribute("role", "option");
           btn.setAttribute("aria-selected", "false");
           btn.textContent = item.label;
@@ -1308,7 +1315,17 @@
           renderNameSearchResults(searchState, matches);
         });
 
+        // Native clear ("x") in type=search should unpin the currently selected node.
+        nameSearchInputEl.addEventListener("search", () => {
+          if (String(nameSearchInputEl.value || "").trim()) return;
+          clearNameSearchResults(searchState);
+          if (state.lock.active && state.lock.kind === "node") {
+            unlockPreviewAndHighlights();
+          }
+        });
+
         nameSearchInputEl.addEventListener("keydown", (e) => {
+          const hasTypedQuery = String(nameSearchInputEl.value || "").trim().length > 0;
           if (e.key === "Escape") {
             clearNameSearchResults(searchState);
             return;
@@ -1328,7 +1345,7 @@
             return;
           }
           if (e.key === "Enter") {
-            if (!searchState.current.length) return;
+            if (!searchState.current.length || !hasTypedQuery) return;
             e.preventDefault();
             const chosen = searchState.current[Math.max(0, searchState.activeIndex)];
             if (!chosen) return;

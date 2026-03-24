@@ -1070,7 +1070,7 @@
       li.setAttribute("role", "option");
       li.id = "people-opt-" + i;
       li.dataset.personId = row.person_id;
-      li.className = "people-search-option";
+      li.className = "people-search-option" + (i === 0 ? " people-search-option-top" : "");
       li.textContent = row.label;
       li.addEventListener("mousedown", (e) => {
         e.preventDefault();
@@ -1145,6 +1145,7 @@
 
   inputEl.addEventListener("keydown", (e) => {
     const opts = listboxEl.querySelectorAll(".people-search-option");
+    const hasTypedQuery = String(inputEl.value || "").trim().length > 0;
     if (!opts.length) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -1154,9 +1155,10 @@
       opts.forEach((el, i) => el.classList.toggle("people-search-option-active", i === activeIndex));
       return;
     }
-    if (e.key === "Enter" && activeIndex >= 0) {
+    if (e.key === "Enter" && hasTypedQuery) {
       e.preventDefault();
-      pickPerson(opts[activeIndex].dataset.personId);
+      const pickedIndex = activeIndex >= 0 ? activeIndex : 0;
+      pickPerson(opts[pickedIndex].dataset.personId);
       return;
     }
     if (e.key === "Escape") setListboxOpen(false);

@@ -188,7 +188,10 @@ if __name__ == "__main__":
     total_images_by_label = (
         df.groupby("label")["image_name"].nunique().to_dict()
     )
+    total_images_root_3 = {k : v ** (1/3.0) for k, v in total_images_by_label.items()}
+
     nx.set_node_attributes(G=G, values=total_images_by_label, name="total")
+    nx.set_node_attributes(G=G, values=total_images_root_3, name="total_root_3")
 
     # Categories from the Matches sheet (column H).
     name_to_category = load_categories(gc)
