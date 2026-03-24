@@ -839,6 +839,35 @@ body.page-home #name-search {
 }
 .people-actions {
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.people-graph-btn {
+  font: 13px/1.2 system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 10px 14px;
+  border-radius: 0;
+  border: 1px solid #7f8aa0;
+  background: linear-gradient(180deg, #f7f9fc 0%, #e8edf5 100%);
+  color: #2b3442;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(24, 34, 48, 0.16);
+  transition: transform 80ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+.people-graph-btn:hover:not(:disabled) {
+  filter: brightness(1.02);
+  box-shadow: 0 2px 8px rgba(24, 34, 48, 0.22);
+}
+.people-graph-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.people-graph-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 .people-search-btn {
   font: 14px/1.2 system-ui, sans-serif;
@@ -954,6 +983,10 @@ body.page-home #name-search {
   .people-search-btn {
     font-size: 16px;
     padding: 12px 20px;
+  }
+  .people-graph-btn {
+    font-size: 15px;
+    padding: 12px 14px;
   }
   .people-status {
     font-size: 15px;

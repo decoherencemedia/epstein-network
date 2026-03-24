@@ -663,6 +663,7 @@
       function syncSidebarPersonToUrl(personId) {
         const params = new URLSearchParams(window.location.search);
         const pid = String(personId || "").trim();
+        params.delete("person_ids");
         if (pid) {
           params.set("person_id", pid);
         } else {
@@ -677,6 +678,30 @@
         const params = new URLSearchParams(window.location.search);
         const pid = String(params.get("person_id") || "").trim();
         return pid || null;
+      }
+
+      function syncSidebarEdgeToUrl(personIds) {
+        const params = new URLSearchParams(window.location.search);
+        const ids = Array.isArray(personIds)
+          ? personIds.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        params.delete("person_id");
+        if (ids.length === 2) {
+          params.set("person_ids", ids.join(","));
+        } else {
+          params.delete("person_ids");
+        }
+        const qs = params.toString();
+        const nextUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+        window.history.replaceState(null, "", nextUrl);
+      }
+
+      function sidebarEdgePersonIdsFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const raw = String(params.get("person_ids") || "").trim();
+        if (!raw) return null;
+        const ids = raw.split(",").map((x) => String(x || "").trim()).filter(Boolean);
+        return ids.length === 2 ? ids : null;
       }
 
       function openOriginalImage(filename) {
@@ -1086,6 +1111,21 @@
         return [personIdForNode(s), personIdForNode(t)];
       }
 
+      function findEdgeByPersonIds(ids) {
+        if (!Array.isArray(ids) || ids.length !== 2) return null;
+        const a = String(ids[0] || "").trim();
+        const b = String(ids[1] || "").trim();
+        if (!a || !b) return null;
+        for (let i = 0; i < links.length; i++) {
+          const edge = links[i];
+          const edgeIds = personIdsForEdge(edge).map((x) => String(x || "").trim());
+          if ((edgeIds[0] === a && edgeIds[1] === b) || (edgeIds[0] === b && edgeIds[1] === a)) {
+            return edge;
+          }
+        }
+        return null;
+      }
+
       function resolveNeighborNode(neighbor) {
         return neighbor ? nodeById.get(neighbor.id) : null;
       }
@@ -1355,7 +1395,7 @@
           },
           personIdsForEdge(d)
         );
-        syncSidebarPersonToUrl(null);
+        syncSidebarEdgeToUrl(personIdsForEdge(d));
       }
 
       links.forEach((d) => {
@@ -2002,14 +2042,24 @@
         });
       }
       scheduleInitialViewportCentering();
-      const initialSidebarPersonId = sidebarPersonIdFromUrl();
-      if (initialSidebarPersonId) {
-        const initialNode = nodes.find((n) => personIdForNode(n) === initialSidebarPersonId) || null;
-        if (initialNode) {
-          showNodeInSidebar(initialNode);
-          centerNodeInViewport(initialNode, { durationMs: 0 });
+      const initialEdgePersonIds = sidebarEdgePersonIdsFromUrl();
+      if (initialEdgePersonIds) {
+        const initialEdge = findEdgeByPersonIds(initialEdgePersonIds);
+        if (initialEdge) {
+          pinEdge(initialEdge);
         } else {
-          syncSidebarPersonToUrl(null);
+          syncSidebarEdgeToUrl(null);
+        }
+      } else {
+        const initialSidebarPersonId = sidebarPersonIdFromUrl();
+        if (initialSidebarPersonId) {
+          const initialNode = nodes.find((n) => personIdForNode(n) === initialSidebarPersonId) || null;
+          if (initialNode) {
+            showNodeInSidebar(initialNode);
+            centerNodeInViewport(initialNode, { durationMs: 0 });
+          } else {
+            syncSidebarPersonToUrl(null);
+          }
         }
       }
       updateNodeLabels();

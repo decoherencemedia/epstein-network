@@ -25,6 +25,7 @@
     <div class="people-selected" id="people-selected" aria-label="Selected people"></div>
 
     <div class="people-actions">
+      <button type="button" class="people-graph-btn" id="people-open-graph" disabled title="Select 1 or 2 people to open in graph">Open in graph</button>
       <button type="button" class="people-search-btn" id="people-run-search" disabled>Search photos</button>
     </div>
   </section>
@@ -278,6 +279,7 @@
   const listboxEl = document.getElementById("people-search-listbox");
   const selectedEl = document.getElementById("people-selected");
   const searchBtn = document.getElementById("people-run-search");
+  const openGraphBtn = document.getElementById("people-open-graph");
   const statusEl = document.getElementById("people-status");
   const resultsWrap = document.getElementById("people-results-wrap");
   const masonryEl = document.getElementById("people-masonry");
@@ -922,6 +924,37 @@
     searchBtn.disabled = selected.length === 0;
   }
 
+  function graphUrlForSelectedPeople() {
+    const ids = selected.map((p) => String(p.person_id || "").trim()).filter(Boolean);
+    if (ids.length === 1) {
+      const params = new URLSearchParams();
+      params.set("person_id", ids[0]);
+      return "/?" + params.toString();
+    }
+    if (ids.length === 2) {
+      const params = new URLSearchParams();
+      params.set("person_ids", ids.join(","));
+      return "/?" + params.toString();
+    }
+    return null;
+  }
+
+  function updateOpenGraphButton() {
+    if (!openGraphBtn) return;
+    const count = selected.length;
+    const enabled = count === 1 || count === 2;
+    openGraphBtn.disabled = !enabled;
+    if (enabled) {
+      openGraphBtn.title = count === 1
+        ? "Open graph focused on this person"
+        : "Open graph focused on this edge";
+    } else if (count === 0) {
+      openGraphBtn.title = "Select 1 or 2 people to open in graph";
+    } else {
+      openGraphBtn.title = "'Open in graph' supports 1 person (node) or 2 people (edge)";
+    }
+  }
+
   function renderSelected() {
     selectedEl.innerHTML = "";
     selected.forEach((p, i) => {
@@ -951,6 +984,7 @@
       selectedEl.appendChild(card);
     });
     updateSearchButton();
+    updateOpenGraphButton();
   }
 
   function buildIndex(dataObj) {
@@ -1210,6 +1244,17 @@
 
   searchBtn.addEventListener("click", async () => {
     await runSearch({ syncUrl: true });
+  });
+
+  openGraphBtn.addEventListener("click", function () {
+    const url = graphUrlForSelectedPeople();
+    if (!url) return;
+    const helper = window.SiteShared;
+    if (helper && typeof helper.openInNewTab === "function") {
+      helper.openInNewTab(url);
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   });
 
   async function initFromQueryString() {
