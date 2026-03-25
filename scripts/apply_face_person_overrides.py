@@ -8,9 +8,11 @@ Values are lists of face_id (UUID) strings. Each key is interpreted as:
 - Any key that contains the substring "person_": treat the full key as an existing
   person_id; those faces are assigned to it. The person must already exist in `people`
   (otherwise the script raises before writing).
-- Any other non-empty key: treat as a display name for a new person. The script picks
-  the smallest unused person_<digits> id, inserts a `people` row
-  (name=key, include_in_network=1, celebrity_check_done=1), and assigns the faces.
+- Any other non-empty key: treat as a display name. If `people.name` already equals
+  that key (exactly one row), those faces are assigned to that row’s `person_id` and
+  no new row is inserted (safe to re-run). Otherwise the script allocates the smallest
+  unused person_<digits>, inserts (name=key, include_in_network=1, celebrity_check_done=1),
+  and assigns the faces. If more than one row has the same `name`, the script raises.
 
 Avoid display names that contain the substring "person_" (they would be treated as an
 existing person_id).
@@ -142,13 +144,36 @@ def next_free_person_id(conn: sqlite3.Connection) -> str:
     return f"person_{n}"
 
 
-def apply_overrides(conn: sqlite3.Connection, overrides: dict[str, list[str]]) -> list[tuple[str, str]]:
+def person_id_for_display_name(conn: sqlite3.Connection, display_name: str) -> str | None:
     """
-    Insert new people and update faces. Caller must BEGIN/COMMIT or ROLLBACK.
-    Returns (new_person_id, display_name) for each name-key group created.
+    Return person_id if exactly one `people` row has name == display_name; None if none.
+    Raises if multiple rows share that name.
+    """
+    rows = conn.execute(
+        "SELECT person_id FROM people WHERE name = ?",
+        (display_name,),
+    ).fetchall()
+    if len(rows) > 1:
+        pids = [str(r[0]) for r in rows]
+        raise ValueError(
+            f"Ambiguous name {display_name!r}: {len(rows)} people rows share this name: {pids}"
+        )
+    if len(rows) == 1:
+        return str(rows[0][0])
+    return None
+
+
+def apply_overrides(
+    conn: sqlite3.Connection, overrides: dict[str, list[str]]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """
+    Insert new people when needed and update faces. Caller must BEGIN/COMMIT or ROLLBACK.
+    Returns (created, reused): each is a list of (person_id, display_name) for name-key
+    groups that inserted a row vs reused an existing row by name.
     """
     c = conn.cursor()
     created: list[tuple[str, str]] = []
+    reused: list[tuple[str, str]] = []
 
     for person_key, face_ids in overrides.items():
         if not face_ids:
@@ -165,21 +190,26 @@ def apply_overrides(conn: sqlite3.Connection, overrides: dict[str, list[str]]) -
                 [person_key, *face_ids],
             )
         else:
-            new_pid = next_free_person_id(conn)
-            c.execute(
-                """
-                INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
-                VALUES (?, 1, ?, 1)
-                """,
-                (new_pid, person_key),
-            )
-            created.append((new_pid, person_key))
+            existing_pid = person_id_for_display_name(conn, person_key)
+            if existing_pid is not None:
+                reused.append((existing_pid, person_key))
+                target_pid = existing_pid
+            else:
+                target_pid = next_free_person_id(conn)
+                c.execute(
+                    """
+                    INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
+                    VALUES (?, 1, ?, 1)
+                    """,
+                    (target_pid, person_key),
+                )
+                created.append((target_pid, person_key))
             c.execute(
                 f"UPDATE faces SET person_id = ? WHERE face_id IN ({ph})",
-                [new_pid, *face_ids],
+                [target_pid, *face_ids],
             )
 
-    return created
+    return created, reused
 
 
 def main() -> None:
@@ -205,7 +235,7 @@ def main() -> None:
         assert_all_faces_exist(conn, all_face_ids)
         assert_existing_person_keys_in_db(conn, overrides)
         conn.execute("BEGIN IMMEDIATE")
-        created = apply_overrides(conn, overrides)
+        created, reused = apply_overrides(conn, overrides)
         conn.commit()
     except Exception:
         conn.rollback()
@@ -217,6 +247,8 @@ def main() -> None:
     print(f"Applied overrides from {json_path}: {len(overrides)} key(s), {total} face row(s) updated.")
     for pid, name in created:
         print(f"  New person {pid!r} (name {name!r})")
+    for pid, name in reused:
+        print(f"  Reused existing person {pid!r} (name {name!r})")
 
 
 if __name__ == "__main__":

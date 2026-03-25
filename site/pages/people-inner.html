@@ -133,7 +133,7 @@
   box-sizing: border-box;
   border: 2px solid;
   border-radius: 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: transparent;
   cursor: pointer;
   pointer-events: auto;
 }
@@ -261,7 +261,7 @@
 <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
-  const API_BASE = "https://api.epstein.photos";
+  const API_BASE = "http://localhost:5000";
   async function fetchPeopleNamesJson() {
     let res = await fetch(API_BASE + "/people", { credentials: "omit" });
     if (res.status === 404) {
@@ -378,7 +378,7 @@
    * Everyone else in `faces` cycles through palette entries not used by any specified person,
    * in stable order (sorted person_id), so an unspecified face never shares a color with a
    * specified person. If no palette slots remain, uses extra hues not in the specified set.
-   * @param {Record<string, unknown>} faces
+   * @param {unknown} faces — legacy object keyed by person_id, or array of face rows (see normalizeFaceEntries).
    * @returns {Record<string, string>}
    */
   function buildFaceColorMap(faces) {
@@ -395,12 +395,11 @@
       map[p.person_id] = PERSON_COLOR_PALETTE[i % n];
     });
 
-    const unspecifiedIds = Object.keys(faces).filter(function (pid) {
+    const unspecifiedIds = uniquePersonIdsInFaces(faces).filter(function (pid) {
       return selected.every(function (p) {
         return p.person_id !== pid;
       });
     });
-    unspecifiedIds.sort();
 
     const unusedFromPalette = PERSON_COLOR_PALETTE.filter(function (c) {
       return !usedBySpecified.has(c);
@@ -440,7 +439,7 @@
 
   /**
    * @param {unknown} row
-   * @returns {{ image: string, faces: Record<string, {left:number,top:number,width:number,height:number}> }}
+   * @returns {{ image: string, faces: unknown }}
    */
   function normalizePhotoRow(row) {
     if (typeof row === "string") {
@@ -450,27 +449,98 @@
       return { image: "", faces: {} };
     }
     const image = row.image || row.image_name || row.filename || "";
-    const faces = row.faces && typeof row.faces === "object" ? row.faces : {};
+    const raw = row.faces;
+    const faces =
+      raw != null && (typeof raw === "object" || Array.isArray(raw)) ? raw : {};
     return { image: String(image), faces };
   }
 
-  function parseFaceBox(faces, pid) {
-    const b = faces && faces[pid];
-    if (!b || typeof b !== "object") return null;
-    const left = Number(b.left);
-    const top = Number(b.top);
-    const w = Number(b.width);
-    const h = Number(b.height);
+  /**
+   * Normalized bbox from one API face value (flat or nested under `bbox`).
+   * @param {unknown} obj
+   * @returns {{ left: number, top: number, w: number, h: number } | null}
+   */
+  function parseBoxObject(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const raw = obj.bbox && typeof obj.bbox === "object" ? obj.bbox : obj;
+    const left = Number(raw.left);
+    const top = Number(raw.top);
+    const w = Number(raw.width);
+    const h = Number(raw.height);
     if (![left, top, w, h].every(function (x) { return Number.isFinite(x); })) return null;
-    return { left, top, w, h };
+    return { left: left, top: top, w: w, h: h };
   }
 
-  function sortedFaceIds(faces) {
-    return Object.keys(faces).sort(function (a, b) {
-      const ay = Number(faces[a] && faces[a].top);
-      const by = Number(faces[b] && faces[b].top);
+  /**
+   * Unique person_ids present in `faces` (object keys or array rows). Used for color assignment.
+   * @param {unknown} faces
+   * @returns {string[]}
+   */
+  function uniquePersonIdsInFaces(faces) {
+    if (Array.isArray(faces)) {
+      const seen = Object.create(null);
+      const out = [];
+      for (let i = 0; i < faces.length; i++) {
+        const e = faces[i];
+        const pid = e && String(e.person_id || e.personId || "").trim();
+        if (!pid || seen[pid]) continue;
+        seen[pid] = true;
+        out.push(pid);
+      }
+      out.sort();
+      return out;
+    }
+    if (faces && typeof faces === "object") return Object.keys(faces).sort();
+    return [];
+  }
+
+  /**
+   * One entry per face appearance. Legacy API: `faces` is { person_id: bbox } (one bbox per id).
+   * For multiple appearances of the same person, API must use an array:
+   *   [{ "person_id": "...", "face_id": "...", "left", "top", "width", "height" }, ...]
+   * @param {unknown} faces
+   * @returns {{ personId: string, key: string, box: {left:number,top:number,w:number,h:number} }[]}
+   */
+  function normalizeFaceEntries(faces) {
+    if (!faces) return [];
+    if (Array.isArray(faces)) {
+      const out = [];
+      for (let i = 0; i < faces.length; i++) {
+        const e = faces[i];
+        if (!e || typeof e !== "object") continue;
+        const personId = String(e.person_id || e.personId || "").trim();
+        if (!personId) continue;
+        const box = parseBoxObject(e);
+        if (!box) continue;
+        let key = e.face_id || e.faceId;
+        if (key == null || key === "") key = "i_" + i;
+        out.push({ personId: personId, key: String(key), box: box });
+      }
+      return out;
+    }
+    if (typeof faces === "object") {
+      const out = [];
+      const keys = Object.keys(faces);
+      for (let i = 0; i < keys.length; i++) {
+        const pid = keys[i];
+        const box = parseBoxObject(faces[pid]);
+        if (!box) continue;
+        out.push({ personId: pid, key: pid, box: box });
+      }
+      return out;
+    }
+    return [];
+  }
+
+  function sortFaceEntries(entries) {
+    return entries.slice().sort(function (a, b) {
+      const ay = a.box.top;
+      const by = b.box.top;
       if (Number.isFinite(ay) && Number.isFinite(by) && ay !== by) return ay - by;
-      return a.localeCompare(b);
+      const ax = a.box.left;
+      const bx = b.box.left;
+      if (Number.isFinite(ax) && Number.isFinite(bx) && ax !== bx) return ax - bx;
+      return a.key.localeCompare(b.key);
     });
   }
 
@@ -478,16 +548,16 @@
     overlayEl.innerHTML = "";
     if (!faces || typeof faces !== "object") return;
     const colorMap = buildFaceColorMap(faces);
-    Object.keys(faces).forEach(function (pid) {
-      const boxData = parseFaceBox(faces, pid);
-      if (!boxData) return;
+    const entries = sortFaceEntries(normalizeFaceEntries(faces));
+    entries.forEach(function (entry) {
+      const boxData = entry.box;
       const box = document.createElement("div");
       box.className = "people-face-box";
       box.style.left = boxData.left * 100 + "%";
       box.style.top = boxData.top * 100 + "%";
       box.style.width = boxData.w * 100 + "%";
       box.style.height = boxData.h * 100 + "%";
-      box.style.borderColor = colorMap[pid] || "#888";
+      box.style.borderColor = colorMap[entry.personId] || "#888";
       overlayEl.appendChild(box);
     });
   }
@@ -602,14 +672,14 @@
     const dw = rect.dw;
     const dh = rect.dh;
     const colorMap = buildFaceColorMap(faces);
-    const faceIds = sortedFaceIds(faces);
+    const entries = sortFaceEntries(normalizeFaceEntries(faces));
     // Two-phase render: boxes first, then labels. This lets labels avoid both boxes and earlier labels.
     const labelQueue = [];
     const occupiedRects = [];
     const bounds = { left: ox, top: oy, right: ox + dw, bottom: oy + dh };
-    faceIds.forEach(function (pid) {
-      const boxData = parseFaceBox(faces, pid);
-      if (!boxData) return;
+    entries.forEach(function (entry) {
+      const pid = entry.personId;
+      const boxData = entry.box;
       const box = document.createElement("div");
       box.className = "people-face-box";
       box.style.left = ox + boxData.left * dw + "px";
@@ -763,7 +833,7 @@
   let namesById = {};
   let namesLoaded = false;
   let activeIndex = -1;
-  /** @type {{ url: string, image: string, faces: Record<string, {left:number,top:number,width:number,height:number}> }[]} */
+  /** @type {{ url: string, image: string, faces: unknown }[]} */
   let lightboxPhotos = [];
   let lightboxIndex = -1;
   let lightboxTouchStartX = null;
