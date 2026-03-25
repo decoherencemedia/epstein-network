@@ -34,11 +34,11 @@ from PIL import Image
 from config import IMAGE_DIR
 
 
-OLD_DB_PATH = Path("faces_20260316__before_reindexing.db")  # relative to scripts/
+OLD_DB_PATH = Path("faces_20260324__before_reclustering.db")  # relative to scripts/
 NEW_DB_PATH = Path("faces.db")  # relative to scripts/
 OUT_PREFIX: Path | None = Path("person_id_map")  # writes .json + .csv; set None to print JSON
 
-TOP_N = 327
+TOP_N = 400
 
 # Old used `{document}-{number:0>4}`, new used `{document}-{number:0>5}`
 OLD_IMAGE_PAD = 4

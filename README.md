@@ -6,7 +6,7 @@ HTML is assembled from fragments under `site/`:
 
 - **`site/partials/`** — shared head, nav (per route), footer, closing tags
 - **`site/pages/`** — page bodies (`home-inner.html` is the D3 graph; edit there for viz changes)
-- **`site/build.sh`** — concatenates into `dist/` and copies `styles.css`, `favicon.svg`, `viz_data/` (and `images/` if present)
+- **`site/build.sh`** — concatenates into `dist/` and copies `styles.css`, `favicon.svg`, `viz_data/`, `js/`; optionally copies `images/atlas.webp` into `dist/images/` when present (local `http.server` preview only — production loads the atlas from Spaces, not from `dist/`)
 
 Run from repo root:
 

@@ -33,4 +33,12 @@ cp "$ROOT/favicon.svg" "$DIST/"
 cp -r "$ROOT/viz_data" "$DIST/"
 cp -r "$SITE/js" "$DIST/"
 
+# Local dev only: home-inner uses ./images/atlas.webp when IS_LOCAL_DEV; production uses
+# the DigitalOcean Spaces URL and never loads atlas from dist/. Optional copy so
+# `cd dist && python3 -m http.server` can show the atlas after 15__build_atlas.py.
+if [[ -f "$ROOT/images/atlas.webp" ]]; then
+  mkdir -p "$DIST/images"
+  cp "$ROOT/images/atlas.webp" "$DIST/images/"
+fi
+
 echo "Built static site → $DIST"
