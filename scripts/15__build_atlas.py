@@ -9,14 +9,24 @@ This script is intentionally single-purpose and dataset-specific:
   - `OUTPUT_DIR/atlas_manifest.json`
 
 The manifest keys are node labels (so the frontend can use `d.label`).
+
+Exports under ``node_faces*`` use **sheet display names** in filenames (see ``12__export_node_faces``),
+not anonymized graph labels like ``Victim 1``. This script therefore skips any file whose
+sanitized stem matches a ``person_id`` with ``people.is_victim = 1`` (same stem rule as export),
+and still skips manifest keys whose label matches ``Victim N`` when those rows map through
+``dataset.json``.
 """
 from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 
 from PIL import Image
+
+from config import DB_PATH
+from sheets_common import get_sheet_client, load_names
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -24,6 +34,7 @@ REPO_DIR = SCRIPT_DIR.parent
 
 # Run configuration (repo-root paths)
 INPUT_DIR = REPO_DIR / "images" / "node_faces_optimized"
+VICTIM_IMAGE = INPUT_DIR / "victim.png",
 OUTPUT_DIR = REPO_DIR / "images"
 VIZ_DATA_DIR = REPO_DIR / "viz_data"
 DATASET_PATH = VIZ_DATA_DIR / "dataset.json"
@@ -37,12 +48,36 @@ ATLAS_FORMAT = "webp"  # keep constant: this is a small pipeline helper
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 FACE_IDX_SUFFIX_RE = re.compile(r"^(.*)__(\d{3})$")
+# Matches anonymized victim labels from 10__create_graph.py (e.g. "Victim 1").
+VICTIM_LABEL_RE = re.compile(r"^Victim \d+$")
+
+
+def is_victim_label(label: str) -> bool:
+    return bool(VICTIM_LABEL_RE.match(label.strip()))
 
 
 def sanitize_label_for_filename(label: str) -> str:
     """Match 11__export_node_faces: safe filename stem from node label."""
     s = "".join(c if c.isalnum() or c in "._- " else "" for c in label)
     return s.strip().replace(" ", "_").replace("/", "_") or "node"
+
+
+def load_victim_sanitized_stems(conn: sqlite3.Connection, gc) -> set[str]:
+    """
+    Stems used in ``12__export_node_faces`` file names: sanitize(Matches name) or person_id.
+    Same person_ids as ``people.is_victim = 1`` must be excluded from the atlas even when
+    graph labels are anonymized.
+    """
+    names = load_names(gc)
+    cur = conn.execute("SELECT person_id FROM people WHERE is_victim = 1")
+    stems: set[str] = set()
+    for (pid,) in cur.fetchall():
+        pid_s = str(pid).strip()
+        if not pid_s:
+            continue
+        display = names.get(pid_s) or pid_s
+        stems.add(sanitize_label_for_filename(str(display)))
+    return stems
 
 
 def load_dataset_labels(dataset_path: Path) -> dict[str, str] | None:
@@ -76,6 +111,11 @@ def collect_images(input_dir: Path, extensions: set[str]) -> list[tuple[Path, st
     return out
 
 
+def resolve_victim_image_path() -> Path | None:
+    """Return victim placeholder image path if present in known locations."""
+    return INPUT_DIR / "victim.webp"
+
+
 def build_atlas(
     image_list: list[tuple[Path, str]],
     cell_size: int,
@@ -83,6 +123,8 @@ def build_atlas(
     stem_to_label: dict[str, str] | None,
     output_dir: Path,
     atlas_format: str,
+    victim_sanitized_stems: set[str],
+    victim_image_path: Path | None,
 ) -> tuple[Path, Path]:
     """
     Pack images into a grid atlas. All cells are cell_size x cell_size (images
@@ -96,6 +138,7 @@ def build_atlas(
 
     # First map image files to graph node labels and pick one best image per label.
     unmatched_inputs: list[str] = []
+    victim_skipped_files: list[str] = []
     best_by_label: dict[str, tuple[int, Path]] = {}
     for path, stem in image_list:
         base_stem = stem
@@ -105,9 +148,17 @@ def build_atlas(
             base_stem = m.group(1)
             face_idx = int(m.group(2))
 
+        # Filenames use sheet names (e.g. ``Jane_Doe__000``), not graph labels (``Victim_1``).
+        if base_stem in victim_sanitized_stems:
+            victim_skipped_files.append(path.name)
+            continue
+
         key = stem_to_label.get(base_stem)
         if key is None:
             unmatched_inputs.append(path.name)
+            continue
+        if is_victim_label(key):
+            victim_skipped_files.append(path.name)
             continue
 
         prev = best_by_label.get(key)
@@ -118,8 +169,19 @@ def build_atlas(
     selected: list[tuple[str, Path]] = [
         (label, best_by_label[label][1]) for label in sorted(best_by_label.keys())
     ]
+    victim_labels_present = sorted({lbl for lbl in stem_to_label.values() if is_victim_label(lbl)})
+    if victim_labels_present:
+        if victim_image_path is None:
+            raise FileNotFoundError(
+                "Victim labels exist in dataset, but victim placeholder image was not found. "
+                f"Tried: {', '.join(str(p) for p in VICTIM_IMAGE_CANDIDATES)}"
+            )
+        # Pack one placeholder tile; all victim labels will point to this same atlas cell.
+        selected.append(("__victim_placeholder__", victim_image_path))
     if not selected:
-        raise ValueError("No mappable face images for graph nodes")
+        raise ValueError(
+            "No mappable face images for graph nodes (all inputs were unmatched, victim-only, or filtered)."
+        )
 
     n = len(selected)
     # Grid: aim for roughly square
@@ -132,6 +194,7 @@ def build_atlas(
     atlas = Image.new("RGBA", (atlas_w, atlas_h), (0, 0, 0, 0))
     manifest: dict[str, dict[str, int]] = {}
 
+    victim_cell: dict[str, int] | None = None
     for idx, (label, path) in enumerate(selected):
         row, col = divmod(idx, cols)
         px = padding + col * (cell_size + padding)
@@ -147,7 +210,15 @@ def build_atlas(
             y = py + (cell_size - h) // 2
             atlas.paste(im, (x, y), im if im.mode == "RGBA" else None)
 
-        manifest[label] = {"x": px, "y": py, "w": cell_size, "h": cell_size}
+        cell = {"x": px, "y": py, "w": cell_size, "h": cell_size}
+        if label == "__victim_placeholder__":
+            victim_cell = cell
+        else:
+            manifest[label] = cell
+
+    if victim_cell is not None:
+        for lbl in victim_labels_present:
+            manifest[lbl] = dict(victim_cell)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     atlas_name = f"atlas.{atlas_format}"
@@ -162,14 +233,28 @@ def build_atlas(
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f)
 
-    # Warn when graph nodes are missing a corresponding face in the atlas.
-    expected_labels = set(stem_to_label.values()) if stem_to_label is not None else set()
+    # Warn when graph nodes are missing a corresponding face in the atlas (victim labels excluded by design).
+    if victim_skipped_files:
+        victim_skipped_sorted = sorted(victim_skipped_files)
+        print(
+            f"WARNING: {len(victim_skipped_sorted)} face image(s) match victim person_id(s) "
+            "(people.is_victim / sheet name stem) or anonymized Victim N labels; "
+            "excluded from the atlas:"
+        )
+        for fn in victim_skipped_sorted:
+            print(f"  - {fn}")
+
+    expected_labels = (
+        {lbl for lbl in stem_to_label.values() if not is_victim_label(lbl)}
+        if stem_to_label is not None
+        else set()
+    )
     missing_labels = sorted(expected_labels - set(manifest.keys()))
     if missing_labels:
         print(f"WARNING: {len(missing_labels)} graph node(s) have no atlas face:")
         for label in missing_labels:
             print(f"  - {label}")
-    else:
+    elif expected_labels:
         print("All graph nodes have atlas faces.")
 
     # Secondary warning: face files that did not map to any graph node label.
@@ -190,6 +275,13 @@ def main() -> None:
             f"No images found in INPUT_DIR={INPUT_DIR} (extensions: {sorted(IMAGE_EXTENSIONS)})"
         )
 
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        victim_stems = load_victim_sanitized_stems(conn, get_sheet_client())
+    finally:
+        conn.close()
+    victim_image_path = resolve_victim_image_path()
+
     atlas_path, manifest_path = build_atlas(
         image_list=image_list,
         cell_size=CELL_SIZE_PX,
@@ -197,6 +289,8 @@ def main() -> None:
         stem_to_label=stem_to_label,
         output_dir=OUTPUT_DIR,
         atlas_format=ATLAS_FORMAT,
+        victim_sanitized_stems=victim_stems,
+        victim_image_path=victim_image_path,
     )
     print(f"Atlas: {atlas_path} ({len(image_list)} images)")
     print(f"Manifest: {manifest_path}")

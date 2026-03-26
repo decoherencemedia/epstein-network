@@ -198,8 +198,8 @@ def apply_overrides(
                 target_pid = next_free_person_id(conn)
                 c.execute(
                     """
-                    INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
-                    VALUES (?, 1, ?, 1)
+                INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)
+                VALUES (?, 1, ?, 1, 0)
                     """,
                     (target_pid, person_key),
                 )

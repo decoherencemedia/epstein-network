@@ -23,4 +23,5 @@ scripts/map_person_ids/*
 *.db-journal
 *.ods
 
+api.py
 epstein_face.png

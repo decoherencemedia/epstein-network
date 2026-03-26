@@ -35,8 +35,8 @@
         </span>
       </span>
     </a>
+    <div id="thumb-empty" style="display:none"><a href="/about#victims">No images can be displayed</a></div>
     <div id="thumb-top-neighbors" style="display:none"></div>
-    <div id="thumb-empty" style="display:none">No images to display<br>All photos contain minors or nudity</div>
     <div id="thumb-default" style="display:none">
       <div class="thumb-default-body">
         <div>This is a visualization of the people whose faces are in the <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are people, and the lines (edges) between them are when two people are in the same photograph together.</div>
@@ -99,7 +99,7 @@
       (
         window.location.protocol === "file:" ||
         window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1"
+        window.location.hostname === "0.0.0.0"
       );
     // Central place for user-tweakable visualization constants.
     const TWEAK = {

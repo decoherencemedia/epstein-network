@@ -56,6 +56,37 @@ def _has_minor_face(age_low: Any, age_high: Any) -> bool:
     return False
 
 
+def _load_victim_person_ids_and_labels(
+    conn: sqlite3.Connection, candidate_ids: set[str]
+) -> tuple[set[str], dict[str, str]]:
+    """
+    From ``people.is_victim``, return victim person_ids (intersect candidate_ids) and
+    person_id -> display label. Labels come from ``people.name`` (set by sheet sync as
+    ``Victim 1`` … ``Victim N``); run 09 before 10 if names are missing.
+    """
+    if not candidate_ids:
+        return set(), {}
+    placeholders = ",".join("?" * len(candidate_ids))
+    cur = conn.execute(
+        f"SELECT person_id, name FROM people WHERE is_victim = 1 AND person_id IN ({placeholders})",
+        tuple(sorted(candidate_ids)),
+    )
+    victims: set[str] = set()
+    label_by_pid: dict[str, str] = {}
+    for row in cur.fetchall():
+        pid = str(row[0])
+        name = row[1]
+        victims.add(pid)
+        if name and str(name).strip():
+            label_by_pid[pid] = str(name).strip()
+        else:
+            raise RuntimeError(
+                f"Victim {pid!r} has empty people.name; run scripts/09__sheets_rekognition.py "
+                "to sync victim flags and anonymized names before building the graph."
+            )
+    return victims, label_by_pid
+
+
 if __name__ == "__main__":
     # Names and ignore list from the shared Google Spreadsheet (Matches / Ignore sheets).
     gc = get_sheet_client()
@@ -69,7 +100,10 @@ if __name__ == "__main__":
     if not INCLUDE_PERSON_IDS:
         raise RuntimeError("No person_ids loaded from Matches/Unknowns sheets (after ignore list).")
 
-    # Fetch all faces for those person_ids.
+    _, victim_label_by_person = _load_victim_person_ids_and_labels(con, INCLUDE_PERSON_IDS)
+    victim_labels = set(victim_label_by_person.values())
+
+    # Fetch all faces for those person_ids (including victims — they stay in the graph).
     placeholders_top = ",".join("?" for _ in INCLUDE_PERSON_IDS)
     df = pd.read_sql_query(
         "SELECT f.person_id, f.image_name, f.left, f.top, f.width, f.height, "
@@ -77,7 +111,8 @@ if __name__ == "__main__":
         "f.age_range_low, f.age_range_high, "
         "f.index_face_record, "
         "i.moderation_result, "
-        "i.width_px, i.height_px "
+        "i.width_px, i.height_px, "
+        "COALESCE(i.contains_victim, 0) AS contains_victim "
         f"FROM faces f "
         f"LEFT JOIN images i ON i.image_name = f.image_name "
         f"WHERE f.person_id IN ({placeholders_top})",
@@ -95,6 +130,11 @@ if __name__ == "__main__":
         axis=1,
     )
     disallowed_images = set(df.loc[df["is_explicit"] | df["is_minor_face"], "image_name"].tolist())
+
+    # Images safe to show in node/edge previews (no victim faces in frame).
+    safe_preview_images = set(
+        df.loc[df["contains_victim"] == 0, "image_name"].dropna().unique().tolist()
+    )
 
     # Compute face area (normalized bbox area × image pixels), using dimensions from DB.
     if df["width_px"].isna().any() or df["height_px"].isna().any():
@@ -120,8 +160,13 @@ if __name__ == "__main__":
             + (" ..." if len(missing_ids) > 50 else "")
         )
 
-    # Ground truth names from Matches sheet; unnamed person_ids keep their ID as label.
-    df["label"] = df["person_id"].apply(lambda pid: PEOPLE_NAMES.get(pid) or pid)
+    # Victims: anonymized labels; others: Matches sheet name or person_id.
+    def _label_for_person_id(pid: str) -> str:
+        if pid in victim_label_by_person:
+            return victim_label_by_person[pid]
+        return PEOPLE_NAMES.get(pid) or pid
+
+    df["label"] = df["person_id"].apply(_label_for_person_id)
 
     # Build per (image_name, label) -> bbox of the largest face.
     best_face_idx = df.groupby(["image_name", "label"])["face_area"].idxmax()
@@ -168,9 +213,13 @@ if __name__ == "__main__":
         if person_id is None:
             node_images[label] = None
             continue
+        # No thumbnails for victim nodes in image_data.json (privacy).
+        if label in victim_labels:
+            node_images[label] = None
+            continue
         best_list = pick_best_images(con, person_id, n=10)
         for image_name, left, top, width, height in best_list:
-            if image_name not in disallowed_images:
+            if image_name not in disallowed_images and image_name in safe_preview_images:
                 bbox = [left, top, width, height]
                 node_images[label] = [_to_webp_filename(image_name), bbox]
                 break
@@ -195,8 +244,10 @@ if __name__ == "__main__":
 
     # Categories from the Matches sheet (column H).
     name_to_category = load_categories(gc)
+    for vl in sorted(victim_labels):
+        name_to_category[vl] = "Victim"
 
-    # Only require an explicit category for non-generic names.
+    # Only require an explicit category for non-generic names (victim labels filled above).
     required = {name for name in node_images.keys() if not name.startswith("person_")}
     missing = sorted(required - set(name_to_category.keys()))
     if missing:
@@ -214,13 +265,15 @@ if __name__ == "__main__":
         a, b = edge
         candidates = sorted(candidates, key=lambda x: x[0], reverse=True)
         for _prod, img in candidates:
-            if img not in disallowed_images:
-                raw_a = face_bbox_lookup[(img, a)]
-                raw_b = face_bbox_lookup[(img, b)]
-                bbox_a = list(raw_a)
-                bbox_b = list(raw_b)
-                edge_images["-".join(edge)] = [_to_webp_filename(img), bbox_a, bbox_b]
-                break
+            # No edge preview images that depict victims (or any contains_victim image).
+            if img in disallowed_images or img not in safe_preview_images:
+                continue
+            raw_a = face_bbox_lookup[(img, a)]
+            raw_b = face_bbox_lookup[(img, b)]
+            bbox_a = list(raw_a)
+            bbox_b = list(raw_b)
+            edge_images["-".join(edge)] = [_to_webp_filename(img), bbox_a, bbox_b]
+            break
         else:
             edge_images["-".join(edge)] = None
 

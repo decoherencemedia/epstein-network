@@ -57,6 +57,8 @@ def init_db():
     _ensure_images_width_height_columns(conn)
     _migrate_legacy_face_people_to_faces_if_exists(conn)
     _ensure_people_table_and_migrate_celebrity_done(conn)
+    _ensure_people_is_victim_column(conn)
+    _ensure_images_contains_victim_column(conn)
     conn.commit()
     return conn
 
@@ -122,6 +124,44 @@ def _ensure_images_width_height_columns(conn):
                 raise
 
 
+def _ensure_people_is_victim_column(conn):
+    """Victim flag from Matches sheet (column I); maintained by sync_people_from_google_sheets."""
+    try:
+        conn.execute("ALTER TABLE people ADD COLUMN is_victim INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError as e:
+        if "duplicate" not in str(e).lower():
+            raise
+
+
+def _ensure_images_contains_victim_column(conn):
+    """True if any face on the image maps to a person with is_victim = 1; refreshed after sheet sync."""
+    try:
+        conn.execute("ALTER TABLE images ADD COLUMN contains_victim INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError as e:
+        if "duplicate" not in str(e).lower():
+            raise
+
+
+def refresh_images_contains_victim(conn) -> None:
+    """
+    Set images.contains_victim from faces + people.is_victim.
+    Caller should commit if needed.
+    """
+    c = conn.cursor()
+    c.execute("UPDATE images SET contains_victim = 0")
+    c.execute(
+        """
+        UPDATE images SET contains_victim = 1
+        WHERE image_name IN (
+            SELECT DISTINCT f.image_name FROM faces f
+            INNER JOIN people p ON p.person_id = f.person_id
+            WHERE p.is_victim = 1
+              AND f.person_id IS NOT NULL AND TRIM(f.person_id) != ''
+        )
+        """
+    )
+
+
 def _migrate_legacy_face_people_to_faces_if_exists(conn):
     """
     Legacy: an old `people` table keyed by face_id. Copy into faces, then drop.
@@ -152,7 +192,7 @@ def _ensure_people_table_and_migrate_celebrity_done(conn):
     New `people` table: one row per Rekognition person_id.
     - celebrity_check_done: 1 after 07__recognize_celebrities has processed this person
       (replaces old person_celebrity_check_done).
-    - name, include_in_network: filled by sync_people_from_google_sheets (and 09).
+    - name, include_in_network, is_victim: filled by sync_people_from_google_sheets (and 09).
     """
     c = conn.cursor()
     c.execute("""
@@ -160,7 +200,8 @@ def _ensure_people_table_and_migrate_celebrity_done(conn):
             person_id TEXT PRIMARY KEY,
             celebrity_check_done INTEGER NOT NULL DEFAULT 0,
             name TEXT,
-            include_in_network INTEGER NOT NULL DEFAULT 0
+            include_in_network INTEGER NOT NULL DEFAULT 0,
+            is_victim INTEGER NOT NULL DEFAULT 0
         )
     """)
     c.execute(
@@ -171,8 +212,8 @@ def _ensure_people_table_and_migrate_celebrity_done(conn):
         for (pid,) in c.fetchall():
             c.execute(
                 """
-                INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
-                VALUES (?, 1, NULL, 0)
+                INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)
+                VALUES (?, 1, NULL, 0, 0)
                 ON CONFLICT(person_id) DO UPDATE SET celebrity_check_done = 1
                 """,
                 (pid,),
@@ -184,18 +225,36 @@ def _ensure_people_table_and_migrate_celebrity_done(conn):
 def sync_people_from_google_sheets(conn, gc) -> None:
     """
     Upsert `people` from Matches / Unknowns / Ignore sheets (see sheets_common).
-    - name: from Matches (person_id -> display name)
+    - name: from Matches (person_id -> display name), except victims get stable anonymized
+      ``Victim 1`` … ``Victim N`` (sorted by ``person_id``) so API/graph stay consistent.
     - include_in_network: 1 if person_id appears on Matches or Unknowns, else 0 (e.g. Ignore only)
+    - is_victim: from Matches/Unknowns column I (Victim); cell ``1`` means victim.
+      Resets all rows to 0 then repopulates from the sheet so classifications can change over time.
+    - images.contains_victim: cleared then recomputed from faces + people.is_victim.
+
     Does not clear celebrity_check_done.
     """
-    from sheets_common import load_ignore, load_names, load_person_ids_matches_and_unknowns
+    from sheets_common import (
+        load_ignore,
+        load_names,
+        load_person_ids_matches_and_unknowns,
+        load_victim_flags,
+    )
 
     names = load_names(gc)
     include_ids = load_person_ids_matches_and_unknowns(gc)
     ignore_ids = load_ignore(gc)
+    victim_flags = load_victim_flags(gc)
 
     all_ids = set(names.keys()) | include_ids | ignore_ids
+    victim_pids_sorted = sorted(pid for pid in all_ids if victim_flags.get(pid))
+    victim_display_name = {
+        pid: f"Victim {i + 1}" for i, pid in enumerate(victim_pids_sorted)
+    }
+
     c = conn.cursor()
+    c.execute("UPDATE people SET is_victim = 0")
+    c.execute("UPDATE images SET contains_victim = 0")
     for pid in all_ids:
         if pid in ignore_ids:
             inc = 0
@@ -203,17 +262,23 @@ def sync_people_from_google_sheets(conn, gc) -> None:
             inc = 1
         else:
             inc = 0
-        nm = names.get(pid)
+        is_victim = 1 if victim_flags.get(pid) else 0
+        if is_victim:
+            nm = victim_display_name[pid]
+        else:
+            nm = names.get(pid)
         c.execute(
             """
-            INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
-            VALUES (?, 0, ?, ?)
+            INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)
+            VALUES (?, 0, ?, ?, ?)
             ON CONFLICT(person_id) DO UPDATE SET
                 name = excluded.name,
-                include_in_network = excluded.include_in_network
+                include_in_network = excluded.include_in_network,
+                is_victim = excluded.is_victim
             """,
-            (pid, nm, inc),
+            (pid, nm, inc, is_victim),
         )
+    refresh_images_contains_victim(conn)
     conn.commit()
 
 
@@ -222,8 +287,8 @@ def upsert_celebrity_check_done(conn, person_id: str) -> None:
     c = conn.cursor()
     c.execute(
         """
-        INSERT INTO people (person_id, celebrity_check_done, name, include_in_network)
-        VALUES (?, 1, NULL, 0)
+        INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)
+        VALUES (?, 1, NULL, 0, 0)
         ON CONFLICT(person_id) DO UPDATE SET celebrity_check_done = 1
         """,
         (person_id,),

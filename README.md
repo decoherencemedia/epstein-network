@@ -43,3 +43,9 @@ Run from `scripts/` (or set paths accordingly). `all_images` is at repo root.
 | 12 | `12__visualize_graph.py` | Turn laid-out GraphML into D3 dataset (e.g. `dataset.json`). |
 
 Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
+
+## TODO
+- update scripts and descriptions in README
+- separate repos for scripts and web
+- handle victims
+- add "Unknown" page

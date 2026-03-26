@@ -21,7 +21,7 @@ CATEGORY_COLORS = {
     "Finance & Business": '#6b004f',
     "Fashion & Modeling":'#573b00',
     "Miscellaneous": '#005659',
-    "Alleged Victim": '#15e18c',
+    "Victim": '#15e18c',
     "Employee": '#0000dd',
     "Unknown": '#999999',
 }

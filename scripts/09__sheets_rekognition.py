@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Google Sheet + AWS Rekognition: maintain a spreadsheet of people with face comparison results.
 
-- Syncs Matches / Unknowns / Ignore into the SQLite `people` table (name, include_in_network).
+- Syncs Matches / Unknowns / Ignore into the SQLite `people` table (name, include_in_network, is_victim).
+  Column I (Victim) on Matches: ``1`` sets ``people.is_victim``; then ``images.contains_victim`` is recomputed.
 - Initializes the sheet with columns and formatting (frozen header, style).
 - For each row missing Confidence: downloads reference image, runs CompareFaces
   (reference vs local Image Path), writes Confidence and full JSON to the sheet.

@@ -23,6 +23,9 @@ def ensure_api_indexes(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_images_dup_explicit ON images(duplicate_of, is_explicit)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_images_contains_victim ON images(contains_victim)"
+    )
     conn.commit()
 
 

@@ -78,6 +78,42 @@ def load_names(gc: gspread.Client) -> dict[str, str]:
     return result
 
 
+def _load_victim_flags_for_sheet(book: gspread.Spreadsheet, sheet_name: str) -> dict[str, bool]:
+    """
+    Load person_id -> victim flag from column I (Victim) on one sheet.
+    Cell value ``1`` (after strip) means victim; anything else is non-victim.
+    """
+    ws = book.worksheet(sheet_name)
+    rows = ws.get_all_values()
+    if not rows:
+        return {}
+    start = 0
+    # Matches/Unknowns both use Name in col A and Person ID in col B.
+    if rows and rows[0] and (rows[0][0] or "").strip().lower() == "name":
+        start = 1
+    result: dict[str, bool] = {}
+    for row in rows[start:]:
+        if len(row) < 9:
+            continue
+        person_id = (row[1] or "").strip()
+        if not person_id:
+            continue
+        victim_cell = (row[8] or "").strip()
+        result[person_id] = victim_cell == "1"
+    return result
+
+
+def load_victim_flags(gc: gspread.Client) -> dict[str, bool]:
+    """
+    Load person_id -> True if victim from column I (Victim) on both
+    Matches and Unknowns sheets. Unknowns values override Matches if duplicated.
+    """
+    book = get_workbook(gc)
+    result = _load_victim_flags_for_sheet(book, "Matches")
+    result.update(_load_victim_flags_for_sheet(book, "Unknowns"))
+    return result
+
+
 def load_ignore(gc: gspread.Client) -> set[str]:
     """Load set of person_ids from the 'Ignore' sheet (col A = Person ID)."""
     book = get_workbook(gc)
