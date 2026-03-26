@@ -976,6 +976,11 @@
     statusEl.classList.toggle("people-status-error", !!isError);
   }
 
+  function setStatusHtml(html, isError) {
+    statusEl.innerHTML = html || "";
+    statusEl.classList.toggle("people-status-error", !!isError);
+  }
+
   function setStatusError(err) {
     setStatus(String((err && err.message) || err), true);
   }
@@ -1286,7 +1291,7 @@
     try {
       const photoItems = await fetchPhotoItemsForSelection();
       if (photoItems.length === 0) {
-        setStatus("No photos found for this combination.");
+        setStatusHtml('No images can be displayed. <a href="/about#victims" target="_blank" rel="noopener noreferrer">Read this site\'s victim policy</a>.');
         return;
       }
       const lightboxPayload = renderPhotoResults(photoItems);
