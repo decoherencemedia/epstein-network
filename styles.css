@@ -39,9 +39,6 @@ body.page-people .site-page,
 body.page-about .site-page {
   flex: 1 0 auto;
 }
-a {
-  color: var(--site-accent) !important;
-}
 
 /* Site chrome (shared nav) */
 .site-header {
@@ -108,7 +105,7 @@ a {
   text-align: center;
 }
 .site-footer-note a {
-  color: #1565c0;
+  color: var(--site-accent);
 }
 
 .site-page {
@@ -135,7 +132,7 @@ a {
   margin: 0 0 1rem;
 }
 .site-prose a {
-  color: #1565c0;
+  color: var(--site-accent);
 }
 
 .svg-container {

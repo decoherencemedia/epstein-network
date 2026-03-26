@@ -261,8 +261,8 @@
 <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
-//   const API_BASE = "https://api.epstein.photos";
-  const API_BASE = "http://localhost:5000";
+  const API_BASE = "https://api.epstein.photos";
+//   const API_BASE = "http://localhost:5000";
   async function fetchPeopleNamesJson() {
     let res = await fetch(API_BASE + "/people", { credentials: "omit" });
     if (res.status === 404) {
