@@ -252,7 +252,22 @@
         return raw || "Epstein Photo Network";
       }
 
+      function ensureOverlayUiLayout() {
+        // Defensive inline layering so sidebar/search stay interactive if CSS is stale in deploy.
+        if (previewEl) {
+          previewEl.style.position = "fixed";
+          previewEl.style.zIndex = "220";
+          previewEl.style.pointerEvents = "auto";
+        }
+        if (nameSearchEl) {
+          nameSearchEl.style.position = "fixed";
+          nameSearchEl.style.zIndex = "230";
+          nameSearchEl.style.pointerEvents = "auto";
+        }
+      }
+
       function applyPreviewVisibility() {
+        ensureOverlayUiLayout();
         const show = !previewCollapsedByUser;
         previewEl.classList.toggle("visible", show);
         previewEl.setAttribute("aria-hidden", show ? "false" : "true");
