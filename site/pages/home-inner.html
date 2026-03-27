@@ -157,12 +157,6 @@
         );
       }
 
-      function linkKey(l) {
-        const a = l.source?.id ?? l.source;
-        const b = l.target?.id ?? l.target;
-        return a <= b ? `${a},${b}` : `${b},${a}`;
-      }
-
       const NODE_ATLAS_IMAGE_HREF = IS_LOCAL_DEV
         ? "images/atlas.webp"
         : `${SPACES_CDN_BASE}/atlas/atlas.webp`;
@@ -239,6 +233,9 @@
       const previewOpenBtnEl = document.getElementById("thumb-open-btn");
       const previewCollapsedBarEl = document.getElementById("thumb-collapsed-bar");
       const previewCollapsedTitleEl = document.getElementById("thumb-collapsed-title");
+      const svgEl = document.getElementById("svg");
+      const graphCanvasEl = document.getElementById("graph-canvas");
+      const hoverNodeCanvasEl = document.getElementById("hover-node-canvas");
 
       const isCoarsePointer =
         (typeof window !== "undefined" &&
@@ -1015,7 +1012,6 @@
         if (!targetNode) return;
         if (!Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) return;
         if (typeof zoom === "undefined" || !zoom) return;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return;
         const rect = svgEl.getBoundingClientRect();
         if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
@@ -1332,17 +1328,12 @@
         nodeLabelBgById.set(d.id, this);
       });
 
-      const edgeLabelText = labelTextLayer.append("g").attr("class", "edge-label").attr("visibility", "hidden");
-      edgeLabelText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
-      edgeLabelText.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
-      const edgeLabelBg = labelBgLayer.append("rect").attr("class", "node-label-bg").attr("visibility", "hidden");
-
       const simulation = d3
         .forceSimulation(nodes)
         .force("link", forceLink)
         .force("charge", forceNode)
         .force("center", d3.forceCenter().strength(100))
-        .force("center", forceCollide)
+        .force("collide", forceCollide)
         .on("tick", ticked);
 
       setupNameSearch();
@@ -1435,7 +1426,6 @@
       }
 
       function svgUserToCanvasPx(ux, uy) {
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return null;
         // SVGPoint rejects non-finite values; nodes can be NaN before simulation.
         if (!Number.isFinite(ux) || !Number.isFinite(uy)) return null;
@@ -1551,12 +1541,11 @@
       }
 
       function drawHoveredNodeOverlay() {
-        const canvas = document.getElementById("hover-node-canvas");
+        const canvas = hoverNodeCanvasEl;
         if (!canvas || !canvas.getContext) return;
         ensureCanvasOverlayLayout(canvas, { zIndex: 2 });
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return;
 
         const dpr = window.devicePixelRatio || 1;
@@ -1625,9 +1614,8 @@
       }
 
       function drawGraphCanvas() {
-        const canvas = document.getElementById("graph-canvas");
+        const canvas = graphCanvasEl;
         if (!canvas || !canvas.getContext) return;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return;
         ensureSvgOverlayLayout(svgEl);
         ensureCanvasOverlayLayout(canvas, { zIndex: 0 });
@@ -1948,14 +1936,6 @@
           tooltipOverlay.attr("visibility", "hidden");
         }
 
-        // Edge hover chip: drawn in tooltipOverlay above; hide the in-layer copy so it is not duplicated.
-        if (!state.label.hoveredEdge) {
-          edgeLabelText.attr("visibility", "hidden");
-          edgeLabelBg.attr("visibility", "hidden");
-          return;
-        }
-        edgeLabelText.attr("visibility", "hidden");
-        edgeLabelBg.attr("visibility", "hidden");
       }
 
       function getSidebarWidthPx() {
@@ -1987,7 +1967,6 @@
       function computeSidebarCenteringTranslateX() {
         const sidebarPx = getSidebarWidthPx();
         if (!sidebarPx) return 0;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return 0;
         const rect = svgEl.getBoundingClientRect();
         if (!rect || !Number.isFinite(rect.width) || rect.width <= 0) return 0;
@@ -2001,7 +1980,6 @@
       function computeBottomBarCenteringTranslateY() {
         if (typeof window === "undefined") return 0;
         if (!isSmallViewport()) return 0;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return 0;
         const rect = svgEl.getBoundingClientRect();
         if (!rect || !Number.isFinite(rect.height) || rect.height <= 0) return 0;
@@ -2041,9 +2019,7 @@
           updateNodeLabels({ recomputeLayout: false });
         });
 
-      const graphCanvasEl = document.getElementById("graph-canvas");
       function canvasPointerToLocalPx(event) {
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return { x: 0, y: 0 };
         const rect = svgEl.getBoundingClientRect();
         const cx = typeof event.clientX === "number" ? event.clientX : 0;
@@ -2117,7 +2093,7 @@
           unlockPreviewAndHighlights();
         });
 
-      const graphInteractionEl = document.getElementById("svg");
+      const graphInteractionEl = svgEl;
       if (graphInteractionEl && isCoarsePointer) {
         graphInteractionEl.addEventListener(
           "touchstart",
@@ -2155,7 +2131,6 @@
       let appliedInitialViewportCentering = false;
       function tryApplyInitialViewportCentering() {
         if (appliedInitialViewportCentering) return true;
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return false;
         const rect = svgEl.getBoundingClientRect();
         if (
@@ -2182,7 +2157,7 @@
           tryApplyInitialViewportCentering();
           return;
         }
-        const svgRoEl = document.getElementById("svg");
+        const svgRoEl = svgEl;
         let ro = null;
         const attempt = () => {
           if (tryApplyInitialViewportCentering()) {
