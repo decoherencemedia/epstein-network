@@ -1,5 +1,7 @@
 <main class="site-home-graph" id="main-content">
 <div class="svg-container">
+  <canvas id="graph-canvas" class="graph-canvas" aria-hidden="true"></canvas>
+  <canvas id="hover-node-canvas" class="graph-canvas hover-node-canvas" aria-hidden="true"></canvas>
   <svg id="svg">
     <g class="full-network-graph"></g>
   </svg>
@@ -165,36 +167,6 @@
         ? "images/atlas.webp"
         : `${SPACES_CDN_BASE}/atlas/atlas.webp`;
 
-      function computeAtlasDims(manifest) {
-        if (!manifest || typeof manifest !== "object") {
-          return { atlasW: 0, atlasH: 0 };
-        }
-        let maxX = 0;
-        let maxY = 0;
-        let minX = Infinity;
-        let minY = Infinity;
-        for (const k of Object.keys(manifest)) {
-          const e = manifest[k];
-          if (!e) continue;
-          const x = Number(e.x ?? 0);
-          const y = Number(e.y ?? 0);
-          const w = Number(e.w ?? 0);
-          const h = Number(e.h ?? 0);
-          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) continue;
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x + w);
-          maxY = Math.max(maxY, y + h);
-        }
-        // `maxX/maxY` land on the last filled cell edge; the underlying atlas
-        // image also includes the (uniform) padding on the far edge.
-        const padX = Number.isFinite(minX) ? minX : 0;
-        const padY = Number.isFinite(minY) ? minY : 0;
-        return { atlasW: maxX + padX, atlasH: maxY + padY };
-      }
-
-      const { atlasW: ATLAS_W, atlasH: ATLAS_H } = computeAtlasDims(atlasManifest);
-
       function sanitizeLabelForAtlasKey(label) {
         // Match scripts/11__export_node_faces.py and scripts/14__build_atlas.py.
         const s = String(label || "").split("").filter((c) => {
@@ -228,11 +200,6 @@
         return m;
       })();
 
-      function nodeFacePatternId(d) {
-        // `d.id` is a stable numeric key from dataset.json.
-        return `node-face-pattern-${d?.id ?? "unknown"}`;
-      }
-
       function atlasKeyForNode(d) {
         if (!atlasManifest || !d) return null;
         const label = d.label;
@@ -240,12 +207,6 @@
         const base = sanitizeLabelForAtlasKey(label);
         const best = atlasKeyByBaseStem.get(base);
         return best?.key ?? null;
-      }
-
-      function nodeFaceFill(d) {
-        const k = atlasKeyForNode(d);
-        if (!k) return "none";
-        return `url(#${nodeFacePatternId(d)})`;
       }
 
       function nodeColor(d) {
@@ -767,9 +728,7 @@
         handlePrimaryClickWithOriginal(event, filename, onRegularClick);
       }
 
-      // Sigma-style focus+context highlighting.
-      // NOTE: These functions reference `node`, `label`, `linkLayer`, and `links` which are defined later.
-      let edgeGradient = null;
+      // Sigma-style focus+context highlighting (canvas draws; state drives getLinkCanvasStyle / getNodeCanvasStyle).
       const state = {
         lock: { active: false, kind: null, item: null, highlightNode: null }, // kind: "node" | "edge" | null
         hover: { kind: null, item: null }, // kind: "edge" | "node" | null
@@ -791,133 +750,19 @@
         state.label.hoveredNode = null;
       }
 
-      function ensureEdgeGradient() {
-        if (edgeGradient) return edgeGradient;
-        const svg = d3.select("#svg");
-        let defs = svg.select("defs");
-        if (defs.empty()) defs = svg.append("defs");
-        edgeGradient = defs.append("linearGradient").attr("id", "edge-gradient").attr("gradientUnits", "userSpaceOnUse");
-        edgeGradient.append("stop").attr("offset", "0%");
-        edgeGradient.append("stop").attr("offset", "100%");
-        return edgeGradient;
-      }
-
-      function ensureAtlasNodePatterns(nodesList) {
-        // Build one pattern per node so the circle fill can show the correct
-        // atlas cell, while hover/focus can simply toggle opacity.
-        if (!atlasManifest || typeof atlasManifest !== "object") return;
-        if (!Array.isArray(nodesList)) return;
-        if (!Number.isFinite(ATLAS_W) || !Number.isFinite(ATLAS_H) || ATLAS_W <= 0 || ATLAS_H <= 0) return;
-
-        const svg = d3.select("#svg");
-        let defs = svg.select("defs");
-        if (defs.empty()) defs = svg.append("defs");
-
-        // Sentinel ensures we don't append duplicate patterns.
-        const sentinelId = "atlas-node-patterns-built";
-        if (!defs.select(`#${sentinelId}`).empty()) return;
-
-        for (const d of nodesList) {
-          const k = atlasKeyForNode(d);
-          if (!k) continue;
-          const entry = atlasManifest[k];
-          if (!entry) continue;
-
-          const pid = nodeFacePatternId(d);
-          if (!defs.select(`#${pid}`).empty()) continue;
-
-          const x = Number(entry.x ?? 0);
-          const y = Number(entry.y ?? 0);
-          const w = Number(entry.w ?? 0);
-          const h = Number(entry.h ?? 0);
-          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) continue;
-
-          // With objectBoundingBox pattern coordinates:
-          // - the atlas sub-rect should be scaled up so it fills the 1x1 pattern box
-          // - atlas cell top-left is aligned via negative offsets.
-          const imageWidth = ATLAS_W / w;
-          const imageHeight = ATLAS_H / h;
-          const imgX = -x / w;
-          const imgY = -y / h;
-
-          const p = defs
-            .append("pattern")
-            .attr("id", pid)
-            .attr("patternUnits", "objectBoundingBox")
-            .attr("patternContentUnits", "objectBoundingBox")
-            .attr("width", 1)
-            .attr("height", 1);
-
-          p.append("image")
-            .attr("href", NODE_ATLAS_IMAGE_HREF)
-            .attr("x", imgX)
-            .attr("y", imgY)
-            .attr("width", imageWidth)
-            .attr("height", imageHeight)
-            .attr("preserveAspectRatio", "none");
-        }
-
-        defs.append("rect").attr("id", sentinelId).attr("width", 0).attr("height", 0).style("display", "none");
-      }
-
       function resetFocus() {
         state.label.allowFn = null;
         state.label.hoveredEdge = null;
-        // Nodes and labels.
-        node
-          .attr("opacity", 1)
-          .attr("fill", (d) => nodeColor(d))
-          .attr("stroke", options.nodeStroke)
-          .attr("stroke-width", options.nodeStrokeWidth);
-        nodeImage
-          .attr("visibility", "visible")
-          .attr("opacity", 1);
-
-        // Links.
-        linkLayer.data(links, linkKey).order();
-        linkHitbox.data(links, linkKey).order();
-        linkHitbox.attr("display", null);
-        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
-        linkLayer
-          .attr("stroke", options.linkStroke)
-          .attr("stroke-opacity", options.linkStrokeOpacity)
-          .attr("stroke-width", (d, i) => (W ? W[i] : (options.linkStrokeWidth?.(d) ?? 1)) / zoomScale);
-
         updateNodeLabels();
+        drawGraphCanvas();
       }
 
       function focusOnNode(d) {
         if (!d) return;
-        const focusColor = nodeColor(d);
         const isInFocusSet = (o) => isConnected(d, o);
-        const isIncident = (l) => l.source === d || l.target === d;
         state.label.allowFn = isInFocusSet;
-        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
-
-        node
-          .attr("opacity", 1)
-          .attr("fill", (o) => (isInFocusSet(o) ? nodeColor(o) : TWEAK.mutedNodeFill))
-          .attr("stroke", options.nodeStroke)
-          .attr("stroke-width", options.nodeStrokeWidth);
-        nodeImage
-          .attr("visibility", "visible")
-          .attr("opacity", (o) => (isInFocusSet(o) ? 1 : 0));
-
-        linkLayer
-          .attr("stroke", (l) => (isIncident(l) ? focusColor : options.linkStroke))
-          // Sigma-like: hide non-incident edges.
-          .attr("stroke-opacity", (l) => (isIncident(l) ? 1 : 0))
-          .attr("stroke-width", (l, i) => {
-            const base = (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) / zoomScale;
-            return isIncident(l) ? TWEAK.edgeHighlightWidthMult * base : base;
-          });
-        linkHitbox.attr("display", (l) => (isIncident(l) ? null : "none"));
-
-        // Ensure highlighted (incident) edges render on top.
-        linkLayer.filter((l) => isIncident(l)).raise();
-        linkHitbox.filter((l) => isIncident(l)).raise();
-
         updateNodeLabels();
+        drawGraphCanvas();
       }
 
       function focusOnEdge(l) {
@@ -929,46 +774,8 @@
           (t && o.id === t.id)
         );
         state.label.allowFn = isEndpoint;
-        const sColor = nodeColor(s);
-        const tColor = nodeColor(t);
-        const zoomScale = zoomScaleFactor(currentTransform?.k ?? 1);
-
-        const grad = ensureEdgeGradient();
-        grad
-          .attr("x1", s?.x ?? 0)
-          .attr("y1", s?.y ?? 0)
-          .attr("x2", t?.x ?? 0)
-          .attr("y2", t?.y ?? 0);
-        const stops = grad.selectAll("stop").nodes();
-        if (stops[0]) stops[0].setAttribute("stop-color", sColor);
-        if (stops[1]) stops[1].setAttribute("stop-color", tColor);
-
-        node
-          .attr("opacity", 1)
-          .attr("fill", (o) => (isEndpoint(o) ? nodeColor(o) : TWEAK.mutedNodeFill))
-          .attr("stroke", options.nodeStroke)
-          .attr("stroke-width", options.nodeStrokeWidth);
-        nodeImage
-          .attr("visibility", "visible")
-          .attr("opacity", (o) => (isEndpoint(o) ? 1 : 0));
-        // Hide top clones during edge focus (edge tooltip mode).
-        hoveredNodeClone.attr("visibility", "hidden");
-        hoveredNodeImageClone.attr("visibility", "hidden");
-
-        linkLayer
-          .attr("stroke", (o) => (o === l ? "url(#edge-gradient)" : options.linkStroke))
-          .attr("stroke-opacity", (o) => (o === l ? 1 : 0))
-          .attr("stroke-width", (o, i) => {
-            const base = (W ? W[i] : (options.linkStrokeWidth?.(o) ?? 1)) / zoomScale;
-            return o === l ? TWEAK.edgeHighlightWidthMult * base : base;
-          });
-        linkHitbox.attr("display", (o) => (o === l ? null : "none"));
-
-        // Ensure the focused edge renders on top.
-        linkLayer.filter((o) => o === l).raise();
-        linkHitbox.filter((o) => o === l).raise();
-
         updateNodeLabels();
+        drawGraphCanvas();
       }
 
       function applyLockedNodeHighlight(focusNode) {
@@ -987,6 +794,8 @@
         state.lock.kind = null;
         state.lock.item = null;
         state.lock.highlightNode = null;
+        // Clear stale hover state immediately when unlocking via background click / ESC.
+        clearHoverAndLabel();
         hidePreview();
         clearEdgeHighlight();
         syncSidebarPersonToUrl(null);
@@ -1038,9 +847,6 @@
         target: LT[i],
         weight: networkData.links[i].weight,
       }));
-
-      // Node face patterns require `nodes` to exist (we need `d.id` and `d.label`).
-      ensureAtlasNodePatterns(nodes);
 
       renderLegend({
         categories: Array.from(new Set(nodes.map((n) => n.cluster).filter(Boolean))).sort(),
@@ -1446,10 +1252,8 @@
         .iterations(3);
 
       const parent = d3.select(".full-network-graph");
-      const zoomLayer = parent.append("g").attr("class", "zoom-layer");
       const labelLayer = parent.append("g").attr("class", "label-layer").style("pointer-events", "none");
       const labelBgLayer = labelLayer.append("g").attr("class", "label-bg-layer");
-      const labelNodeLayer = labelLayer.append("g").attr("class", "label-node-layer");
       const labelTextLayer = labelLayer.append("g").attr("class", "label-text-layer");
       // Tooltip overlay drawn on top of all labels so its bg is never covered by other node labels.
       const tooltipOverlay = labelLayer.append("g").attr("class", "tooltip-overlay").attr("visibility", "hidden");
@@ -1457,10 +1261,10 @@
       const tooltipOverlayText = tooltipOverlay.append("g");
       tooltipOverlayText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
       tooltipOverlayText.append("text").attr("class", "node-label-line2").attr("x", 0).attr("y", 6);
-      // Hovered node circle drawn on top of the tooltip so it stays visible.
-      const hoveredNodeOnTop = labelLayer.append("g").attr("class", "hovered-node-on-top");
-      const hoveredNodeClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-clone").attr("visibility", "hidden").attr("stroke", "none");
-      const hoveredNodeImageClone = hoveredNodeOnTop.append("circle").attr("class", "hover-node-image-clone").attr("visibility", "hidden").attr("stroke", "none");
+
+      // Must exist before setViewBox → drawGraphCanvas (avoids TDZ on currentTransform).
+      let currentTransform = d3.zoomIdentity;
+      let atlasCanvasImg = null;
 
       // Initial viewBox (minX, minY, width, height) — adjust to fit your layout
       function isMobileView() {
@@ -1471,6 +1275,7 @@
         d3.select("#svg")
           .attr("viewBox", `${vb.x} ${vb.y} ${vb.width} ${vb.height}`)
           .attr("preserveAspectRatio", "xMidYMid meet");
+        if (typeof drawGraphCanvas === "function") drawGraphCanvas();
       }
       setViewBox();
       if (typeof window !== "undefined") {
@@ -1483,122 +1288,6 @@
         });
       }
 
-      const linkLayer = zoomLayer
-        .append("g")
-        .attr(
-          "stroke",
-          typeof options.linkStroke !== "function"
-            ? options.linkStroke
-            : null
-        )
-        .attr("stroke-opacity", options.linkStrokeOpacity)
-        .attr(
-          "stroke-width",
-          typeof options.linkStrokeWidth !== "function"
-            ? options.linkStrokeWidth
-            : null
-        )
-        .attr("stroke-linecap", options.linkStrokeLinecap)
-        .attr("class", "links")
-        .attr("marker-end", "url(#arrow)")
-        .selectAll("line")
-        .data(links)
-        .join("line");
-
-      // Easier edge hover: invisible thicker hitbox layer above links.
-      const linkHitbox = zoomLayer
-        .append("g")
-        .attr("class", "links-hitbox")
-        .attr("stroke", "transparent")
-        .attr("stroke-opacity", 1)
-        .attr("stroke-linecap", options.linkStrokeLinecap)
-        .style("pointer-events", "stroke")
-        .style("cursor", "pointer")
-        .selectAll("line")
-        .data(links)
-        .join("line")
-        .attr("stroke-width", (d) => (options.linkStrokeWidth?.(d) ?? 1) + 1)
-        .on("mouseover.tooltip", function (event, d) {
-          if (state.lock.active) return;
-          // Only one expanded tooltip at a time.
-          state.label.hoveredNode = null;
-          state.label.hoveredEdge = d;
-          updateNodeLabels();
-        })
-        .on("mouseover.highlight", function (event, d) {
-          if (isCoarsePointer) return;
-          if (state.lock.active && !isLockedFor("edge", d)) return;
-          state.hover.kind = "edge";
-          state.hover.item = d;
-          highlightEdge(d);
-        })
-        .on("mouseout.tooltip", function () {
-          if (state.lock.active) return;
-          state.label.hoveredEdge = null;
-          updateNodeLabels();
-        })
-        .on("mouseout.highlight", function () {
-          if (isCoarsePointer) return;
-          if (state.lock.active) return;
-          state.hover.kind = null;
-          state.hover.item = null;
-          clearEdgeHighlight();
-        })
-        .on("touchstart.tap", function (event, d) {
-          if (!isCoarsePointer) return;
-          consumeEvent(event);
-          pinEdge(d);
-        })
-        .on("click.open", function (event, d) {
-          handleGraphOpenClick(event, personIdsForEdge(d), getEdgePreviewEntry(d).filename, function () {
-            pinEdge(d);
-          });
-        });
-
-      // Safety: if the pointer leaves the SVG (or the window blurs), clear hover focus.
-      // This prevents rare "stuck highlight" states when mouseout doesn't fire (e.g. fast movements).
-      d3.select("#svg").on("mouseleave.resetFocus", function () {
-        if (state.lock.active) return;
-        clearHoverAndLabel();
-        resetFocus();
-      });
-      // Guard against races where focus is applied after the pointer already left the element.
-      d3.select("#svg").on("mousemove.hoverGuard", function (event) {
-        if (state.lock.active) return;
-        if (!state.hover.kind || !state.hover.item) return;
-        if (!event || typeof event.clientX !== "number" || typeof event.clientY !== "number") return;
-        const el = document.elementFromPoint(event.clientX, event.clientY);
-        if (!el) return;
-
-        if (state.hover.kind === "edge") {
-          const line = el.closest && el.closest("g.links-hitbox line");
-          if (!line) {
-            clearHoverAndLabel();
-            resetFocus();
-            return;
-          }
-          const datum = d3.select(line).datum();
-          if (datum !== state.hover.item) {
-            clearHoverAndLabel();
-            resetFocus();
-          }
-          return;
-        }
-
-        if (state.hover.kind === "node") {
-          const circle = el.closest && el.closest("g.nodes circle");
-          if (!circle) {
-            clearHoverAndLabel();
-            resetFocus();
-            return;
-          }
-          const datum = d3.select(circle).datum();
-          if (datum !== state.hover.item) {
-            clearHoverAndLabel();
-            resetFocus();
-          }
-        }
-      });
       if (typeof window !== "undefined") {
         window.addEventListener("blur", () => {
           if (state.lock.active) return;
@@ -1606,64 +1295,6 @@
           resetFocus();
         });
       }
-
-      const node = zoomLayer
-        .append("g")
-        .attr("stroke", options.nodeStroke)
-        .attr("stroke-opacity", options.nodeStrokeOpacity)
-        .attr("stroke-width", options.nodeStrokeWidth)
-        .attr("class", "nodes")
-        .selectAll("circle")
-        .data(nodes)
-        .join("circle")
-        .style("cursor", "pointer")
-        .attr("fill", (d) => nodeColor(d))
-        .attr("r", (d) => d.radius)
-        .on("mouseover.tooltip", function (event, d) {
-          if (state.lock.active) return;
-          state.hover.kind = "node";
-          state.hover.item = d;
-          // Only one expanded tooltip at a time.
-          state.label.hoveredEdge = null;
-          state.label.hoveredNode = d;
-          focusOnNode(d);
-          updateNodeLabels();
-        })
-        .on("click.open", function (event, d) {
-          handleGraphOpenClick(event, [personIdForNode(d)], getNodePreviewEntry(d).filename, function () {
-            showNodeInSidebar(d);
-          });
-        })
-        .on(
-          "mouseover.fade",
-          function (event, d) {
-            if (state.lock.active && !isLockedFor("node", d)) return;
-            if (state.lock.active) return;
-            focusOnNode(d);
-          }
-        )
-        .on("mouseout.tooltip", function () {
-          if (state.lock.active) return;
-          clearHoverAndLabel();
-          updateNodeLabels();
-        })
-        .on(
-          "mouseout.fade",
-          function (event, d) {
-            if (state.lock.active) return;
-            resetFocus();
-          }
-        );
-
-      const nodeImage = zoomLayer
-        .append("g")
-        .attr("class", "node-images")
-        .style("pointer-events", "none")
-        .selectAll("circle")
-        .data(nodes)
-        .join("circle")
-        .attr("fill", (d) => nodeFaceFill(d))
-        .attr("r", (d) => d.radius);
 
       const nodeLabelText = labelTextLayer
         .selectAll("g.node-label")
@@ -1701,10 +1332,6 @@
 
       setupNameSearch();
 
-      if (W) linkLayer.attr("stroke-width", ({ index: i }) => W[i]);
-
-      let currentTransform = d3.zoomIdentity;
-
       function zoomScaleFactor(k) {
         return Math.pow(k, TWEAK.nodeZoomScaleExp);
       }
@@ -1712,6 +1339,406 @@
       function nodeScreenScaleFactor(k) {
         return Math.pow(k, 1 - TWEAK.nodeZoomScaleExp);
       }
+
+      function ensureAtlasCanvasImage() {
+        if (atlasCanvasImg && atlasCanvasImg.complete && atlasCanvasImg.naturalWidth) return;
+        if (atlasCanvasImg && !atlasCanvasImg.complete) return;
+        atlasCanvasImg = new Image();
+        // CDN needs CORS for canvas drawImage; same-origin local file should not set crossOrigin (avoids odd failures).
+        if (!IS_LOCAL_DEV) atlasCanvasImg.crossOrigin = "anonymous";
+        atlasCanvasImg.onload = () => drawGraphCanvas();
+        atlasCanvasImg.onerror = () => {
+          atlasCanvasImg = null;
+        };
+        atlasCanvasImg.src = NODE_ATLAS_IMAGE_HREF;
+      }
+
+      function getLinkCanvasStyle(l, i) {
+        const zoomScale = zoomScaleFactor(currentTransform.k);
+        const baseW = (W ? W[i] : (options.linkStrokeWidth?.(l) ?? 1)) / zoomScale;
+        if (state.lock.active) {
+          // A selected "connected node" in edge sidebar should override edge-lock styling.
+          if (state.lock.highlightNode) {
+            const d = state.lock.highlightNode;
+            const isIncident = l.source === d || l.target === d;
+            if (!isIncident) return { skip: true };
+            return { stroke: nodeColor(d), opacity: 1, width: TWEAK.edgeHighlightWidthMult * baseW };
+          }
+          if (state.lock.kind === "edge" && state.lock.item) {
+            const edge = state.lock.item;
+            if (l !== edge) return { skip: true };
+            const s = getNodeFromLinkEnd(edge.source);
+            const t = getNodeFromLinkEnd(edge.target);
+            return { gradient: true, s, t, width: TWEAK.edgeHighlightWidthMult * baseW };
+          }
+        }
+        if (state.hover.kind === "node" && state.hover.item) {
+          const d = state.hover.item;
+          const isIncident = l.source === d || l.target === d;
+          if (!isIncident) return { skip: true };
+          return { stroke: nodeColor(d), opacity: 1, width: TWEAK.edgeHighlightWidthMult * baseW };
+        }
+        if (state.hover.kind === "edge" && state.hover.item) {
+          const edge = state.hover.item;
+          if (l !== edge) return { skip: true };
+          const s = getNodeFromLinkEnd(edge.source);
+          const t = getNodeFromLinkEnd(edge.target);
+          return { gradient: true, s, t, width: TWEAK.edgeHighlightWidthMult * baseW };
+        }
+        return { stroke: options.linkStroke, opacity: options.linkStrokeOpacity ?? 1, width: baseW };
+      }
+
+      function getNodeCanvasStyle(d) {
+        if (state.lock.active) {
+          // Keep node-focused context styling when highlightNode is active (including edge sidebar).
+          if (state.lock.highlightNode) {
+            const h = state.lock.highlightNode;
+            const isInFocusSet = isConnected(h, d);
+            return { fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isInFocusSet ? 1 : 0 };
+          }
+          if (state.lock.kind === "edge" && state.lock.item) {
+            const edge = state.lock.item;
+            const s = getNodeFromLinkEnd(edge.source);
+            const t = getNodeFromLinkEnd(edge.target);
+            const isEndpoint = d === s || d === t;
+            return { fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isEndpoint ? 1 : 0 };
+          }
+        }
+        if (state.hover.kind === "node" && state.hover.item) {
+          const h = state.hover.item;
+          const isInFocusSet = isConnected(h, d);
+          return { fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isInFocusSet ? 1 : 0 };
+        }
+        if (state.hover.kind === "edge" && state.hover.item) {
+          const edge = state.hover.item;
+          const s = getNodeFromLinkEnd(edge.source);
+          const t = getNodeFromLinkEnd(edge.target);
+          const isEndpoint = d === s || d === t;
+          return { fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isEndpoint ? 1 : 0 };
+        }
+        return { fill: nodeColor(d), opacity: 1, faceOpacity: 1 };
+      }
+
+      function svgUserToCanvasPx(ux, uy) {
+        const svgEl = document.getElementById("svg");
+        const canvasEl = document.getElementById("graph-canvas");
+        if (!svgEl || !canvasEl) return null;
+        // SVGPoint rejects non-finite values; nodes can be NaN before simulation.
+        if (!Number.isFinite(ux) || !Number.isFinite(uy)) return null;
+        const pt = svgEl.createSVGPoint();
+        pt.x = ux;
+        pt.y = uy;
+        const ctm = svgEl.getScreenCTM();
+        if (!ctm) return null;
+        const sp = pt.matrixTransform(ctm);
+        const crect = canvasEl.getBoundingClientRect();
+        const x = sp.x - crect.left;
+        const y = sp.y - crect.top;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return { x, y };
+      }
+
+      function graphPointToCanvasPx(gx, gy) {
+        const ux = currentTransform.applyX(gx);
+        const uy = currentTransform.applyY(gy);
+        return svgUserToCanvasPx(ux, uy);
+      }
+
+      function getCanvasPxCalibration() {
+        const ux0 = currentTransform.applyX(0);
+        const uy0 = currentTransform.applyY(0);
+        const ux1 = currentTransform.applyX(1);
+        const uy1 = currentTransform.applyY(0);
+        const p0 = svgUserToCanvasPx(ux0, uy0);
+        const p1 = svgUserToCanvasPx(ux1, uy1);
+        const pxPerUser = p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1 : 1;
+        return { pxPerUser, zoomScale: zoomScaleFactor(currentTransform.k) };
+      }
+
+      function distPointToSegment(px, py, ax, ay, bx, by) {
+        const vx = bx - ax;
+        const vy = by - ay;
+        const wx = px - ax;
+        const wy = py - ay;
+        const c1 = vx * wx + vy * wy;
+        if (c1 <= 0) return Math.hypot(px - ax, py - ay);
+        const c2 = vx * vx + vy * vy;
+        if (c2 <= c1) return Math.hypot(px - bx, py - by);
+        const t = c1 / c2;
+        const projx = ax + t * vx;
+        const projy = ay + t * vy;
+        return Math.hypot(px - projx, py - projy);
+      }
+
+      function isLinkPickable(l) {
+        if (!state.lock.active) return true;
+        if (state.lock.kind === "node" && state.lock.highlightNode) {
+          const d = state.lock.highlightNode;
+          return l.source === d || l.target === d;
+        }
+        if (state.lock.kind === "edge" && state.lock.item) {
+          return l === state.lock.item;
+        }
+        return true;
+      }
+
+      function pickGraphTargetAtCanvasPx(canvasX, canvasY) {
+        const { pxPerUser, zoomScale } = getCanvasPxCalibration();
+        const nodePad = 4;
+        for (let i = nodes.length - 1; i >= 0; i--) {
+          const d = nodes[i];
+          const c = graphPointToCanvasPx(d.x, d.y);
+          if (!c) continue;
+          const rPx = (d.radius / zoomScale) * pxPerUser;
+          if (Math.hypot(c.x - canvasX, c.y - canvasY) <= rPx + nodePad) {
+            return { kind: "node", item: d };
+          }
+        }
+        let best = null;
+        let bestD = Infinity;
+        for (let i = 0; i < links.length; i++) {
+          const l = links[i];
+          if (!isLinkPickable(l)) continue;
+          const s = getNodeFromLinkEnd(l.source);
+          const t = getNodeFromLinkEnd(l.target);
+          if (!s || !t) continue;
+          const a = graphPointToCanvasPx(s.x, s.y);
+          const b = graphPointToCanvasPx(t.x, t.y);
+          if (!a || !b) continue;
+          const dist = distPointToSegment(canvasX, canvasY, a.x, a.y, b.x, b.y);
+          if (dist < bestD) {
+            bestD = dist;
+            best = l;
+          }
+        }
+        const edgePx = 12;
+        if (best && bestD <= edgePx) return { kind: "edge", item: best };
+        return null;
+      }
+
+      function drawHoveredNodeOverlay() {
+        const canvas = document.getElementById("hover-node-canvas");
+        if (!canvas || !canvas.getContext) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width));
+        const h = Math.max(1, Math.round(rect.height));
+        const bw = Math.floor(w * dpr);
+        const bh = Math.floor(h * dpr);
+        if (canvas.width !== bw || canvas.height !== bh) {
+          canvas.width = bw;
+          canvas.height = bh;
+          canvas.style.width = w + "px";
+          canvas.style.height = h + "px";
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const d = state.label.hoveredNode;
+        if (!d) return;
+
+        const c = graphPointToCanvasPx(d.x, d.y);
+        if (!c) return;
+        const { pxPerUser, zoomScale } = getCanvasPxCalibration();
+        const rPx = (d.radius / zoomScale) * pxPerUser;
+
+        // Clone node fill above tooltip.
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, rPx, 0, 2 * Math.PI);
+        ctx.fillStyle = nodeColor(d);
+        ctx.fill();
+
+        if (!(atlasCanvasImg && atlasCanvasImg.complete && atlasCanvasImg.naturalWidth)) return;
+        const k = atlasKeyForNode(d);
+        const entry = k && atlasManifest ? atlasManifest[k] : null;
+        if (!entry) return;
+        const sx = Number(entry.x ?? 0);
+        const sy = Number(entry.y ?? 0);
+        const sw = Number(entry.w ?? 0);
+        const sh = Number(entry.h ?? 0);
+        if (!Number.isFinite(sw) || sw <= 0 || !Number.isFinite(sh) || sh <= 0) return;
+        const iw = atlasCanvasImg.naturalWidth || 0;
+        const ih = atlasCanvasImg.naturalHeight || 0;
+        if (iw <= 0 || ih <= 0 || sx < 0 || sy < 0 || sx + sw > iw + 0.5 || sy + sh > ih + 0.5) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, rPx, 0, 2 * Math.PI);
+        ctx.clip();
+        try {
+          ctx.drawImage(
+            atlasCanvasImg,
+            sx,
+            sy,
+            sw,
+            sh,
+            c.x - rPx,
+            c.y - rPx,
+            2 * rPx,
+            2 * rPx
+          );
+        } catch (_) {
+          /* invalid drawImage in some browsers if CORS/taint */
+        }
+        ctx.restore();
+      }
+
+      function drawGraphCanvas() {
+        const canvas = document.getElementById("graph-canvas");
+        if (!canvas || !canvas.getContext) return;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(1, Math.round(rect.width));
+        const h = Math.max(1, Math.round(rect.height));
+        const bw = Math.floor(w * dpr);
+        const bh = Math.floor(h * dpr);
+        if (canvas.width !== bw || canvas.height !== bh) {
+          canvas.width = bw;
+          canvas.height = bh;
+          canvas.style.width = w + "px";
+          canvas.style.height = h + "px";
+        }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        const ux0 = currentTransform.applyX(0);
+        const uy0 = currentTransform.applyY(0);
+        const ux1 = currentTransform.applyX(1);
+        const uy1 = currentTransform.applyY(0);
+        const p0 = svgUserToCanvasPx(ux0, uy0);
+        const p1 = svgUserToCanvasPx(ux1, uy1);
+        const pxPerUser =
+          p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1 : 1;
+
+        const zoomScale = zoomScaleFactor(currentTransform.k);
+
+        function pairScreen(gx, gy) {
+          const ux = currentTransform.applyX(gx);
+          const uy = currentTransform.applyY(gy);
+          return svgUserToCanvasPx(ux, uy);
+        }
+
+        const gradientLinks = [];
+        for (let i = 0; i < links.length; i++) {
+          const l = links[i];
+          const st = getLinkCanvasStyle(l, i);
+          if (st.skip) continue;
+          const s = l.source;
+          const t = l.target;
+          const a = pairScreen(s.x, s.y);
+          const b = pairScreen(t.x, t.y);
+          if (!a || !b) continue;
+          ctx.globalAlpha = typeof st.opacity === "number" ? st.opacity : 1;
+          if (st.gradient && st.s && st.t) {
+            gradientLinks.push({ st, a, b });
+            continue;
+          }
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = st.stroke || options.linkStroke;
+          ctx.lineWidth = Math.max(0.25, (st.width || 0) * pxPerUser);
+          ctx.lineCap = "butt";
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        for (const { st, a, b } of gradientLinks) {
+          const s = st.s;
+          const t = st.t;
+          const c1 = pairScreen(s.x, s.y);
+          const c2 = pairScreen(t.x, t.y);
+          if (!c1 || !c2) continue;
+          const grd = ctx.createLinearGradient(c1.x, c1.y, c2.x, c2.y);
+          grd.addColorStop(0, nodeColor(s));
+          grd.addColorStop(1, nodeColor(t));
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = grd;
+          ctx.lineWidth = Math.max(0.25, (st.width || 0) * pxPerUser);
+          ctx.lineCap = "butt";
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+
+        for (const d of nodes) {
+          const nst = getNodeCanvasStyle(d);
+          const c = pairScreen(d.x, d.y);
+          if (!c) continue;
+          const rPx = (d.radius / zoomScale) * pxPerUser;
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, rPx, 0, 2 * Math.PI);
+          ctx.fillStyle = nst.fill;
+          ctx.globalAlpha = typeof nst.opacity === "number" ? nst.opacity : 1;
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        if (atlasCanvasImg && atlasCanvasImg.complete && atlasCanvasImg.naturalWidth) {
+          for (const d of nodes) {
+            const nst = getNodeCanvasStyle(d);
+            if (!nst.faceOpacity) continue;
+            const k = atlasKeyForNode(d);
+            const entry = k && atlasManifest ? atlasManifest[k] : null;
+            if (!entry) continue;
+            const sx = Number(entry.x ?? 0);
+            const sy = Number(entry.y ?? 0);
+            const sw = Number(entry.w ?? 0);
+            const sh = Number(entry.h ?? 0);
+            if (!Number.isFinite(sw) || sw <= 0 || !Number.isFinite(sh) || sh <= 0) continue;
+            const c = pairScreen(d.x, d.y);
+            if (!c) continue;
+            const rPx = (d.radius / zoomScale) * pxPerUser;
+            const iw = atlasCanvasImg.naturalWidth || 0;
+            const ih = atlasCanvasImg.naturalHeight || 0;
+            if (
+              iw <= 0 ||
+              ih <= 0 ||
+              sx < 0 ||
+              sy < 0 ||
+              sx + sw > iw + 0.5 ||
+              sy + sh > ih + 0.5
+            ) {
+              continue;
+            }
+            ctx.save();
+            ctx.globalAlpha = nst.faceOpacity;
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, rPx, 0, 2 * Math.PI);
+            ctx.clip();
+            try {
+              // Map the atlas cell directly into the node circle bounds.
+              // The old pattern-era full-atlas transform over-shifted canvas faces.
+              ctx.drawImage(
+                atlasCanvasImg,
+                sx,
+                sy,
+                sw,
+                sh,
+                c.x - rPx,
+                c.y - rPx,
+                2 * rPx,
+                2 * rPx
+              );
+            } catch (_) {
+              /* invalid drawImage in some browsers if CORS/taint */
+            }
+            ctx.restore();
+          }
+        }
+        drawHoveredNodeOverlay();
+      }
+
+      ensureAtlasCanvasImage();
 
       // Slow down how quickly labels appear as zoom increases.
       // (< 1) makes reveal more gradual across wheel increments.
@@ -1816,29 +1843,6 @@
             bgEl.setAttribute("stroke-width", expanded ? "1" : "0");
           }
         });
-
-        // Sigma-style integration: draw a screen-space clone of the hovered node above the tooltip bg.
-        if (state.label.hoveredNode) {
-          const d = state.label.hoveredNode;
-          const sx = currentTransform.applyX(d.x);
-          const sy = currentTransform.applyY(d.y);
-          const rr = d.radius * nodeScreenScale;
-          hoveredNodeClone
-            .attr("visibility", "visible")
-            .attr("cx", sx)
-            .attr("cy", sy)
-            .attr("r", rr)
-            .attr("fill", nodeColor(d));
-          hoveredNodeImageClone
-            .attr("visibility", "visible")
-            .attr("cx", sx)
-            .attr("cy", sy)
-            .attr("r", rr)
-            .attr("fill", nodeFaceFill(d));
-        } else {
-          hoveredNodeClone.attr("visibility", "hidden");
-          hoveredNodeImageClone.attr("visibility", "hidden");
-        }
 
         // Draw expanded node or edge tooltip in overlay (above all labels) so it is never covered.
         if (state.label.hoveredNode) {
@@ -1976,11 +1980,7 @@
         .zoom()
         .on("zoom", (e) => {
           currentTransform = e.transform;
-          zoomLayer.attr("transform", e.transform);
-          const zoomScale = zoomScaleFactor(currentTransform.k);
-          // Zoom sizing with configurable exponent.
-          node.attr("r", (d) => d.radius / zoomScale);
-          nodeImage.attr("r", (d) => d.radius / zoomScale);
+          drawGraphCanvas();
 
           // Re-apply focus styles (includes scaled edge widths).
           if (state.lock.active) {
@@ -2002,15 +2002,103 @@
           updateNodeLabels({ recomputeLayout: false });
         });
 
+      const graphCanvasEl = document.getElementById("graph-canvas");
+      function canvasPointerToLocalPx(event) {
+        const el = graphCanvasEl;
+        if (!el) return { x: 0, y: 0 };
+        const rect = el.getBoundingClientRect();
+        const cx = typeof event.clientX === "number" ? event.clientX : 0;
+        const cy = typeof event.clientY === "number" ? event.clientY : 0;
+        return { x: cx - rect.left, y: cy - rect.top };
+      }
+
       d3.select("#svg")
         .call(zoom)
         .on("dblclick.zoom", null)
-        .on("click.previewDismiss", function (event) {
-          // Ignore clicks that were part of drag/zoom.
+        .on("mousemove.canvasHover", function (event) {
+          if (state.lock.active) return;
+          if (event.buttons === 1) return;
+          if (isCoarsePointer) return;
+          const { x, y } = canvasPointerToLocalPx(event);
+          const picked = pickGraphTargetAtCanvasPx(x, y);
+          if (!picked) {
+            if (state.hover.kind || state.hover.item) {
+              state.hover.kind = null;
+              state.hover.item = null;
+              clearHoverAndLabel();
+              updateNodeLabels();
+              resetFocus();
+            }
+            return;
+          }
+          if (picked.kind === "node") {
+            const d = picked.item;
+            if (state.lock.active && !isLockedFor("node", d)) return;
+            if (state.hover.kind === "node" && state.hover.item === d) return;
+            state.hover.kind = "node";
+            state.hover.item = d;
+            state.label.hoveredEdge = null;
+            state.label.hoveredNode = d;
+            focusOnNode(d);
+            updateNodeLabels();
+          } else {
+            const d = picked.item;
+            if (state.lock.active && !isLockedFor("edge", d)) return;
+            if (state.hover.kind === "edge" && state.hover.item === d) return;
+            state.hover.kind = "edge";
+            state.hover.item = d;
+            state.label.hoveredNode = null;
+            state.label.hoveredEdge = d;
+            highlightEdge(d);
+            updateNodeLabels();
+          }
+        })
+        .on("mouseleave.canvasHover", function () {
+          if (state.lock.active) return;
+          clearHoverAndLabel();
+          resetFocus();
+        })
+        .on("click.graph", function (event) {
+          const { x, y } = canvasPointerToLocalPx(event);
+          const picked = pickGraphTargetAtCanvasPx(x, y);
+          if (picked && picked.kind === "node") {
+            handleGraphOpenClick(event, [personIdForNode(picked.item)], getNodePreviewEntry(picked.item).filename, function () {
+              showNodeInSidebar(picked.item);
+            });
+            return;
+          }
+          if (picked && picked.kind === "edge") {
+            handleGraphOpenClick(event, personIdsForEdge(picked.item), getEdgePreviewEntry(picked.item).filename, function () {
+              pinEdge(picked.item);
+            });
+            return;
+          }
           if (event.defaultPrevented) return;
           if (!state.lock.active) return;
           unlockPreviewAndHighlights();
         });
+
+      const graphInteractionEl = document.getElementById("svg");
+      if (graphInteractionEl && isCoarsePointer) {
+        graphInteractionEl.addEventListener(
+          "touchstart",
+          function (event) {
+            if (event.touches.length !== 1) return;
+            const t = event.touches[0];
+            const rect = graphInteractionEl.getBoundingClientRect();
+            const x = t.clientX - rect.left;
+            const y = t.clientY - rect.top;
+            const picked = pickGraphTargetAtCanvasPx(x, y);
+            if (!picked) return;
+            consumeEvent(event);
+            if (picked.kind === "edge") pinEdge(picked.item);
+            else showNodeInSidebar(picked.item);
+          },
+          { passive: false }
+        );
+      }
+
+      drawGraphCanvas();
       // Allow ESC to dismiss the pinned sidebar selection (same as clicking empty graph space).
       if (typeof window !== "undefined") {
         window.addEventListener("keydown", (e) => {
@@ -2022,7 +2110,7 @@
       }
       // Render under overlays, but center the graph in the visible region.
       // IMPORTANT: translate values are in SVG user units (viewBox), not screen pixels.
-      // After adding a site header + flex layout, one rAF can run before the SVG has a
+      // After adding a site header + flex layout, one rAF can run before the graph has a
       // non-zero height; applying the zoom then locks in the wrong transform. Wait until
       // #svg has stable dimensions (ResizeObserver + double rAF fallback).
       let appliedInitialViewportCentering = false;
@@ -2055,7 +2143,7 @@
           tryApplyInitialViewportCentering();
           return;
         }
-        const svgEl = document.getElementById("svg");
+        const svgRoEl = document.getElementById("svg");
         let ro = null;
         const attempt = () => {
           if (tryApplyInitialViewportCentering()) {
@@ -2065,9 +2153,9 @@
             }
           }
         };
-        if (svgEl && typeof ResizeObserver !== "undefined") {
+        if (svgRoEl && typeof ResizeObserver !== "undefined") {
           ro = new ResizeObserver(attempt);
-          ro.observe(svgEl);
+          ro.observe(svgRoEl);
         }
         requestAnimationFrame(() => {
           requestAnimationFrame(attempt);
@@ -2097,18 +2185,7 @@
       updateNodeLabels();
 
       function ticked() {
-        linkLayer
-          .attr("x1", (d) => d.source.x)
-          .attr("y1", (d) => d.source.y)
-          .attr("x2", (d) => d.target.x)
-          .attr("y2", (d) => d.target.y);
-        linkHitbox
-          .attr("x1", (d) => d.source.x)
-          .attr("y1", (d) => d.source.y)
-          .attr("x2", (d) => d.target.x)
-          .attr("y2", (d) => d.target.y);
-        node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
-        nodeImage.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+        drawGraphCanvas();
       }
     }).catch(function (err) {
       document.body.innerHTML = `<pre style="padding:2rem;color:#c00;font:14px/1.6 monospace">Failed to load data:\n${err}</pre>`;

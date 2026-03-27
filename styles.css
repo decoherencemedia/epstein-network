@@ -136,14 +136,36 @@ body.page-about .site-page {
 }
 
 .svg-container {
+  position: relative;
   width: 100%;
   height: 100%;
 }
+/* Graph bitmap on canvas; SVG holds labels + receives input. d3.zoom must use #svg so the
+   zoom transform stays in viewBox units (same as node x,y). Canvas-only zoom used pixel space and broke focal point + face scale. */
+.graph-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hover-node-canvas {
+  z-index: 2;
+}
 #svg {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   display: block;
   margin-left: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
 }
 .label-layer .node-label-line1,
 .label-layer .node-label-line2 {
@@ -161,6 +183,7 @@ body.page-about .site-page {
   left: 0;
   top: 0;
   bottom: 0;
+  z-index: 220;
   width: var(--sidebar-width);
   max-width: calc(100vw - 24px);
   background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));

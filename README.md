@@ -45,7 +45,7 @@ Run from `scripts/` (or set paths accordingly). `all_images` is at repo root.
 Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
 
 ## TODO
+- add "Unknown" page
+- add searching by image/file
 - update scripts and descriptions in README
 - separate repos for scripts and web
-- handle victims
-- add "Unknown" page
