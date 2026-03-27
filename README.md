@@ -49,3 +49,9 @@ Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
 - add searching by image/file
 - update scripts and descriptions in README
 - separate repos for scripts and web
+- home graph cleanup pass:
+  - fix duplicated force key (`.force("center", forceCollide)` should be collide)
+  - remove vestigial edge-label SVG elements (always hidden now)
+  - remove unused `linkKey()` after canvas migration
+  - cache canvas/SVG refs and move resize sync out of hot draw path
+  - reassess simulation lifetime for fixed-position nodes

@@ -1344,8 +1344,8 @@
         if (atlasCanvasImg && atlasCanvasImg.complete && atlasCanvasImg.naturalWidth) return;
         if (atlasCanvasImg && !atlasCanvasImg.complete) return;
         atlasCanvasImg = new Image();
-        // CDN needs CORS for canvas drawImage; same-origin local file should not set crossOrigin (avoids odd failures).
-        if (!IS_LOCAL_DEV) atlasCanvasImg.crossOrigin = "anonymous";
+        // Keep default image request mode (no-cors) so atlas can load even when the CDN
+        // does not send ACAO. We only draw it; we never read pixels from the canvas.
         atlasCanvasImg.onload = () => drawGraphCanvas();
         atlasCanvasImg.onerror = () => {
           atlasCanvasImg = null;
