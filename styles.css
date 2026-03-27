@@ -218,13 +218,16 @@ body.page-home #thumb-preview {
   height: calc(100vh - var(--site-header-height));
   /* Avoid double line: #thumb-preview border + .site-header border-bottom meet here. */
   border-top: none;
+  /* Flush to viewport edge: only separate from graph on the right. */
+  border-left: none;
+  border-bottom: none;
   /* Directional shadow so it does not bloom upward into the header area. */
   box-shadow: 10px 24px 24px -16px rgba(0,0,0,0.22);
 }
 #thumb-preview.visible { display: block; }
 #thumb-preview .thumb-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
@@ -305,6 +308,7 @@ body.page-home #thumb-preview {
   width: 12px;
   height: 12px;
   border-radius: var(--radius-4);
+  border: 1px solid var(--border-subtle);
   background: #ccc;
   flex: 0 0 auto;
 }
@@ -323,9 +327,11 @@ body.page-home #thumb-preview {
 #thumb-preview .thumb-title {
   font: 700 17px/1.15 sans-serif;
   color: #222;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -722,7 +728,8 @@ body.page-home #name-search {
     max-width: none;
     height: auto;
     max-height: 40vh;
-    border-top: 1px solid var(--border-panel);
+    /* Restore full frame on floating bottom sheet (desktop rule removes left/bottom). */
+    border: 1px solid var(--border-panel);
   }
   #thumb-preview.visible {
     display: flex;
