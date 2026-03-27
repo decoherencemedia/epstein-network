@@ -49,5 +49,3 @@ Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
 - add searching by image/file
 - update scripts and descriptions in README
 - separate repos for scripts and web
-- home graph cleanup pass:
-  - reassess simulation lifetime for fixed-position nodes

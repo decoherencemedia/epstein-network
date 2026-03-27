@@ -518,22 +518,12 @@
           weight.textContent = String(n.weight);
           row.appendChild(name);
           row.appendChild(weight);
-          let clickTimeout = null;
           row.addEventListener("click", (e) => {
             consumeEvent(e);
-            if (e.detail === 2) return;
-            if (clickTimeout) clearTimeout(clickTimeout);
-            clickTimeout = setTimeout(() => {
-              clickTimeout = null;
-              if (typeof onSelectNeighbor === "function") onSelectNeighbor(n);
-            }, 250);
+            if (typeof onSelectNeighbor === "function") onSelectNeighbor(n);
           });
           row.addEventListener("dblclick", (e) => {
             consumeEvent(e);
-            if (clickTimeout) {
-              clearTimeout(clickTimeout);
-              clickTimeout = null;
-            }
             if (typeof onNavigateToNeighbor === "function") onNavigateToNeighbor(n);
           });
           list.appendChild(row);
@@ -1335,6 +1325,7 @@
         .force("center", d3.forceCenter().strength(100))
         .force("collide", forceCollide)
         .on("tick", ticked);
+      let simulationSettled = false;
 
       setupNameSearch();
 
@@ -2199,6 +2190,10 @@
       updateNodeLabels();
 
       function ticked() {
+        if (!simulationSettled) {
+          simulationSettled = true;
+          simulation.stop();
+        }
         drawGraphCanvas();
       }
     }).catch(function (err) {
