@@ -1421,8 +1421,7 @@
 
       function svgUserToCanvasPx(ux, uy) {
         const svgEl = document.getElementById("svg");
-        const canvasEl = document.getElementById("graph-canvas");
-        if (!svgEl || !canvasEl) return null;
+        if (!svgEl) return null;
         // SVGPoint rejects non-finite values; nodes can be NaN before simulation.
         if (!Number.isFinite(ux) || !Number.isFinite(uy)) return null;
         const pt = svgEl.createSVGPoint();
@@ -1431,9 +1430,9 @@
         const ctm = svgEl.getScreenCTM();
         if (!ctm) return null;
         const sp = pt.matrixTransform(ctm);
-        const crect = canvasEl.getBoundingClientRect();
-        const x = sp.x - crect.left;
-        const y = sp.y - crect.top;
+        const srect = svgEl.getBoundingClientRect();
+        const x = sp.x - srect.left;
+        const y = sp.y - srect.top;
         if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
         return { x, y };
       }
@@ -1442,6 +1441,17 @@
         const ux = currentTransform.applyX(gx);
         const uy = currentTransform.applyY(gy);
         return svgUserToCanvasPx(ux, uy);
+      }
+
+      function ensureCanvasOverlayLayout(canvas, { zIndex = 0 } = {}) {
+        if (!canvas) return;
+        // Defensive inline layout so canvas rendering still works if CSS is stale/missing in deploy.
+        canvas.style.position = "absolute";
+        canvas.style.left = "0";
+        canvas.style.top = "0";
+        canvas.style.display = "block";
+        canvas.style.pointerEvents = "none";
+        canvas.style.zIndex = String(zIndex);
       }
 
       function getCanvasPxCalibration() {
@@ -1519,11 +1529,14 @@
       function drawHoveredNodeOverlay() {
         const canvas = document.getElementById("hover-node-canvas");
         if (!canvas || !canvas.getContext) return;
+        ensureCanvasOverlayLayout(canvas, { zIndex: 2 });
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+        const rect = svgEl.getBoundingClientRect();
         const w = Math.max(1, Math.round(rect.width));
         const h = Math.max(1, Math.round(rect.height));
         const bw = Math.floor(w * dpr);
@@ -1592,11 +1605,12 @@
         if (!canvas || !canvas.getContext) return;
         const svgEl = document.getElementById("svg");
         if (!svgEl) return;
+        ensureCanvasOverlayLayout(canvas, { zIndex: 0 });
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
+        const rect = svgEl.getBoundingClientRect();
         const w = Math.max(1, Math.round(rect.width));
         const h = Math.max(1, Math.round(rect.height));
         const bw = Math.floor(w * dpr);
@@ -2004,9 +2018,9 @@
 
       const graphCanvasEl = document.getElementById("graph-canvas");
       function canvasPointerToLocalPx(event) {
-        const el = graphCanvasEl;
-        if (!el) return { x: 0, y: 0 };
-        const rect = el.getBoundingClientRect();
+        const svgEl = document.getElementById("svg");
+        if (!svgEl) return { x: 0, y: 0 };
+        const rect = svgEl.getBoundingClientRect();
         const cx = typeof event.clientX === "number" ? event.clientX : 0;
         const cy = typeof event.clientY === "number" ? event.clientY : 0;
         return { x: cx - rect.left, y: cy - rect.top };
