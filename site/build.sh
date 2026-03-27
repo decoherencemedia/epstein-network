@@ -14,7 +14,7 @@ cat "$SITE/partials/head-root.html" \
   "$SITE/pages/home-inner.html" \
   "$SITE/partials/close.html" > "$DIST/index.html"
 
-# People
+# Search (/people)
 cat "$SITE/partials/head-people.html" \
   "$SITE/partials/nav-people.html" \
   "$SITE/pages/people-inner.html" \

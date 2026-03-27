@@ -3,7 +3,7 @@
   --panel-bg-rgb: 238, 241, 245;
   --panel-bg-alpha: 0.95;
   --site-header-height: 48px;
-  /* Nav active link, People “Search photos” button border/fill family — single source of truth. */
+  /* Nav active link, Search page “Search photos” button border/fill family — single source of truth. */
   --site-accent: #00646F;
   /* Inset search panel from header + viewport corner (reads better with site nav). */
   --name-search-edge-gap: 10px;
@@ -26,6 +26,10 @@ html {
   height: 100%;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+/* People page: reserve scrollbar width so switching tabs doesn’t reflow centered content when the vertical scrollbar toggles. */
+html:has(body.page-people) {
+  scrollbar-gutter: stable;
 }
 html, body {
   margin: 0;
@@ -54,6 +58,20 @@ body.page-about {
 body.page-people .site-page,
 body.page-about .site-page {
   flex: 1 0 auto;
+}
+
+/* Search page (/people): full-width slot + capped max so title/lead length can’t shrink the column. */
+body.page-people .site-page {
+  width: 100%;
+  min-width: 0;
+  max-width: min(100%, 52rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+@media (min-width: 900px) {
+  body.page-people .site-page {
+    max-width: min(90%, 56rem);
+  }
 }
 
 /* Site chrome (shared nav) */
@@ -779,7 +797,7 @@ body.page-home #name-search {
   }
 }
 
-/* ----- People page (/people): autocomplete + masonry ----- */
+/* ----- Search page (/people): autocomplete + masonry ----- */
 .people-page {
   --people-panel-bg: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
   --people-panel-border: var(--border-panel);
@@ -789,13 +807,107 @@ body.page-home #name-search {
   --people-focus: #5a79b8;
   --people-text-muted: #5c6470;
 }
-.people-page .people-toolbar {
+/* Tabs sit above the card; panel body is the bordered “sheet” below. */
+.people-page .people-toolbar-shell {
   margin: 10px 0 18px;
-  padding: 16px;
-  border: 1px solid var(--people-panel-border);
-  border-radius: var(--radius-12);
-  background: var(--people-panel-bg);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border-radius: var(--radius-8) var(--radius-8) var(--radius-12) var(--radius-12);
   box-shadow: var(--people-panel-shadow);
+}
+.people-toolbar-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid var(--people-panel-border);
+}
+.people-tab {
+  position: relative;
+  font: 14px/1.2 system-ui, sans-serif;
+  font-weight: 600;
+  padding: 10px 20px;
+  margin: 0 0 -1px -1px;
+  border: 1px solid var(--people-panel-border);
+  border-radius: 0;
+  background: rgba(237, 241, 247, 0.96);
+  color: var(--people-text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.people-tab:first-child {
+  margin-left: 0;
+  border-top-left-radius: var(--radius-8);
+}
+.people-tab:last-child {
+  border-top-right-radius: var(--radius-8);
+}
+.people-tab:hover {
+  background: rgba(248, 250, 252, 0.98);
+  color: #2b3442;
+}
+.people-tab[aria-selected="true"] {
+  z-index: 3;
+  margin-bottom: -1px;
+  background: var(--people-panel-bg);
+  color: var(--site-accent);
+  border-bottom: 1px solid var(--people-panel-bg);
+  box-shadow: none;
+}
+.people-page .people-toolbar {
+  margin: 0;
+  padding: 16px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--people-panel-border);
+  border-top: none;
+  border-radius: 0;
+  background: var(--people-panel-bg);
+  box-shadow: none;
+}
+.people-tab-panel {
+  min-width: 0;
+}
+.people-tab-panel[hidden] {
+  display: none !important;
+}
+.people-document-wrap {
+  width: 100%;
+  max-width: none;
+  margin-bottom: 8px;
+}
+.people-document-validation {
+  margin: 0 0 8px;
+  font: 13px/1.45 system-ui, sans-serif;
+  font-weight: 600;
+  color: #b71c1c;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.people-document-validation[hidden] {
+  display: none !important;
+}
+.people-page .people-search-input.people-search-input--invalid {
+  border-color: #c62828;
+  box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.15);
+}
+.people-document-hint {
+  margin: 0 0 6px;
+  font: 13px/1.45 system-ui, sans-serif;
+  color: var(--people-text-muted);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .people-label {
   display: block;
@@ -898,10 +1010,11 @@ body.page-home #name-search {
   margin-bottom: 8px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
 }
 .people-graph-btn {
+  margin-right: auto;
   font: 14px/1.2 system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: 0.01em;

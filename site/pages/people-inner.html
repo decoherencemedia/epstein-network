@@ -1,39 +1,66 @@
 <main class="site-page people-page" id="main">
-  <h1 class="site-page-title">People</h1>
-  <p class="site-page-lead">Select one or more people, then search for photos where they all appear together</p>
+  <h1 class="site-page-title">Search</h1>
+  <p class="site-page-lead">Search photos by people&rsquo;s names or by document number</p>
 
-  <section class="people-toolbar" aria-label="Select people">
-    <div class="people-autocomplete-wrap">
-      <div class="people-autocomplete">
-        <input
-          id="people-search-input"
-          type="text"
-          class="people-search-input"
-          placeholder="Type a name…"
-          aria-label="Search people by name"
-          autocomplete="off"
-          spellcheck="false"
-          aria-autocomplete="list"
-          aria-controls="people-search-listbox"
-          aria-expanded="false"
-          role="combobox"
-        />
-        <ul id="people-search-listbox" class="people-search-results" role="listbox" hidden></ul>
-      </div>
+  <section class="people-toolbar-shell" aria-label="Find photos">
+    <div class="people-toolbar-tabs" role="tablist" aria-label="Search mode">
+      <button type="button" class="people-tab" role="tab" id="people-tab-people" aria-selected="true" aria-controls="people-panel-people">People</button>
+      <button type="button" class="people-tab" role="tab" id="people-tab-document" aria-selected="false" aria-controls="people-panel-document" tabindex="-1">Document</button>
     </div>
 
-    <div class="people-selected" id="people-selected" aria-label="Selected people"></div>
+    <div class="people-toolbar">
+      <div id="people-panel-people" class="people-tab-panel" role="tabpanel" aria-labelledby="people-tab-people">
+        <div class="people-autocomplete-wrap">
+          <div class="people-autocomplete">
+            <input
+              id="people-search-input"
+              type="text"
+              class="people-search-input"
+              placeholder="Type a name…"
+              aria-label="Search people by name"
+              autocomplete="off"
+              spellcheck="false"
+              aria-autocomplete="list"
+              aria-controls="people-search-listbox"
+              aria-expanded="false"
+              role="combobox"
+            />
+            <ul id="people-search-listbox" class="people-search-results" role="listbox" hidden></ul>
+          </div>
+        </div>
 
-    <div class="people-actions">
-      <button type="button" class="people-graph-btn" id="people-open-graph" disabled title="Select 1 or 2 people to open in graph">Open in graph</button>
-      <button type="button" class="people-search-btn" id="people-run-search" disabled>Search photos</button>
+        <div class="people-selected" id="people-selected" aria-label="Selected people"></div>
+      </div>
+
+      <div id="people-panel-document" class="people-tab-panel" role="tabpanel" aria-labelledby="people-tab-document" hidden>
+        <div class="people-document-wrap">
+          <input
+            id="people-document-input"
+            type="text"
+            class="people-search-input"
+            placeholder="EFTA00000005"
+            maxlength="12"
+            aria-label="Document ID"
+            aria-describedby="people-document-hint"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+        <p id="people-document-validation" class="people-document-validation" role="alert" aria-live="polite" hidden></p>
+        <p id="people-document-hint" class="people-document-hint">Must be "EFTA" followed by exactly 8 digits</p>
+      </div>
+
+      <div class="people-actions">
+        <button type="button" class="people-graph-btn" id="people-open-graph" disabled title="Select 1 or 2 people to open in graph">Open in graph</button>
+        <button type="button" class="people-search-btn" id="people-run-search" disabled>Search photos</button>
+      </div>
     </div>
   </section>
 
   <p class="people-status" id="people-status" role="status" aria-live="polite"></p>
 
   <section class="people-results-wrap" id="people-results-wrap" hidden>
-    <h2 class="people-results-heading">Photos</h2>
+    <h2 class="people-results-heading" id="people-results-heading">Photos</h2>
     <div class="people-masonry" id="people-masonry"></div>
   </section>
 
@@ -261,8 +288,8 @@
 <script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
-  const API_BASE = "https://api.epstein.photos";
-//   const API_BASE = "http://localhost:5000";
+//   const API_BASE = "https://api.epstein.photos";
+  const API_BASE = "http://localhost:5000";
   async function fetchPeopleNamesJson() {
     let res = await fetch(API_BASE + "/people", { credentials: "omit" });
     if (res.status === 404) {
@@ -278,11 +305,37 @@
 
   const inputEl = document.getElementById("people-search-input");
   const listboxEl = document.getElementById("people-search-listbox");
+  const documentInputEl = document.getElementById("people-document-input");
+  const documentValidationEl = document.getElementById("people-document-validation");
+  const tabPeopleBtn = document.getElementById("people-tab-people");
+  const tabDocumentBtn = document.getElementById("people-tab-document");
+  const panelPeopleEl = document.getElementById("people-panel-people");
+  const panelDocumentEl = document.getElementById("people-panel-document");
   const selectedEl = document.getElementById("people-selected");
   const searchBtn = document.getElementById("people-run-search");
   const openGraphBtn = document.getElementById("people-open-graph");
+  /** @type {"people" | "document"} */
+  let activeSearchTab = "people";
+
+  /** Per-tab UI state (in-memory; survives tab switches until reload). */
+  const peopleState = {
+    selected: /** @type {{ person_id: string, name: string | null }[]} */ ([]),
+    nameInput: "",
+    photoItems: /** @type {unknown[] | null} */ (null),
+    statusSnapshot: /** @type {{ text: string, html: string, isError: boolean } | null} */ (null),
+  };
+  const documentState = {
+    input: "",
+    photoItems: /** @type {unknown[] | null} */ (null),
+    statusSnapshot: /** @type {{ text: string, html: string, isError: boolean } | null} */ (null),
+  };
+  /** Last rendered result lists for the active tab’s search (used when persisting tab state). */
+  let lastPeoplePhotoItems = /** @type {unknown[] | null} */ (null);
+  let lastDocumentPhotoItems = /** @type {unknown[] | null} */ (null);
+
   const statusEl = document.getElementById("people-status");
   const resultsWrap = document.getElementById("people-results-wrap");
+  const resultsHeadingEl = document.getElementById("people-results-heading");
   const masonryEl = document.getElementById("people-masonry");
   const lightboxEl = document.getElementById("people-lightbox");
   const lightboxStageEl = document.getElementById("people-lightbox-stage");
@@ -298,6 +351,23 @@
   const PERSON_COLOR_PALETTE = SiteShared.personColorPalette;
   const hexToRgb = SiteShared.hexToRgb;
   const rgbaWithAlpha = SiteShared.rgbaWithAlpha;
+
+  const DOCUMENT_ID_FORMAT_MESSAGE =
+    "Use EFTA followed by exactly 8 digits (for example EFTA00000005).";
+
+  const CONTENT_POLICY_NO_IMAGES_HTML =
+    'No images can be displayed. <a href="/about#content" target="_blank" rel="noopener noreferrer">Read this site\'s content policy</a>.';
+
+  /**
+   * @param {string} raw
+   * @returns {string | null} Canonical EFTA + 8 digits, or null if invalid.
+   */
+  function normalizeDocumentId(raw) {
+    const s = String(raw || "").trim();
+    const m = s.match(/^efta(\d{8})$/i);
+    if (!m) return null;
+    return "EFTA" + m[1];
+  }
 
   function chipBackgroundTint(hex) {
     const rgb = hexToRgb(hex);
@@ -319,6 +389,48 @@
     return /^person_\d+$/i.test(String(personId)) ? "Unidentified" : String(personId);
   }
 
+  const DEFAULT_RESULTS_HEADING = "Photos";
+
+  function resetResultsHeading() {
+    if (resultsHeadingEl) resultsHeadingEl.textContent = DEFAULT_RESULTS_HEADING;
+  }
+
+  /** Display name for a selected person: trimmed name, or person_id (matches chips). */
+  function chipLabelForSelected(p) {
+    const n = p.name;
+    if (n != null && String(n).trim()) return String(n).trim();
+    return String(p.person_id);
+  }
+
+  /**
+   * @param {string[]} labels
+   */
+  function formatPhotosOfPeopleHeading(labels) {
+    if (labels.length === 0) return DEFAULT_RESULTS_HEADING;
+    if (labels.length === 1) return "Photos of " + labels[0];
+    if (labels.length === 2) return "Photos of " + labels[0] + " and " + labels[1];
+    const last = labels[labels.length - 1];
+    const rest = labels.slice(0, -1);
+    return "Photos of " + rest.join(", ") + ", and " + last;
+  }
+
+  function setResultsHeadingForPeopleSelection() {
+    if (!resultsHeadingEl) return;
+    const labels = selected.map(chipLabelForSelected);
+    resultsHeadingEl.textContent = formatPhotosOfPeopleHeading(labels);
+  }
+
+  /**
+   * @param {string} prefix Normalized EFTA + 8 digits (or best-effort display).
+   */
+  function setResultsHeadingForDocumentPrefix(prefix) {
+    if (!resultsHeadingEl) return;
+    const raw = String(prefix || "").trim();
+    const norm = normalizeDocumentId(raw);
+    const display = norm || raw;
+    resultsHeadingEl.textContent = "Photos from document " + display + ".pdf";
+  }
+
   function openPersonPage(personId) {
     const pid = String(personId || "").trim();
     if (!pid) return;
@@ -330,6 +442,7 @@
       return;
     }
     const params = new URLSearchParams();
+    params.set("tab", "people");
     params.set("person_ids", pid);
     window.open("/people/?" + params.toString(), "_blank", "noopener,noreferrer");
   }
@@ -742,11 +855,181 @@
     }
   }
 
-  function clearSearchResults() {
+  function captureStatusSnapshot() {
+    return {
+      text: statusEl.textContent,
+      html: statusEl.innerHTML,
+      isError: statusEl.classList.contains("people-status-error"),
+    };
+  }
+
+  function restoreStatusFromSnapshot(snap) {
+    if (!snap) {
+      setStatus("");
+      return;
+    }
+    if (snap.html && snap.html !== snap.text) {
+      setStatusHtml(snap.html, snap.isError);
+    } else {
+      setStatus(snap.text, snap.isError);
+    }
+  }
+
+  function prepareResultsSearchUi() {
+    resultsWrap.hidden = true;
+    destroyPeopleMasonry();
+    masonryEl.innerHTML = "";
+  }
+
+  function setStatusPhotoCountFound(count) {
+    setStatus(count + " photo" + (count === 1 ? "" : "s") + " found");
+  }
+
+  function openLightboxIfPreferred(lightboxPayload, preferredPhoto) {
+    const key = String(preferredPhoto || "").trim();
+    if (!key) return;
+    const idx = lightboxPayload.findIndex(function (p) {
+      return String(p.image) === key;
+    });
+    if (idx >= 0) openLightbox(lightboxPayload, idx);
+  }
+
+  function setNoImagesContentPolicyStatus() {
+    setStatusHtml(CONTENT_POLICY_NO_IMAGES_HTML);
+    resetResultsHeading();
+  }
+
+  /**
+   * @param {unknown[] | null | undefined} photoItems
+   * @param {() => void} setHeading
+   */
+  function restoreCachedPhotoResults(photoItems, setHeading, statusSnapshot) {
+    if (!photoItems || !photoItems.length) {
+      resetResultsHeading();
+      setStatus("");
+      return;
+    }
+    renderPhotoResults(photoItems.slice());
+    setHeading();
+    restoreStatusFromSnapshot(statusSnapshot);
+  }
+
+  function clearResultsUiOnly() {
     destroyPeopleMasonry();
     masonryEl.innerHTML = "";
     resultsWrap.hidden = true;
+    resetResultsHeading();
     setStatus("");
+  }
+
+  function clearSearchResults() {
+    clearResultsUiOnly();
+    if (activeSearchTab === "people") {
+      lastPeoplePhotoItems = null;
+      peopleState.photoItems = null;
+      peopleState.statusSnapshot = null;
+    } else {
+      lastDocumentPhotoItems = null;
+      documentState.photoItems = null;
+      documentState.statusSnapshot = null;
+    }
+  }
+
+  function persistTabState(tab) {
+    if (tab === "people") {
+      peopleState.selected = selected.map(function (p) {
+        return { person_id: p.person_id, name: p.name };
+      });
+      peopleState.nameInput = inputEl ? String(inputEl.value || "") : "";
+      peopleState.photoItems = lastPeoplePhotoItems;
+      peopleState.statusSnapshot = captureStatusSnapshot();
+    } else if (tab === "document") {
+      documentState.input = documentInputEl ? String(documentInputEl.value || "") : "";
+      documentState.photoItems = lastDocumentPhotoItems;
+      documentState.statusSnapshot = captureStatusSnapshot();
+    }
+  }
+
+  function restoreTabState(tab) {
+    if (!lightboxEl.hidden) navigateLightbox("close");
+    if (tab === "people") {
+      selected = peopleState.selected.map(function (p) {
+        return { person_id: p.person_id, name: p.name };
+      });
+      if (inputEl) inputEl.value = peopleState.nameInput;
+      renderSelected();
+      destroyPeopleMasonry();
+      masonryEl.innerHTML = "";
+      resultsWrap.hidden = true;
+      restoreCachedPhotoResults(
+        peopleState.photoItems,
+        setResultsHeadingForPeopleSelection,
+        peopleState.statusSnapshot
+      );
+    } else {
+      selected = [];
+      if (documentInputEl) documentInputEl.value = documentState.input;
+      updateDocumentValidationUi();
+      destroyPeopleMasonry();
+      masonryEl.innerHTML = "";
+      resultsWrap.hidden = true;
+      restoreCachedPhotoResults(
+        documentState.photoItems,
+        function () {
+          setResultsHeadingForDocumentPrefix(documentState.input);
+        },
+        documentState.statusSnapshot
+      );
+    }
+    updateSearchButton();
+  }
+
+  function syncTabUiOnly(tab) {
+    const isPeople = tab === "people";
+    if (tabPeopleBtn && tabDocumentBtn) {
+      tabPeopleBtn.setAttribute("aria-selected", isPeople ? "true" : "false");
+      tabDocumentBtn.setAttribute("aria-selected", isPeople ? "false" : "true");
+      tabPeopleBtn.tabIndex = isPeople ? 0 : -1;
+      tabDocumentBtn.tabIndex = isPeople ? -1 : 0;
+    }
+    if (panelPeopleEl) panelPeopleEl.toggleAttribute("hidden", !isPeople);
+    if (panelDocumentEl) panelDocumentEl.toggleAttribute("hidden", isPeople);
+    if (openGraphBtn) openGraphBtn.hidden = !isPeople;
+  }
+
+  function applyUrlForCurrentTab() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("photo");
+    if (activeSearchTab === "people") {
+      params.set("tab", "people");
+      params.delete("document");
+      const ids = getSelectedPersonIds();
+      if (ids.length) {
+        params.set("person_ids", ids.join(","));
+      } else {
+        params.delete("person_ids");
+      }
+    } else {
+      params.set("tab", "document");
+      params.delete("person_ids");
+      const docNorm = documentInputEl && normalizeDocumentId(documentInputEl.value);
+      if (docNorm) {
+        params.set("document", docNorm);
+      } else {
+        const raw = documentInputEl && String(documentInputEl.value || "").trim();
+        if (raw) {
+          params.set("document", raw);
+        } else {
+          params.delete("document");
+        }
+      }
+    }
+    const qs = params.toString();
+    const nextUrl =
+      window.location.pathname +
+      (qs ? "?" + qs : "") +
+      window.location.hash;
+    window.history.replaceState(null, "", nextUrl);
   }
 
   async function fetchPhotoItemsForSelection() {
@@ -754,7 +1037,14 @@
     params.set("person_ids", selected.map((p) => p.person_id).join(","));
     const url = PHOTOS_URL + "?" + params.toString();
     const res = await fetch(url, { credentials: "omit" });
-    if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+    if (!res.ok) {
+      let msg = "Request failed (" + res.status + ")";
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.message) msg = String(errJson.message);
+      } catch (_) {}
+      throw new Error(msg);
+    }
     const json = await res.json();
     const raw = json.data;
     if (!Array.isArray(raw)) throw new Error("Unexpected response shape");
@@ -764,6 +1054,33 @@
       })
       .filter(function (p) {
         return p.image && String(p.image).trim();
+      });
+  }
+
+  async function fetchPhotoItemsForDocumentPrefix(prefix) {
+    const p = normalizeDocumentId(String(prefix || ""));
+    if (!p) throw new Error(DOCUMENT_ID_FORMAT_MESSAGE);
+    const params = new URLSearchParams();
+    params.set("document_prefix", p);
+    const url = PHOTOS_URL + "?" + params.toString();
+    const res = await fetch(url, { credentials: "omit" });
+    if (!res.ok) {
+      let msg = "Request failed (" + res.status + ")";
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.message) msg = String(errJson.message);
+      } catch (_) {}
+      throw new Error(msg);
+    }
+    const json = await res.json();
+    const raw = json.data;
+    if (!Array.isArray(raw)) throw new Error("Unexpected response shape");
+    return raw
+      .map(function (x) {
+        return normalizePhotoRow(x);
+      })
+      .filter(function (row) {
+        return row.image && String(row.image).trim();
       });
   }
 
@@ -985,8 +1302,68 @@
     setStatus(String((err && err.message) || err), true);
   }
 
+  function setActiveSearchTab(tab, opts) {
+    const o = opts || {};
+    if (tab === activeSearchTab && !o.force) return;
+    if (!o.skipPersist) persistTabState(activeSearchTab);
+    activeSearchTab = tab;
+    syncTabUiOnly(tab);
+    if (!o.skipRestore) {
+      restoreTabState(tab);
+    } else {
+      updateSearchButton();
+    }
+    if (!o.skipUrl) {
+      applyUrlForCurrentTab();
+    }
+  }
+
+  function updateDocumentValidationUi() {
+    if (!documentInputEl) return;
+    if (activeSearchTab !== "document") {
+      if (documentValidationEl) {
+        documentValidationEl.hidden = true;
+        documentValidationEl.textContent = "";
+      }
+      documentInputEl.removeAttribute("aria-invalid");
+      documentInputEl.classList.remove("people-search-input--invalid");
+      return;
+    }
+    const raw = String(documentInputEl.value || "").trim();
+    if (!raw) {
+      if (documentValidationEl) {
+        documentValidationEl.hidden = true;
+        documentValidationEl.textContent = "";
+      }
+      documentInputEl.removeAttribute("aria-invalid");
+      documentInputEl.classList.remove("people-search-input--invalid");
+      return;
+    }
+    if (normalizeDocumentId(raw) === null) {
+      if (documentValidationEl) {
+        documentValidationEl.hidden = false;
+        documentValidationEl.textContent = DOCUMENT_ID_FORMAT_MESSAGE;
+      }
+      documentInputEl.setAttribute("aria-invalid", "true");
+      documentInputEl.classList.add("people-search-input--invalid");
+      return;
+    }
+    if (documentValidationEl) {
+      documentValidationEl.hidden = true;
+      documentValidationEl.textContent = "";
+    }
+    documentInputEl.removeAttribute("aria-invalid");
+    documentInputEl.classList.remove("people-search-input--invalid");
+  }
+
   function updateSearchButton() {
-    searchBtn.disabled = selected.length === 0;
+    updateDocumentValidationUi();
+    if (activeSearchTab === "document") {
+      const raw = String(documentInputEl && documentInputEl.value ? documentInputEl.value : "").trim();
+      searchBtn.disabled = normalizeDocumentId(raw) === null;
+    } else {
+      searchBtn.disabled = selected.length === 0;
+    }
   }
 
   function graphUrlForSelectedPeople() {
@@ -1032,11 +1409,11 @@
       card.style.color = "#1a1a1a";
       const label = document.createElement("span");
       label.className = "people-chip-label";
-      label.textContent = p.name || p.person_id;
+      label.textContent = chipLabelForSelected(p);
       const rm = document.createElement("button");
       rm.type = "button";
       rm.className = "people-chip-remove";
-      rm.setAttribute("aria-label", "Remove " + (p.name || p.person_id));
+      rm.setAttribute("aria-label", "Remove " + chipLabelForSelected(p));
       rm.textContent = "×";
       rm.addEventListener("click", () => {
         selected.splice(i, 1);
@@ -1164,6 +1541,8 @@
 
   function syncPeopleQueryToUrl() {
     const params = new URLSearchParams(window.location.search);
+    params.set("tab", "people");
+    params.delete("document");
     const ids = getSelectedPersonIds();
     if (ids.length) {
       params.set("person_ids", ids.join(","));
@@ -1178,8 +1557,27 @@
     window.history.replaceState(null, "", nextUrl);
   }
 
+  function syncDocumentQueryToUrl(prefix) {
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", "document");
+    params.delete("person_ids");
+    const doc = String(prefix || "").trim();
+    if (doc) {
+      params.set("document", doc);
+    } else {
+      params.delete("document");
+    }
+    const qs = params.toString();
+    const nextUrl =
+      window.location.pathname +
+      (qs ? "?" + qs : "") +
+      window.location.hash;
+    window.history.replaceState(null, "", nextUrl);
+  }
+
   function syncPhotoQueryToUrl(photoFilename) {
     const params = new URLSearchParams(window.location.search);
+    params.set("tab", activeSearchTab === "document" ? "document" : "people");
     const photo = String(photoFilename || "").trim();
     if (photo) {
       params.set("photo", photo);
@@ -1273,7 +1671,7 @@
     }, 150);
   });
 
-  async function runSearch(options) {
+  async function runPeopleSearch(options) {
     const opts = options || {};
     const shouldSyncUrl = opts.syncUrl !== false;
     const preferredPhoto = String(opts.preferredPhoto || "").trim();
@@ -1285,33 +1683,121 @@
       syncPhotoQueryToUrl(null);
     }
     setStatus("Searching…");
-    resultsWrap.hidden = true;
-    destroyPeopleMasonry();
-    masonryEl.innerHTML = "";
+    prepareResultsSearchUi();
     try {
       const photoItems = await fetchPhotoItemsForSelection();
       if (photoItems.length === 0) {
-        setStatusHtml('No images can be displayed. <a href="/about#victims" target="_blank" rel="noopener noreferrer">Read this site\'s victim policy</a>.');
+        setNoImagesContentPolicyStatus();
+        lastPeoplePhotoItems = null;
+        peopleState.photoItems = null;
+        peopleState.statusSnapshot = captureStatusSnapshot();
         return;
       }
       const lightboxPayload = renderPhotoResults(photoItems);
-      if (preferredPhoto) {
-        const preferredIdx = lightboxPayload.findIndex(function (p) {
-          return String(p.image) === preferredPhoto;
-        });
-        if (preferredIdx >= 0) {
-          openLightbox(lightboxPayload, preferredIdx);
-        }
-      }
-      setStatus(photoItems.length + " photo" + (photoItems.length === 1 ? "" : "s") + " found");
+      setResultsHeadingForPeopleSelection();
+      openLightboxIfPreferred(lightboxPayload, preferredPhoto);
+      setStatusPhotoCountFound(photoItems.length);
+      lastPeoplePhotoItems = photoItems.slice();
+      peopleState.photoItems = lastPeoplePhotoItems;
+      peopleState.statusSnapshot = captureStatusSnapshot();
     } catch (e) {
+      resetResultsHeading();
       setStatusError(e);
     }
+  }
+
+  async function runDocumentSearch(options) {
+    const opts = options || {};
+    const shouldSyncUrl = opts.syncUrl !== false;
+    const preferredPhoto = String(opts.preferredPhoto || "").trim();
+    const rawInput = String(
+      opts.documentPrefix != null && opts.documentPrefix !== ""
+        ? opts.documentPrefix
+        : documentInputEl
+          ? documentInputEl.value
+          : ""
+    ).trim();
+    if (!rawInput) return;
+    const normalized = normalizeDocumentId(rawInput);
+    if (!normalized) {
+      updateDocumentValidationUi();
+      setStatus("", false);
+      return;
+    }
+    if (documentInputEl && documentInputEl.value.trim() !== normalized) {
+      documentInputEl.value = normalized;
+    }
+    updateDocumentValidationUi();
+    try {
+      await loadNames({ silent: true });
+    } catch (e) {
+      setStatusError(e);
+      return;
+    }
+    if (shouldSyncUrl) {
+      syncDocumentQueryToUrl(normalized);
+    }
+    if (!preferredPhoto) {
+      syncPhotoQueryToUrl(null);
+    }
+    setStatus("Searching…");
+    prepareResultsSearchUi();
+    try {
+      const photoItems = await fetchPhotoItemsForDocumentPrefix(normalized);
+      if (photoItems.length === 0) {
+        setNoImagesContentPolicyStatus();
+        lastDocumentPhotoItems = null;
+        documentState.photoItems = null;
+        documentState.input = normalized;
+        documentState.statusSnapshot = captureStatusSnapshot();
+        return;
+      }
+      const lightboxPayload = renderPhotoResults(photoItems);
+      setResultsHeadingForDocumentPrefix(normalized);
+      openLightboxIfPreferred(lightboxPayload, preferredPhoto);
+      setStatusPhotoCountFound(photoItems.length);
+      lastDocumentPhotoItems = photoItems.slice();
+      documentState.photoItems = lastDocumentPhotoItems;
+      documentState.input = normalized;
+      documentState.statusSnapshot = captureStatusSnapshot();
+    } catch (e) {
+      resetResultsHeading();
+      setStatusError(e);
+    }
+  }
+
+  async function runSearch(options) {
+    const opts = options || {};
+    const mode = opts.mode || activeSearchTab;
+    if (mode === "document") {
+      return runDocumentSearch(opts);
+    }
+    return runPeopleSearch(opts);
   }
 
   searchBtn.addEventListener("click", async () => {
     await runSearch({ syncUrl: true });
   });
+
+  if (tabPeopleBtn) {
+    tabPeopleBtn.addEventListener("click", function () {
+      setActiveSearchTab("people");
+    });
+  }
+  if (tabDocumentBtn) {
+    tabDocumentBtn.addEventListener("click", function () {
+      setActiveSearchTab("document");
+    });
+  }
+  if (documentInputEl) {
+    documentInputEl.addEventListener("input", updateSearchButton);
+    documentInputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        runSearch({ syncUrl: true, mode: "document" });
+      }
+    });
+  }
 
   openGraphBtn.addEventListener("click", function () {
     const url = graphUrlForSelectedPeople();
@@ -1326,35 +1812,91 @@
 
   async function initFromQueryString() {
     const params = new URLSearchParams(window.location.search);
-    const personIdsRaw = params.get("person_ids");
+    const tabParam = (params.get("tab") || "").toLowerCase();
+    const docRaw = String(params.get("document") || "").trim();
     const photoFromQuery = String(params.get("photo") || "").trim();
-    if (!personIdsRaw) return;
-    const personIds = personIdsRaw
-      .split(",")
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-    if (!personIds.length) return;
-    const seen = new Set();
-    const dedupedIds = personIds.filter((id) => {
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-    try {
-      await loadNames();
-    } catch (e) {
-      setStatusError(e);
+    const personIdsRaw = params.get("person_ids");
+
+    if (docRaw) {
+      const norm = normalizeDocumentId(docRaw);
+      if (norm) {
+        try {
+          await loadNames({ silent: true });
+        } catch (e) {
+          setStatusError(e);
+        }
+        activeSearchTab = "document";
+        syncTabUiOnly("document");
+        if (documentInputEl) documentInputEl.value = norm;
+        await runDocumentSearch({ syncUrl: false, preferredPhoto: photoFromQuery, documentPrefix: docRaw });
+        syncDocumentQueryToUrl(norm);
+        if (photoFromQuery) syncPhotoQueryToUrl(photoFromQuery);
+        persistTabState("document");
+        return;
+      }
+      try {
+        await loadNames({ silent: true });
+      } catch (e) {
+        setStatusError(e);
+      }
+      activeSearchTab = "document";
+      syncTabUiOnly("document");
+      if (documentInputEl) documentInputEl.value = docRaw;
+      updateDocumentValidationUi();
+      setStatus(DOCUMENT_ID_FORMAT_MESSAGE, true);
+      applyUrlForCurrentTab();
+      persistTabState("document");
+      return;
     }
-    selected = dedupedIds.map((person_id) => {
-      const raw = namesById[person_id];
-      const name =
-        raw != null && String(raw).trim() ? String(raw).trim() : null;
-      return { person_id, name };
-    });
-    renderSelected();
-    if (selected.length) {
-      await runSearch({ syncUrl: false, preferredPhoto: photoFromQuery });
+
+    if (personIdsRaw) {
+      const personIds = personIdsRaw
+        .split(",")
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
+      if (!personIds.length) return;
+      const seen = new Set();
+      const dedupedIds = personIds.filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      try {
+        await loadNames();
+      } catch (e) {
+        setStatusError(e);
+      }
+      activeSearchTab = "people";
+      syncTabUiOnly("people");
+      selected = dedupedIds.map((person_id) => {
+        const raw = namesById[person_id];
+        const name =
+          raw != null && String(raw).trim() ? String(raw).trim() : null;
+        return { person_id, name };
+      });
+      renderSelected();
+      if (selected.length) {
+        await runPeopleSearch({ syncUrl: false, preferredPhoto: photoFromQuery });
+      }
+      syncPeopleQueryToUrl();
+      if (photoFromQuery) syncPhotoQueryToUrl(photoFromQuery);
+      persistTabState("people");
+      return;
     }
+
+    if (tabParam === "document") {
+      activeSearchTab = "document";
+      syncTabUiOnly("document");
+      updateDocumentValidationUi();
+      applyUrlForCurrentTab();
+      persistTabState("document");
+      return;
+    }
+
+    activeSearchTab = "people";
+    syncTabUiOnly("people");
+    applyUrlForCurrentTab();
+    persistTabState("people");
   }
 
   async function initPage() {
@@ -1364,6 +1906,7 @@
       setStatusError(e);
     }
     await initFromQueryString();
+    updateSearchButton();
   }
 
   initPage();

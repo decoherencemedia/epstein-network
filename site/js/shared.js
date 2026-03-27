@@ -13,11 +13,12 @@
       : [];
     if (!ids.length) return null;
     const params = new URLSearchParams();
+    params.set("tab", "people");
     params.set("person_ids", ids.join(","));
     return "/people/?" + params.toString();
   }
 
-  /** Same order as People page chips: first selected = index 0, … */
+  /** Same order as Search page chips: first selected = index 0, … */
   var personColorPalette = Object.freeze([
     "#00bd00", "#ff42cc", "#ff6300", "#00abff", "#fcee00", "#00e4ca", "#a989ff", "#ff8795", "#7bff83", "#f8a5ff",
   ]);
