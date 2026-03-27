@@ -48,7 +48,7 @@ body.page-about .site-page {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  background: rgba(var(--panel-bg-rgb), 0.97);
+  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
   border-bottom: 1px solid rgba(182, 190, 202, 0.85);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   z-index: 200;
@@ -202,6 +202,8 @@ body.page-home #thumb-preview {
   height: calc(100vh - var(--site-header-height));
   /* Avoid double line: #thumb-preview border + .site-header border-bottom meet here. */
   border-top: none;
+  /* Directional shadow so it does not bloom upward into the header area. */
+  box-shadow: 10px 24px 24px -16px rgba(0,0,0,0.22);
 }
 #thumb-preview.visible { display: block; }
 #thumb-preview .thumb-header {
@@ -354,7 +356,7 @@ body.page-home #thumb-preview {
   pointer-events: auto;
   padding: 12px;
   border-radius: 0 0 0 14px;
-  background: rgba(var(--panel-bg-rgb), 0.92);
+  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
   border: 1px solid rgba(182, 190, 202, 0.9);
   box-shadow: 0 12px 30px rgba(0,0,0,0.14);
   box-sizing: border-box;
@@ -452,7 +454,7 @@ body.page-home #name-search {
 }
 #thumb-top-neighbors {
   margin-top: 10px;
-  border-top: 1px solid #eee;
+  border-top: none;
   padding-top: 10px;
 }
 #thumb-top-neighbors .neighbors-title {
@@ -490,8 +492,8 @@ body.page-home #name-search {
 }
 #thumb-default {
   margin-top: 10px;
-  border-top: 1px solid #eee;
-  padding-top: 10px;
+  border-top: none;
+  padding-top: 0px;
   display: flex;
   flex-direction: column;
   /* Avoid forcing overflow/scrollbar on desktop. */
@@ -518,7 +520,7 @@ body.page-home #name-search {
 }
 #thumb-default .thumb-legend {
   margin-top: 14px;
-  border-top: 1px solid #eee;
+  border-top: 1px solid rgba(127, 139, 154, 0.9);
   padding-top: 6px;
   flex: 1 1 auto;
   display: flex;
@@ -721,7 +723,7 @@ body.page-home #name-search {
   }
   #thumb-default {
     margin-top: 4px;
-    padding-top: 6px;
+    padding-top: 0px;
   }
   #thumb-collapse-btn {
     display: inline-flex;
