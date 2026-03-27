@@ -1454,6 +1454,15 @@
         canvas.style.zIndex = String(zIndex);
       }
 
+      function ensureSvgOverlayLayout(svgEl) {
+        if (!svgEl) return;
+        // Keep SVG labels/tooltips above base graph canvas even if CSS is stale in production.
+        svgEl.style.position = "relative";
+        svgEl.style.zIndex = "1";
+        svgEl.style.pointerEvents = "auto";
+        svgEl.style.touchAction = "none";
+      }
+
       function getCanvasPxCalibration() {
         const ux0 = currentTransform.applyX(0);
         const uy0 = currentTransform.applyY(0);
@@ -1605,6 +1614,7 @@
         if (!canvas || !canvas.getContext) return;
         const svgEl = document.getElementById("svg");
         if (!svgEl) return;
+        ensureSvgOverlayLayout(svgEl);
         ensureCanvasOverlayLayout(canvas, { zIndex: 0 });
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
