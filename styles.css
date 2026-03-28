@@ -836,8 +836,6 @@ body.page-home #name-search {
   margin: 0 0 -1px -1px;
   border: 1px solid var(--people-panel-border);
   border-radius: 0;
-  background: rgba(237, 241, 247, 0.96);
-  color: var(--people-text-muted);
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
   appearance: none;
@@ -850,15 +848,23 @@ body.page-home #name-search {
 .people-tab:last-child {
   border-top-right-radius: var(--radius-8);
 }
-.people-tab:hover {
-  background: rgba(248, 250, 252, 0.98);
-  color: #2b3442;
+/* Inactive tab: clearly quieter than the selected tab */
+.people-tab[aria-selected="false"] {
+  background: rgba(218, 224, 232, 0.55);
+  color: #97a0ab;
+  font-weight: 500;
+}
+.people-tab[aria-selected="false"]:hover {
+  background: rgba(228, 233, 240, 0.85);
+  color: #6d7682;
+  font-weight: 600;
 }
 .people-tab[aria-selected="true"] {
   z-index: 3;
   margin-bottom: -1px;
   background: var(--people-panel-bg);
   color: var(--site-accent);
+  font-weight: 600;
   border-bottom: 1px solid var(--people-panel-bg);
   box-shadow: none;
 }
