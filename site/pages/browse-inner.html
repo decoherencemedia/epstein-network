@@ -1,0 +1,124 @@
+<main class="site-page browse-page" id="main">
+  <header class="browse-header">
+    <h1 class="browse-title">
+      <span class="browse-title-main">People</span>
+      <span class="browse-title-count" id="browse-title-count"></span>
+    </h1>
+  </header>
+
+  <p class="browse-status" id="browse-status" role="status" aria-live="polite">Loading…</p>
+
+  <div class="browse-grid" id="browse-grid" hidden></div>
+</main>
+
+<script>
+(function () {
+  const API_BASE = "https://api.epstein.photos";
+//   const API_BASE = "http://localhost:5000";
+
+  const IS_LOCAL =
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
+  const FACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
+
+  function faceImageUrl(path) {
+    if (!path) return null;
+    if (/^https?:\/\//i.test(path)) return path;
+    return (IS_LOCAL ? "" : FACES_CDN_BASE) + path;
+  }
+
+  function displayName(row) {
+    if (row.name && String(row.name).trim()) return String(row.name).trim();
+    const m = /^person_(\d+)$/i.exec(String(row.person_id || ""));
+    if (m) return "Person " + Number(m[1]);
+    return String(row.person_id || "");
+  }
+
+  function photoLabel(n) {
+    const x = Number(n);
+    if (x === 1) return "1 photo";
+    return x + " photos";
+  }
+
+  const statusEl = document.getElementById("browse-status");
+  const gridEl = document.getElementById("browse-grid");
+  const countEl = document.getElementById("browse-title-count");
+
+  fetch(API_BASE + "/faces", { credentials: "omit" })
+    .then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(function (body) {
+      const rows = body && body.data ? body.data : [];
+      countEl.textContent = rows.length ? rows.length + " people" : "";
+      statusEl.textContent = "";
+      statusEl.hidden = true;
+      gridEl.hidden = false;
+      gridEl.innerHTML = "";
+
+      function placeholderEl() {
+        const d = document.createElement("div");
+        d.className = "browse-tile-placeholder";
+        d.setAttribute("aria-hidden", "true");
+        return d;
+      }
+
+      rows.forEach(function (row) {
+        const name = displayName(row);
+        const article = document.createElement("article");
+        article.className = "browse-tile";
+
+        const link = document.createElement("a");
+        link.className = "browse-tile-link";
+        const searchQs = new URLSearchParams();
+        searchQs.set("tab", "people");
+        searchQs.set("person_ids", String(row.person_id || ""));
+        link.href = "../search/?" + searchQs.toString();
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = name + " — open in Search";
+
+        const media = document.createElement("div");
+        media.className = "browse-tile-media";
+
+        const url = faceImageUrl(row.image);
+        if (url) {
+          const img = document.createElement("img");
+          img.className = "browse-tile-img";
+          img.src = url;
+          img.alt = name;
+          img.loading = "lazy";
+          img.decoding = "async";
+          img.onerror = function () {
+            img.remove();
+            media.appendChild(placeholderEl());
+          };
+          media.appendChild(img);
+        } else {
+          media.appendChild(placeholderEl());
+        }
+
+        const cap = document.createElement("div");
+        cap.className = "browse-tile-caption";
+        const nameEl = document.createElement("span");
+        nameEl.className = "browse-tile-name";
+        nameEl.textContent = name;
+        const countLine = document.createElement("span");
+        countLine.className = "browse-tile-photos";
+        countLine.textContent = photoLabel(row.photo_count);
+        cap.appendChild(nameEl);
+        cap.appendChild(countLine);
+
+        link.appendChild(media);
+        link.appendChild(cap);
+        article.appendChild(link);
+        gridEl.appendChild(article);
+      });
+    })
+    .catch(function (err) {
+      statusEl.textContent = "Could not load people (" + (err && err.message ? err.message : "error") + ").";
+      gridEl.hidden = true;
+    });
+})();
+</script>

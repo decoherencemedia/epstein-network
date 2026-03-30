@@ -6,7 +6,7 @@ SITE="$ROOT/site"
 DIST="$ROOT/dist"
 
 rm -rf "$DIST"
-mkdir -p "$DIST/people" "$DIST/about"
+mkdir -p "$DIST/people" "$DIST/search" "$DIST/about"
 
 # Home: graph (no footer — full-viewport viz)
 cat "$SITE/partials/head-root.html" \
@@ -14,10 +14,17 @@ cat "$SITE/partials/head-root.html" \
   "$SITE/pages/home-inner.html" \
   "$SITE/partials/close.html" > "$DIST/index.html"
 
-# Search (/people)
+# Search (/search)
 cat "$SITE/partials/head-people.html" \
   "$SITE/partials/nav-people.html" \
   "$SITE/pages/people-inner.html" \
+  "$SITE/partials/footer.html" \
+  "$SITE/partials/close.html" > "$DIST/search/index.html"
+
+# People gallery (/people) — data from /faces API
+cat "$SITE/partials/head-browse.html" \
+  "$SITE/partials/nav-browse.html" \
+  "$SITE/pages/browse-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/people/index.html"
 

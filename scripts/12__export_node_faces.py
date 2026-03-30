@@ -4,6 +4,9 @@ Export one cropped face image per graph node to `images/node_faces/`.
 This script recomputes the \"best\" face per node using the current pick_best_images scoring,
 so you can iterate on the algorithm quickly without rerunning 10__create_graph.py.
 
+Each crop is saved as ``<SanitizedLabel>_<face_id>.jpg`` where ``face_id`` is the Rekognition
+UUID from ``faces.face_id`` (stable across renames). Top-K exports use distinct face_ids per file.
+
 Safety: skips any image that is explicit (images.moderation_result) or contains a minor face
 (any face in that image with age_range_low/high < 18).
 """
@@ -18,7 +21,7 @@ from typing import Any
 from PIL import Image
 
 from config import DB_PATH, IMAGE_DIR
-from faces_db import pick_best_images
+from faces_db import parse_node_face_export_stem, pick_best_images
 from sheets_common import (
     get_sheet_client,
     load_ignore,
@@ -30,6 +33,7 @@ from sheets_common import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGES_DIR = SCRIPT_DIR.parent / "images"
 TOP_FACES_DIR = IMAGES_DIR / "node_faces_top5"
+SELECTED_FACES_DIR = IMAGES_DIR / "node_faces_selected"
 TOP_K = 5
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -174,14 +178,70 @@ def _label_from_export_filename(
     sanitized_to_label: dict[str, str],
 ) -> str | None:
     """
-    Parse `<sanitized_label>__NNN.ext` and map back to display label.
+    Parse legacy ``Label__NNN`` or ``Label_<face_id>`` stems; map sanitized base to display label.
     Returns None if filename does not match expected pattern or label unknown.
     """
-    stem = path.stem
-    if "__" not in stem:
+    parsed = parse_node_face_export_stem(path.stem)
+    if parsed is None:
         return None
-    sanitized_label = stem.rsplit("__", 1)[0]
-    return sanitized_to_label.get(sanitized_label)
+    base_stem, _sort = parsed
+    return sanitized_to_label.get(base_stem)
+
+
+def _face_id_from_export_stem(stem: str) -> str | None:
+    """
+    Best-effort: stems are either legacy ``Label__NNN`` (no face_id) or ``Label_<uuid>``.
+    For the uuid form, return the suffix after the last underscore if it looks like a UUID.
+    """
+    if "__" in stem:
+        return None
+    # uuid is always after the last "_" in our export naming.
+    suffix = stem.rsplit("_", 1)[-1].strip()
+    if len(suffix) == 36 and suffix.count("-") == 4:
+        return suffix
+    return None
+
+
+def _export_crop(
+    *,
+    con: sqlite3.Connection,
+    person_id: str,
+    safe_label: str,
+    img_name: str,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    face_id: str,
+    roll: float | None,
+    out_dir: Path,
+) -> bool:
+    """
+    Export one crop using the exact same rotation + square crop convention as top-K.
+    Returns True if written.
+    """
+    src_path = IMAGE_DIR / img_name
+    if not src_path.is_file():
+        return False
+    rotation = _rotation_for_roll(roll)
+    bbox = _rotate_bbox(left, top, width, height, rotation)
+    transpose = None
+    if rotation == -90:
+        transpose = Image.Transpose.ROTATE_90
+    elif rotation == 90:
+        transpose = Image.Transpose.ROTATE_270
+    with Image.open(src_path) as img:
+        img.load()
+        if transpose is not None:
+            img = img.transpose(transpose)
+        w, h = img.size
+        x0, y0, x1, y1 = _square_crop_region(bbox[0], bbox[1], bbox[2], bbox[3], w, h)
+        if x1 <= x0 or y1 <= y0:
+            return False
+        crop = img.crop((x0, y0, x1, y1))
+        out = f"{safe_label}_{face_id}.jpg"
+        crop.save(out_dir / out, "JPEG", quality=92)
+        return True
 
 
 if __name__ == "__main__":
@@ -200,18 +260,37 @@ if __name__ == "__main__":
         if _is_explicit_moderation(moderation_result):
             disallowed_images.add(image_name)
 
-    # Node set and display labels from Sheets (Matches + Unknowns minus Ignore).
+    # Graph / top-K: Matches + Unknowns minus Ignore. Selected crops: anyone with people.best_face_id.
     gc = get_sheet_client()
     names = load_names(gc)
     ignore = load_ignore(gc)
     include_person_ids = load_person_ids_matches_and_unknowns(gc) - ignore
-    if not include_person_ids:
-        raise RuntimeError("No person_ids loaded from Matches/Unknowns sheets (after ignore list).")
+    people_names = {str(r[0]): r[1] for r in con.execute("SELECT person_id, name FROM people").fetchall()}
+    best_face_ids: dict[str, str] = {}
+    for pid, fid in con.execute(
+        "SELECT person_id, best_face_id FROM people WHERE best_face_id IS NOT NULL AND best_face_id != ''"
+    ).fetchall():
+        best_face_ids[str(pid)] = str(fid)
+    union_person_ids = include_person_ids | set(best_face_ids.keys())
+    if not union_person_ids:
+        raise RuntimeError(
+            "Nothing to export: no person_ids on Matches/Unknowns (after ignore) and no people.best_face_id set."
+        )
 
     TOP_FACES_DIR.mkdir(parents=True, exist_ok=True)
+    SELECTED_FACES_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _display_label(person_id: str) -> str:
+        sheet = (names.get(person_id) or "").strip()
+        if sheet:
+            return sheet
+        dbn = people_names.get(person_id)
+        if dbn is not None and str(dbn).strip():
+            return str(dbn).strip()
+        return person_id
 
     # Build stable mapping between display labels and sanitized filename labels.
-    label_by_person_id = {pid: (names.get(pid) or pid) for pid in include_person_ids}
+    label_by_person_id = {pid: _display_label(pid) for pid in union_person_ids}
     sanitized_to_label: dict[str, str] = {}
     for label in label_by_person_id.values():
         s = _sanitize_label_for_filename(label)
@@ -225,19 +304,72 @@ if __name__ == "__main__":
 
     # Determine which labels already have exported top-K images.
     existing_labels: set[str] = set()
+    existing_selected_face_ids_by_label: dict[str, set[str]] = defaultdict(set)
     for p in TOP_FACES_DIR.iterdir():
         if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
             continue
         lbl = _label_from_export_filename(p, sanitized_to_label)
         if lbl is not None:
             existing_labels.add(lbl)
+    for p in SELECTED_FACES_DIR.iterdir():
+        if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        lbl = _label_from_export_filename(p, sanitized_to_label)
+        if lbl is None:
+            continue
+        fid = _face_id_from_export_stem(p.stem)
+        if fid:
+            existing_selected_face_ids_by_label[lbl].add(fid)
 
     top_count = 0
     exported_people_count = 0
     skipped_existing = 0
+    selected_count = 0
     failed_exports: list[tuple[str, str, str]] = []
-    for person_id in sorted(include_person_ids):
+    for person_id in sorted(union_person_ids):
         label = label_by_person_id[person_id]
+        safe_label = _sanitize_label_for_filename(label)
+
+        # Export DB-selected face_id (synced earlier by 09) even if top-K already exists for this person/label.
+        selected_face_id = (best_face_ids.get(person_id) or "").strip()
+        if selected_face_id and selected_face_id not in existing_selected_face_ids_by_label.get(label, set()):
+            row = con.execute(
+                """
+                SELECT image_name, left, top, width, height, index_face_record
+                FROM faces
+                WHERE person_id = ? AND face_id = ?
+                LIMIT 1
+                """,
+                (person_id, selected_face_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    "people.best_face_id does not exist in faces table for person_id: "
+                    f"{person_id} -> {selected_face_id}"
+                )
+            img_name_s, left_s, top_s, width_s, height_s, index_face_record_s = row
+            roll_s = _extract_roll(index_face_record_s)
+            if _export_crop(
+                con=con,
+                person_id=person_id,
+                safe_label=safe_label,
+                img_name=str(img_name_s),
+                left=float(left_s),
+                top=float(top_s),
+                width=float(width_s),
+                height=float(height_s),
+                face_id=selected_face_id,
+                roll=roll_s,
+                out_dir=SELECTED_FACES_DIR,
+            ):
+                existing_selected_face_ids_by_label[label].add(selected_face_id)
+                selected_count += 1
+
+        # Top-K only for people on Matches/Unknowns (graph nodes); not for off-sheet people with only best_face_id.
+        if person_id not in include_person_ids:
+            continue
+
+        # If we already exported the top-K set for this label, skip recomputing them.
         if label in existing_labels:
             skipped_existing += 1
             continue
@@ -254,11 +386,13 @@ if __name__ == "__main__":
 
         best_list = pick_best_images(con, person_id, n=25, pool_size=80, image_dir=IMAGE_DIR)
         chosen = None
-        top_candidates: list[tuple[str, float, float, float, float]] = []
-        for image_name, left, top, width, height in best_list:
+        top_candidates: list[tuple[str, float, float, float, float, str]] = []
+        for image_name, left, top, width, height, face_id in best_list:
             if image_name in disallowed_images:
                 continue
-            cand = (image_name, float(left), float(top), float(width), float(height))
+            if not face_id:
+                continue
+            cand = (image_name, float(left), float(top), float(width), float(height), str(face_id))
             if chosen is None:
                 chosen = cand
             if len(top_candidates) < TOP_K:
@@ -270,33 +404,23 @@ if __name__ == "__main__":
             continue
 
         # Also export top-K similarly cropped faces per person.
-        safe_label = _sanitize_label_for_filename(label)
         exported_for_person = 0
-        for idx, (img_name_k, left_k, top_k, width_k, height_k) in enumerate(top_candidates):
+        for img_name_k, left_k, top_k, width_k, height_k, face_id_k in top_candidates:
+            # For top-K, compute roll via nearest bbox match to keep behavior stable.
             roll_k = _best_roll_for_bbox(con, person_id, img_name_k, left_k, top_k, width_k, height_k)
-            rotation_k = _rotation_for_roll(roll_k)
-            bbox_k = _rotate_bbox(left_k, top_k, width_k, height_k, rotation_k)
-            src_path_k = IMAGE_DIR / img_name_k
-            if not src_path_k.is_file():
-                continue
-            transpose_k = None
-            if rotation_k == -90:
-                transpose_k = Image.Transpose.ROTATE_90
-            elif rotation_k == 90:
-                transpose_k = Image.Transpose.ROTATE_270
-            with Image.open(src_path_k) as img_k:
-                img_k.load()
-                if transpose_k is not None:
-                    img_k = img_k.transpose(transpose_k)
-                w_k, h_k = img_k.size
-                x0_k, y0_k, x1_k, y1_k = _square_crop_region(
-                    bbox_k[0], bbox_k[1], bbox_k[2], bbox_k[3], w_k, h_k
-                )
-                if x1_k <= x0_k or y1_k <= y0_k:
-                    continue
-                crop_k = img_k.crop((x0_k, y0_k, x1_k, y1_k))
-                out_k = f"{safe_label}__{idx:03d}.jpg"
-                crop_k.save(TOP_FACES_DIR / out_k, "JPEG", quality=92)
+            if _export_crop(
+                con=con,
+                person_id=person_id,
+                safe_label=safe_label,
+                img_name=img_name_k,
+                left=left_k,
+                top=top_k,
+                width=width_k,
+                height=height_k,
+                face_id=face_id_k,
+                roll=roll_k,
+                out_dir=TOP_FACES_DIR,
+            ):
                 exported_for_person += 1
                 top_count += 1
         if exported_for_person == 0:
@@ -315,6 +439,6 @@ if __name__ == "__main__":
 
     print(f"Skipped {skipped_existing} person_id(s) with existing top-K exports in {TOP_FACES_DIR}.")
     print(
-        f"Wrote {top_count} top-{TOP_K} node face crops for "
-        f"{exported_people_count} different people to {TOP_FACES_DIR}."
+        f"Wrote {top_count} top-{TOP_K} node face crops to {TOP_FACES_DIR} "
+        f"({exported_people_count} people) and {selected_count} best_face_id crop(s) to {SELECTED_FACES_DIR}."
     )

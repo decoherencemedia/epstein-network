@@ -34,7 +34,10 @@ REPO_DIR = SCRIPT_DIR.parent
 
 # Run configuration (repo-root paths)
 INPUT_DIR = REPO_DIR / "images" / "node_faces_optimized"
-VICTIM_IMAGE = INPUT_DIR / "victim.png",
+VICTIM_IMAGE_CANDIDATES = (
+    INPUT_DIR / "victim.webp",
+    INPUT_DIR / "victim.png",
+)
 OUTPUT_DIR = REPO_DIR / "images"
 VIZ_DATA_DIR = REPO_DIR / "viz_data"
 DATASET_PATH = VIZ_DATA_DIR / "dataset.json"
@@ -47,9 +50,37 @@ ATLAS_FORMAT = "webp"  # keep constant: this is a small pipeline helper
 # Supported image extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
-FACE_IDX_SUFFIX_RE = re.compile(r"^(.*)__(\d{3})$")
 # Matches anonymized victim labels from 10__create_graph.py (e.g. "Victim 1").
 VICTIM_LABEL_RE = re.compile(r"^Victim \d+$")
+
+# Legacy ``12`` export: ``SanitizedLabel__NNN`` (double underscore + three digits).
+NODE_FACE_LEGACY_STEM_RE = re.compile(r"^(.*)__(\d{3})$")
+# UUID exports: ``SanitizedLabel_<face_id>`` — find the dashed Rekognition id at the **end** only.
+# Anchoring the UUID to ``$`` avoids ``^(.+)_`` greedy-split bugs when the label contains
+# periods (e.g. ``George_M._Church_<uuid>``).
+NODE_FACE_UUID_TAIL_RE = re.compile(
+    r"_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    re.I,
+)
+
+
+def parse_atlas_face_stem(stem: str) -> tuple[str, tuple[int, int | str]] | None:
+    """
+    Map a filename stem (no extension) to ``(sanitized_label_stem, sort_key)``.
+
+    ``sort_key`` orders picks per label: legacy ``__NNN`` (kind 0), then UUID (kind 1),
+    then a bare stem with no suffix (kind 2), e.g. ``George_M._Church`` from ``.webp`` alone.
+    """
+    if not stem:
+        return None
+    m = NODE_FACE_LEGACY_STEM_RE.match(stem)
+    if m:
+        return (m.group(1), (0, int(m.group(2))))
+    m = NODE_FACE_UUID_TAIL_RE.search(stem)
+    if m is not None and m.start() > 0:
+        return (stem[: m.start()], (1, m.group(1).lower()))
+    # No ``__NNN`` / ``_<uuid>`` suffix: whole stem is the sanitized label (optimize-only crop, etc.).
+    return (stem, (2, 0))
 
 
 def is_victim_label(label: str) -> bool:
@@ -113,7 +144,10 @@ def collect_images(input_dir: Path, extensions: set[str]) -> list[tuple[Path, st
 
 def resolve_victim_image_path() -> Path | None:
     """Return victim placeholder image path if present in known locations."""
-    return INPUT_DIR / "victim.webp"
+    for p in VICTIM_IMAGE_CANDIDATES:
+        if p.is_file():
+            return p
+    return None
 
 
 def build_atlas(
@@ -139,16 +173,15 @@ def build_atlas(
     # First map image files to graph node labels and pick one best image per label.
     unmatched_inputs: list[str] = []
     victim_skipped_files: list[str] = []
-    best_by_label: dict[str, tuple[int, Path]] = {}
+    best_by_label: dict[str, tuple[tuple[int, int | str], Path]] = {}
     for path, stem in image_list:
-        base_stem = stem
-        face_idx = 0
-        m = FACE_IDX_SUFFIX_RE.match(stem)
-        if m:
-            base_stem = m.group(1)
-            face_idx = int(m.group(2))
+        parsed = parse_atlas_face_stem(stem)
+        if parsed is None:
+            unmatched_inputs.append(path.name)
+            continue
+        base_stem, sort_key = parsed
 
-        # Filenames use sheet names (e.g. ``Jane_Doe__000``), not graph labels (``Victim_1``).
+        # Filenames use sheet names (e.g. ``Jane_Doe__000`` or ``Jane_Doe_<uuid>``), not graph labels (``Victim_1``).
         if base_stem in victim_sanitized_stems:
             victim_skipped_files.append(path.name)
             continue
@@ -162,9 +195,9 @@ def build_atlas(
             continue
 
         prev = best_by_label.get(key)
-        if prev is None or face_idx < prev[0]:
-            # Prefer the best face for each node base-stem (lowest `__NNN`).
-            best_by_label[key] = (face_idx, path)
+        if prev is None or sort_key < prev[0]:
+            # Prefer one file per label: lowest ``__NNN`` (legacy) or lexicographically smallest face_id.
+            best_by_label[key] = (sort_key, path)
 
     selected: list[tuple[str, Path]] = [
         (label, best_by_label[label][1]) for label in sorted(best_by_label.keys())

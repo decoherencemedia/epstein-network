@@ -15,7 +15,7 @@
     const params = new URLSearchParams();
     params.set("tab", "people");
     params.set("person_ids", ids.join(","));
-    return "/people/?" + params.toString();
+    return "/search/?" + params.toString();
   }
 
   /** Same order as Search page chips: first selected = index 0, … */

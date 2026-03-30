@@ -6,9 +6,10 @@ Used by preprocess (writes has_face), cluster (writes indexed + faces.person_id)
 
 import json
 import math
+import re
 import sqlite3
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from PIL import Image
 
@@ -222,6 +223,45 @@ def _ensure_people_table_and_migrate_celebrity_done(conn):
     conn.commit()
 
 
+def _ensure_people_best_face_id_column(conn) -> None:
+    """Best face selection from Google Sheets column J (Best Face ID)."""
+    try:
+        conn.execute("ALTER TABLE people ADD COLUMN best_face_id TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists (or table missing, but init order ensures it exists).
+        pass
+
+
+def _validate_best_face_ids_exist(conn, best_face_ids: dict[str, str]) -> None:
+    """
+    Ensure each (person_id -> best_face_id) refers to an existing row in faces.
+
+    This fails fast so downstream exporters/graph builders don't silently fall back
+    to a different face than the one selected in the spreadsheet.
+    """
+    if not best_face_ids:
+        return
+    c = conn.cursor()
+    missing: list[tuple[str, str]] = []
+    for pid, fid in best_face_ids.items():
+        if not fid:
+            continue
+        row = c.execute(
+            "SELECT 1 FROM faces WHERE person_id = ? AND face_id = ? LIMIT 1",
+            (pid, fid),
+        ).fetchone()
+        if row is None:
+            missing.append((pid, fid))
+    if missing:
+        missing_preview = "\n".join(f"- {pid} -> {fid}" for pid, fid in missing[:20])
+        more = "" if len(missing) <= 20 else f"\n(and {len(missing) - 20} more)"
+        raise ValueError(
+            "Invalid 'Best Face ID' selection(s): face_id not found for person_id in SQLite faces table.\n"
+            f"{missing_preview}{more}"
+        )
+
+
 def sync_people_from_google_sheets(conn, gc) -> None:
     """
     Upsert `people` from Matches / Unknowns / Ignore sheets (see sheets_common).
@@ -235,6 +275,7 @@ def sync_people_from_google_sheets(conn, gc) -> None:
     Does not clear celebrity_check_done.
     """
     from sheets_common import (
+        load_best_face_ids,
         load_ignore,
         load_names,
         load_person_ids_matches_and_unknowns,
@@ -245,6 +286,9 @@ def sync_people_from_google_sheets(conn, gc) -> None:
     include_ids = load_person_ids_matches_and_unknowns(gc)
     ignore_ids = load_ignore(gc)
     victim_flags = load_victim_flags(gc)
+    best_face_ids = load_best_face_ids(gc)
+
+    _validate_best_face_ids_exist(conn, best_face_ids)
 
     all_ids = set(names.keys()) | include_ids | ignore_ids
     victim_pids_sorted = sorted(pid for pid in all_ids if victim_flags.get(pid))
@@ -253,6 +297,7 @@ def sync_people_from_google_sheets(conn, gc) -> None:
     }
 
     c = conn.cursor()
+    _ensure_people_best_face_id_column(conn)
     c.execute("UPDATE people SET is_victim = 0")
     c.execute("UPDATE images SET contains_victim = 0")
     for pid in all_ids:
@@ -267,16 +312,18 @@ def sync_people_from_google_sheets(conn, gc) -> None:
             nm = victim_display_name[pid]
         else:
             nm = names.get(pid)
+        best_face_id = best_face_ids.get(pid)
         c.execute(
             """
-            INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)
-            VALUES (?, 0, ?, ?, ?)
+            INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim, best_face_id)
+            VALUES (?, 0, ?, ?, ?, ?)
             ON CONFLICT(person_id) DO UPDATE SET
                 name = excluded.name,
                 include_in_network = excluded.include_in_network,
-                is_victim = excluded.is_victim
+                is_victim = excluded.is_victim,
+                best_face_id = excluded.best_face_id
             """,
-            (pid, nm, inc, is_victim),
+            (pid, nm, inc, is_victim, best_face_id),
         )
     refresh_images_contains_victim(conn)
     conn.commit()
@@ -397,13 +444,38 @@ def upsert_image_moderation(conn, image_name, moderation_result_json, *, commit=
 # --------------- Best-face selection (shared by 07 and 09) ---------------
 
 def get_appearances_for_person(conn, person_id: str) -> List[Tuple]:
-    """Return list of (image_name, left, top, width, height, index_face_record) for that person."""
+    """Return list of (image_name, left, top, width, height, index_face_record, face_id) for that person."""
     c = conn.cursor()
     c.execute(
-        "SELECT image_name, left, top, width, height, index_face_record FROM faces WHERE person_id = ?",
+        "SELECT image_name, left, top, width, height, index_face_record, face_id FROM faces WHERE person_id = ?",
         (person_id,),
     )
     return [row for row in c.fetchall()]
+
+
+# Stems from ``12__export_node_faces``: legacy ``Label__NNN`` or ``Label_<rekognition-uuid>``.
+NODE_FACE_EXPORT_LEGACY_RE = re.compile(r"^(.*)__(\d{3})$")
+NODE_FACE_EXPORT_UUID_RE = re.compile(
+    r"^(.+)_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    re.I,
+)
+
+
+def parse_node_face_export_stem(stem: str) -> Optional[Tuple[str, Tuple[int, Union[int, str]]]]:
+    """
+    Parse a node-face export filename stem (no extension).
+
+    Returns ``(sanitized_label_base, (kind, sort_key))`` where kind ``0`` = legacy ``__NNN``,
+    kind ``1`` = Rekognition ``face_id``. Compare tuples lexicographically to pick one file
+    per label (lowest ``__NNN`` or lexicographically smallest UUID among ``_uuid`` files).
+    """
+    m = NODE_FACE_EXPORT_LEGACY_RE.match(stem)
+    if m:
+        return (m.group(1), (0, int(m.group(2))))
+    m = NODE_FACE_EXPORT_UUID_RE.match(stem)
+    if m:
+        return (m.group(1), (1, m.group(2).lower()))
+    return None
 
 
 def _clamp(x: float, lo: float, hi: float) -> float:
@@ -566,9 +638,9 @@ def pick_best_images(
     dhash_size: int = 8,
     min_hamming: int = 10,
     debug_person_id: Optional[str] = None,
-) -> List[Tuple[str, float, float, float, float]]:
+) -> List[Tuple[str, float, float, float, float, str]]:
     """
-    Return up to n best (image_name, left, top, width, height) for this person.
+    Return up to n best (image_name, left, top, width, height, face_id) for this person.
 
     Selection: pool by size (bbox area × image pixels), rerank by size_term × (quality × edge_penalty)^0.6,
     then greedily add by dHash diversity. Quality includes sharpness, pose, brightness, and a strong
@@ -604,7 +676,7 @@ def pick_best_images(
         )
 
     by_size: List[Tuple[float, Tuple]] = []
-    for image_name, left, top, width, height, index_face_record in appearances:
+    for image_name, left, top, width, height, index_face_record, face_id in appearances:
         path = image_dir / image_name
         if not path.is_file():
             raise FileNotFoundError(f"Image file missing for person {person_id}: {path}")
@@ -613,14 +685,25 @@ def pick_best_images(
         h = int(h)
         base = (float(width) * float(height)) * (w * h)
         by_size.append(
-            (base, (image_name, float(left), float(top), float(width), float(height), index_face_record))
+            (
+                base,
+                (
+                    image_name,
+                    float(left),
+                    float(top),
+                    float(width),
+                    float(height),
+                    index_face_record,
+                    str(face_id) if face_id is not None else "",
+                ),
+            )
         )
     by_size.sort(key=lambda x: x[0], reverse=True)
     pool = [t for _, t in by_size[: max(n, pool_size)]]
 
-    scored: List[Tuple[float, Tuple[str, float, float, float, float]]] = []
+    scored: List[Tuple[float, Tuple[str, float, float, float, float, str]]] = []
     debug_rows: List[dict] = []
-    for image_name, left, top, width, height, index_face_record in pool:
+    for image_name, left, top, width, height, index_face_record, face_id in pool:
         path = image_dir / image_name
         w, h = image_dims[str(image_name)]
         w = int(w)
@@ -631,7 +714,7 @@ def pick_best_images(
         edge = _edge_penalty(left, top, width, height)
         size = _size_term(base)
         score = size * ((mult * edge) ** 0.6)
-        scored.append((score, (image_name, left, top, width, height)))
+        scored.append((score, (image_name, left, top, width, height, str(face_id) if face_id else "")))
         if debug_person_id is not None and person_id == debug_person_id:
             comp = _index_quality_components(idx)
             debug_rows.append({
@@ -659,10 +742,10 @@ def pick_best_images(
             print(f"      image_name={row['image_name']}")
         print("---\n")
 
-    selected: List[Tuple[str, float, float, float, float]] = []
+    selected: List[Tuple[str, float, float, float, float, str]] = []
     selected_hashes: List[int] = []
     for _, app in scored:
-        image_name, left, top, width, height = app
+        image_name, left, top, width, height, face_id = app
         src = image_dir / image_name
         if not src.is_file():
             continue
@@ -670,16 +753,18 @@ def pick_best_images(
         h = _dhash(crop, hash_size=dhash_size)
         if any(_hamming_distance(h, hh) < min_hamming for hh in selected_hashes):
             continue
-        selected.append(app)
+        selected.append((image_name, left, top, width, height, face_id))
         selected_hashes.append(h)
         if len(selected) >= n:
             break
 
     if len(selected) < n:
         for _, app in scored:
-            if app in selected:
+            image_name, left, top, width, height, face_id = app
+            tup = (image_name, left, top, width, height, face_id)
+            if tup in selected:
                 continue
-            selected.append(app)
+            selected.append(tup)
             if len(selected) >= n:
                 break
     return selected[:n]

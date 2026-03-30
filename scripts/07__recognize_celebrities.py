@@ -139,7 +139,7 @@ def process_person(person_id: str, conn) -> Optional[str]:
     best_celeb: Optional[dict] = None
     best_confidence = 0.0
 
-    for image_name, left, top, width, height in best_appearances:
+    for image_name, left, top, width, height, _face_id in best_appearances:
         path = IMAGE_DIR / image_name
         if not path.is_file():
             raise FileNotFoundError(f"Image file missing: {path}")

@@ -114,6 +114,49 @@ def load_victim_flags(gc: gspread.Client) -> dict[str, bool]:
     return result
 
 
+def _load_best_face_ids_for_sheet(book: gspread.Spreadsheet, sheet_name: str) -> dict[str, str]:
+    """
+    Load person_id -> best_face_id from column J (Best Face ID) on one sheet.
+    Empty cells are ignored. Assumes Person ID is column B (index 1).
+    """
+    ws = book.worksheet(sheet_name)
+    rows = ws.get_all_values()
+    if not rows:
+        return {}
+    start = 0
+    if rows and rows[0]:
+        # Be tolerant of header variations; avoid treating "Person ID" / "Best Face ID" as data.
+        a0 = (rows[0][0] or "").strip().lower()
+        b0 = (rows[0][1] or "").strip().lower() if len(rows[0]) >= 2 else ""
+        j0 = (rows[0][9] or "").strip().lower() if len(rows[0]) >= 10 else ""
+        if a0 == "name" or b0 == "person id" or j0 == "best face id":
+            start = 1
+    result: dict[str, str] = {}
+    for row in rows[start:]:
+        if len(row) < 10:
+            continue
+        person_id = (row[1] or "").strip()
+        if not person_id:
+            continue
+        best_face_id = (row[9] or "").strip()  # column J = index 9
+        if person_id.lower() == "person id" or best_face_id.lower() == "best face id":
+            continue
+        if best_face_id:
+            result[person_id] = best_face_id
+    return result
+
+
+def load_best_face_ids(gc: gspread.Client) -> dict[str, str]:
+    """
+    Load person_id -> best_face_id from column J (Best Face ID) on both
+    Matches and Unknowns sheets. Unknowns values override Matches if duplicated.
+    """
+    book = get_workbook(gc)
+    result = _load_best_face_ids_for_sheet(book, "Matches")
+    result.update(_load_best_face_ids_for_sheet(book, "Unknowns"))
+    return result
+
+
 def load_ignore(gc: gspread.Client) -> set[str]:
     """Load set of person_ids from the 'Ignore' sheet (col A = Person ID)."""
     book = get_workbook(gc)

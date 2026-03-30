@@ -3,7 +3,7 @@ import json
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import pandas as pd
 from itertools import combinations
@@ -18,7 +18,7 @@ from sheets_common import (
     load_person_ids_matches_and_unknowns,
 )
 from config import DB_PATH
-from faces_db import pick_best_images
+from faces_db import parse_node_face_export_stem, pick_best_images
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -28,9 +28,9 @@ VIZ_DATA_DIR = REPO_DIR / "viz_data"
 OUTPUT_GRAPHML = REPO_DIR / "graphml" / "epstein_photo_people.graphml"
 
 # Manual node face crops: run ``13__optimize_node_faces.sh`` to build WebPs from
-# ``node_faces_selected/`` into this directory. Same naming as node_faces_top5: ``Label__NNN.*``.
+# ``node_faces_selected/`` into this directory. Names match ``12__export_node_faces``:
+# legacy ``Label__NNN`` or ``Label_<face_id>`` (see ``faces_db.parse_node_face_export_stem``).
 NODE_FACES_OPTIMIZED_DIR = REPO_DIR / "images" / "node_faces_selected_optimized"
-FACE_IDX_SUFFIX_RE = re.compile(r"^(.*)__(\d{3})$")
 
 
 def _is_explicit_moderation(moderation_result: str | None) -> bool:
@@ -81,9 +81,8 @@ def _stem_to_label_from_graph(nodes: Any) -> dict[str, str]:
 def _collect_best_selected_face_webp_by_label(stem_to_label: dict[str, str]) -> dict[str, str]:
     """
     For each graph label, pick the best ``*.webp`` under NODE_FACES_OPTIMIZED_DIR (recursive).
-    Filenames use ``Stem__NNN.webp``; lowest NNN wins. Keys in image_data are ``faces/<basename>.webp``.
-
-    Returns: label -> basename (e.g. ``Brooke_Visoski__001.webp``).
+    Filenames follow ``12__export_node_faces``: legacy ``Stem__NNN`` or ``Stem_<face_id>``.
+    Keys in image_data are ``faces/<basename>.webp``.
     """
     if not NODE_FACES_OPTIMIZED_DIR.is_dir():
         return {}
@@ -91,7 +90,7 @@ def _collect_best_selected_face_webp_by_label(stem_to_label: dict[str, str]) -> 
     if not paths:
         return {}
 
-    by_label: dict[str, tuple[int, str]] = {}
+    by_label: dict[str, tuple[tuple[int, Union[int, str]], str]] = {}
     seen_basenames: dict[str, Path] = {}
 
     for path in sorted(paths):
@@ -102,26 +101,23 @@ def _collect_best_selected_face_webp_by_label(stem_to_label: dict[str, str]) -> 
             )
         seen_basenames[path.name] = path
 
-        stem = path.stem
-        base_stem = stem
-        face_idx = 0
-        m = FACE_IDX_SUFFIX_RE.match(stem)
-        if m:
-            base_stem = m.group(1)
-            face_idx = int(m.group(2))
+        parsed = parse_node_face_export_stem(path.stem)
+        if parsed is None:
+            print(
+                f"WARNING: unrecognised node face filename stem {path.stem!r} ({path.name}); skipped"
+            )
+            continue
+        base_stem, sort_key = parsed
 
         label = stem_to_label.get(base_stem)
         if label is None:
-            print(
-                f"WARNING: no graph node for selected face stem {base_stem!r} ({path.name}); skipped"
-            )
             continue
 
         prev = by_label.get(label)
-        if prev is None or face_idx < prev[0]:
-            by_label[label] = (face_idx, path.name)
+        if prev is None or sort_key < prev[0]:
+            by_label[label] = (sort_key, path.name)
 
-    return {lbl: fn for lbl, (_i, fn) in by_label.items()}
+    return {lbl: fn for lbl, (_sk, fn) in by_label.items()}
 
 
 def _load_victim_person_ids_and_labels(
@@ -296,7 +292,7 @@ if __name__ == "__main__":
             node_images[label] = [f"faces/{basename}", None]
             continue
         best_list = pick_best_images(con, person_id, n=10)
-        for image_name, left, top, width, height in best_list:
+        for image_name, left, top, width, height, _fid in best_list:
             if image_name not in disallowed_images and image_name in safe_preview_images:
                 bbox = [left, top, width, height]
                 node_images[label] = [_to_webp_filename(image_name), bbox]

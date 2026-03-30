@@ -162,7 +162,7 @@
         : `${SPACES_CDN_BASE}/atlas/atlas.webp`;
 
       function sanitizeLabelForAtlasKey(label) {
-        // Match scripts/11__export_node_faces.py and scripts/14__build_atlas.py.
+        // Match scripts/12__export_node_faces.py and scripts/15__build_atlas.py.
         const s = String(label || "").split("").filter((c) => {
           const isAlnum = /^[0-9A-Za-z]$/.test(c);
           const isAllowed = "._- ".includes(c);
@@ -173,8 +173,8 @@
       }
 
       const atlasKeyByBaseStem = (() => {
-        // If atlas_manifest.json keys are filename stems like `Jeffrey_Epstein__003`,
-        // map `baseStem -> bestKey` (prefer smallest idx, commonly __000).
+        // If atlas_manifest.json keys are filename stems (`Label__NNN` or `Label_<face_id>`),
+        // map `baseStem -> bestKey` for lookup.
         const m = new Map();
         if (!atlasManifest || typeof atlasManifest !== "object") return m;
         const re = /^(.*)__(\d{3})$/;
@@ -655,7 +655,7 @@
         if (!ids.length) return null;
         const params = new URLSearchParams();
         params.set("person_ids", ids.join(","));
-        return `/people/?${params.toString()}`;
+        return `/search/?${params.toString()}`;
       }
 
       function peopleUrlForPersonIdsWithPhoto(personIds, photoFilename) {
@@ -1238,7 +1238,7 @@
         const filename = edgePreview.filename;
         const edgeBboxes = edgePreview.edgeBboxes;
         const total = d.weight;
-        // Alphabetically first label = palette[0], second = palette[1] (same as /people chip order convention)
+        // Alphabetically first label = palette[0], second = palette[1] (same as /search chip order convention)
         const bboxColors = sLabel <= tLabel
           ? { [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND }
           : { [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND };
