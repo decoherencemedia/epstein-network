@@ -61,7 +61,7 @@
 
   <section class="people-results-wrap" id="people-results-wrap" hidden>
     <h2 class="people-results-heading" id="people-results-heading">Photos</h2>
-    <div class="people-masonry" id="people-masonry"></div>
+    <div class="people-justified" id="people-masonry"></div>
   </section>
 
   <div class="people-lightbox" id="people-lightbox" hidden aria-hidden="true">
@@ -285,7 +285,6 @@
 
 <script src="../js/shared.js"></script>
 <script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/masonry-layout@4/dist/masonry.pkgd.min.js" crossorigin="anonymous"></script>
 <script>
 (function () {
   const API_BASE = "https://api.epstein.photos";
@@ -658,22 +657,52 @@
     });
   }
 
-  function appendThumbFaceBoxes(overlayEl, faces) {
+  /**
+   * Face bboxes are normalized to the image bitmap; thumbs use object-fit: cover — map into overlay %.
+   * @param {HTMLElement} overlayEl
+   * @param {unknown} faces
+   * @param {HTMLImageElement} img
+   */
+  function positionThumbFaceBoxes(overlayEl, faces, img) {
     overlayEl.innerHTML = "";
     if (!faces || typeof faces !== "object") return;
+    const rect = getCoveredImageRect(img);
+    if (!rect) return;
+    const cw = img.clientWidth;
+    const ch = img.clientHeight;
+    const ox = rect.ox;
+    const oy = rect.oy;
+    const dw = rect.dw;
+    const dh = rect.dh;
     const colorMap = buildFaceColorMap(faces);
     const entries = sortFaceEntries(normalizeFaceEntries(faces));
     entries.forEach(function (entry) {
       const boxData = entry.box;
       const box = document.createElement("div");
       box.className = "people-face-box";
-      box.style.left = boxData.left * 100 + "%";
-      box.style.top = boxData.top * 100 + "%";
-      box.style.width = boxData.w * 100 + "%";
-      box.style.height = boxData.h * 100 + "%";
+      box.style.left = (ox + boxData.left * dw) / cw * 100 + "%";
+      box.style.top = (oy + boxData.top * dh) / ch * 100 + "%";
+      box.style.width = (boxData.w * dw) / cw * 100 + "%";
+      box.style.height = (boxData.h * dh) / ch * 100 + "%";
       box.style.borderColor = colorMap[entry.personId] || "#888";
       overlayEl.appendChild(box);
     });
+  }
+
+  /**
+   * @param {HTMLElement} overlayEl
+   * @param {unknown} faces
+   * @param {HTMLImageElement} img
+   */
+  function appendThumbFaceBoxes(overlayEl, faces, img) {
+    overlayEl._thumbFaces = faces;
+    function sync() {
+      positionThumbFaceBoxes(overlayEl, faces, img);
+    }
+    sync();
+    if (!img.complete || !img.naturalWidth) {
+      img.addEventListener("load", sync, { once: true });
+    }
   }
 
   /** Pixel geometry of the image bitmap as drawn with object-fit: contain inside the img element. */
@@ -684,6 +713,21 @@
     const ch = img.clientHeight;
     if (!nw || !nh || !cw || !ch) return null;
     const scale = Math.min(cw / nw, ch / nh);
+    const dw = nw * scale;
+    const dh = nh * scale;
+    const ox = (cw - dw) / 2;
+    const oy = (ch - dh) / 2;
+    return { ox, oy, dw, dh };
+  }
+
+  /** Same as visible bitmap with object-fit: cover + object-position: center (search thumbs). */
+  function getCoveredImageRect(img) {
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    const cw = img.clientWidth;
+    const ch = img.clientHeight;
+    if (!nw || !nh || !cw || !ch) return null;
+    const scale = Math.max(cw / nw, ch / nh);
     const dw = nw * scale;
     const dh = nh * scale;
     const ox = (cw - dw) / 2;
@@ -844,14 +888,175 @@
 
   let lightboxResizeObserver = null;
 
-  /** @type {any} */
-  let peopleMasonryInstance = null;
   let masonryResizeTimer = null;
+  /** @type {ResizeObserver | null} */
+  let justifiedResizeObserver = null;
+  /**
+   * @type {{ elements: HTMLElement[], ratios: number[] } | null}
+   */
+  let justifiedState = null;
 
   function destroyPeopleMasonry() {
-    if (peopleMasonryInstance) {
-      peopleMasonryInstance.destroy();
-      peopleMasonryInstance = null;
+    justifiedState = null;
+    if (justifiedResizeObserver) {
+      justifiedResizeObserver.disconnect();
+      justifiedResizeObserver = null;
+    }
+  }
+
+  function parseCssPxVar(el, prop, fallback) {
+    const raw = getComputedStyle(el).getPropertyValue(prop).trim();
+    const n = parseFloat(raw);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  /** Desktop / mobile ranges set on `.people-justified` in styles.css */
+  function readJustifiedRowHeightRange() {
+    const a = parseCssPxVar(masonryEl, "--people-justified-row-height-min", 168);
+    const b = parseCssPxVar(masonryEl, "--people-justified-row-height-max", 248);
+    return { minH: Math.min(a, b), maxH: Math.max(a, b) };
+  }
+
+  function readJustifiedGapPx() {
+    return parseCssPxVar(masonryEl, "--people-justified-gap", 4);
+  }
+
+  /**
+   * Width available for rows: #people-masonry has horizontal padding for gutters; clientWidth
+   * includes that padding, so subtract it or rows overflow and the right gutter disappears.
+   * @param {HTMLElement} el
+   */
+  function readJustifiedContentWidth(el) {
+    const cs = getComputedStyle(el);
+    const pl = parseFloat(cs.paddingLeft) || 0;
+    const pr = parseFloat(cs.paddingRight) || 0;
+    const inner = el.clientWidth;
+    return Math.max(0, inner - pl - pr);
+  }
+
+  /**
+   * Sum of ideal widths at height H plus gaps between items.
+   * @param {number[]} ratios width/height
+   * @param {number} H
+   * @param {number} gap
+   */
+  function justifiedRowIdealWidth(ratios, H, gap) {
+    let sum = 0;
+    for (let i = 0; i < ratios.length; i++) {
+      sum += ratios[i] * H;
+    }
+    return sum + gap * Math.max(0, ratios.length - 1);
+  }
+
+  /**
+   * Greedy row breaks: pack left-to-right until the next image would overflow at ideal height H_ref
+   * (midpoint of min/max row height — only affects how many items per row).
+   * @param {number[]} ratios
+   * @param {number} containerWidth
+   * @param {number} gap
+   * @param {number} HRef
+   * @returns {{ start: number, end: number }[]} end is exclusive
+   */
+  function partitionJustifiedRows(ratios, containerWidth, gap, HRef) {
+    const rows = [];
+    let i = 0;
+    const n = ratios.length;
+    while (i < n) {
+      let j = i;
+      while (j < n) {
+        const slice = ratios.slice(i, j + 1);
+        const w = justifiedRowIdealWidth(slice, HRef, gap);
+        if (w <= containerWidth) {
+          j++;
+        } else {
+          break;
+        }
+      }
+      if (j === i) {
+        j = i + 1;
+      }
+      rows.push({ start: i, end: j });
+      i = j;
+    }
+    return rows;
+  }
+
+  function ensureJustifiedResizeObserver() {
+    if (justifiedResizeObserver) return;
+    justifiedResizeObserver = new ResizeObserver(function () {
+      if (!justifiedState) return;
+      clearTimeout(masonryResizeTimer);
+      masonryResizeTimer = setTimeout(function () {
+        layoutJustifiedFromState();
+      }, 100);
+    });
+    justifiedResizeObserver.observe(masonryEl);
+  }
+
+  function layoutJustifiedFromState() {
+    if (!justifiedState || !justifiedState.elements.length) return;
+    const W = readJustifiedContentWidth(masonryEl);
+    if (W <= 0) return;
+    const gap = readJustifiedGapPx();
+    const range = readJustifiedRowHeightRange();
+    const H_ref = (range.minH + range.maxH) / 2;
+    const ratios = justifiedState.ratios;
+    const rows = partitionJustifiedRows(ratios, W, gap, H_ref);
+    masonryEl.innerHTML = "";
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      const rowRatios = ratios.slice(row.start, row.end);
+      const n = rowRatios.length;
+      const contentW = W - gap * (n - 1);
+      const sumR = rowRatios.reduce(function (s, x) {
+        return s + x;
+      }, 0);
+      const hIdeal = contentW / sumR;
+      let h = Math.max(range.minH, Math.min(range.maxH, hIdeal));
+      let widths = rowRatios.map(function (r) {
+        return r * h;
+      });
+      let sumW = widths.reduce(function (s, x) {
+        return s + x;
+      }, 0);
+      if (sumW > contentW + 0.5) {
+        /* Row would overflow at clamped height — use exact aspect fit (may sit outside min/max). */
+        h = hIdeal;
+        widths = rowRatios.map(function (r) {
+          return r * h;
+        });
+      } else if (sumW < contentW - 0.5) {
+        /* Clamp made the row too short — fill width; fixed h + cover crops a bit less than stretching height. */
+        widths = rowRatios.map(function (r) {
+          return contentW * (r / sumR);
+        });
+      }
+      const rowEl = document.createElement("div");
+      rowEl.className = "people-justified-row";
+      for (let k = row.start; k < row.end; k++) {
+        const el = justifiedState.elements[k];
+        const idx = k - row.start;
+        const rw = widths[idx];
+        el.style.width = Math.round(rw * 100) / 100 + "px";
+        el.style.height = Math.round(h * 100) / 100 + "px";
+        rowEl.appendChild(el);
+      }
+      masonryEl.appendChild(rowEl);
+    }
+    syncJustifiedThumbFaceBoxes();
+  }
+
+  function syncJustifiedThumbFaceBoxes() {
+    if (!justifiedState || !justifiedState.elements.length) return;
+    const els = justifiedState.elements;
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      const img = el.querySelector("img");
+      const overlay = el.querySelector(".people-thumb-bboxes");
+      if (!img || !overlay) continue;
+      const faces = overlay._thumbFaces;
+      if (faces == null) continue;
+      positionThumbFaceBoxes(overlay, faces, img);
     }
   }
 
@@ -1085,6 +1290,9 @@
   }
 
   function renderPhotoResults(photoItems) {
+    destroyPeopleMasonry();
+    masonryEl.innerHTML = "";
+
     const lightboxPayload = photoItems.map(function (p) {
       return {
         url: CDN_IMAGES + encodeURIComponent(String(p.image)),
@@ -1092,15 +1300,12 @@
         faces: p.faces,
       };
     });
-    const sizer = document.createElement("div");
-    sizer.className = "people-masonry-sizer";
-    sizer.setAttribute("aria-hidden", "true");
-    masonryEl.appendChild(sizer);
 
+    const elements = [];
     const frag = document.createDocumentFragment();
     photoItems.forEach(function (photo, idx) {
       const item = document.createElement("div");
-      item.className = "people-masonry-item";
+      item.className = "people-justified-item";
       const img = document.createElement("img");
       const encodedName = encodeURIComponent(String(photo.image));
       const thumbSrc = CDN_THUMBNAILS + encodedName;
@@ -1113,9 +1318,9 @@
       wrap.className = "people-thumb-wrap";
       const bboxes = document.createElement("div");
       bboxes.className = "people-thumb-bboxes";
-      appendThumbFaceBoxes(bboxes, photo.faces);
       wrap.appendChild(img);
       wrap.appendChild(bboxes);
+      appendThumbFaceBoxes(bboxes, photo.faces, img);
       const a = document.createElement("a");
       a.href = fullSrc;
       a.addEventListener("click", function (e) {
@@ -1124,21 +1329,23 @@
       });
       a.appendChild(wrap);
       item.appendChild(a);
+      elements.push(item);
       frag.appendChild(item);
     });
     masonryEl.appendChild(frag);
     resultsWrap.hidden = false;
-
-    peopleMasonryInstance = new Masonry(masonryEl, {
-      itemSelector: ".people-masonry-item",
-      columnWidth: ".people-masonry-sizer",
-      percentPosition: true,
-      gutter: 12,
-      transitionDuration: 0,
-    });
+    ensureJustifiedResizeObserver();
 
     imagesLoaded(masonryEl, function () {
-      if (peopleMasonryInstance) peopleMasonryInstance.layout();
+      const ratios = elements.map(function (el) {
+        const img = el.querySelector("img");
+        const iw = img && img.naturalWidth ? img.naturalWidth : 1;
+        const ih = img && img.naturalHeight ? img.naturalHeight : 1;
+        const r = iw / ih;
+        return Number.isFinite(r) && r > 0 ? r : 1;
+      });
+      justifiedState = { elements: elements, ratios: ratios };
+      layoutJustifiedFromState();
     });
     return lightboxPayload;
   }
@@ -1661,13 +1868,10 @@
     if (!lightboxEl.hidden) {
       renderLightboxFaceBoxes();
     }
-    if (!peopleMasonryInstance) return;
+    if (!justifiedState) return;
     clearTimeout(masonryResizeTimer);
     masonryResizeTimer = setTimeout(function () {
-      if (peopleMasonryInstance) {
-        peopleMasonryInstance.reloadItems();
-        peopleMasonryInstance.layout();
-      }
+      layoutJustifiedFromState();
     }, 150);
   });
 
