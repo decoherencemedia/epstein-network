@@ -303,6 +303,16 @@
         applyPreviewVisibility();
       }
 
+      function isFacesBucketFilename(filename) {
+        return typeof filename === "string" && filename.startsWith("faces/");
+      }
+
+      function toFacesCdnUrl(filename) {
+        if (!filename) return null;
+        const base = String(filename).split("/").pop();
+        return `${SPACES_CDN_BASE}/faces/${encodeURIComponent(base)}`;
+      }
+
       function toWebpThumbPath(filename) {
         if (!filename) return null;
         const base = String(filename).split("/").pop();
@@ -558,9 +568,13 @@
         onNavigateToNeighbor,
         peopleIdsForPreviewLink
       ) {
-        const src = toWebpThumbPath(filename);
+        const src = isFacesBucketFilename(filename)
+          ? toFacesCdnUrl(filename)
+          : toWebpThumbPath(filename);
         const peopleUrl = peopleUrlForPersonIdsWithPhoto(peopleIdsForPreviewLink, filename);
-        const origUrl = peopleUrl || toOriginalImageUrl(filename);
+        const origUrl =
+          peopleUrl ||
+          (isFacesBucketFilename(filename) ? toFacesCdnUrl(filename) : toOriginalImageUrl(filename));
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
@@ -648,7 +662,7 @@
         const base = peopleUrlForPersonIds(personIds);
         if (!base) return null;
         const photo = String(photoFilename || "").trim();
-        if (!photo) return base;
+        if (!photo || isFacesBucketFilename(photo)) return base;
         const url = new URL(base, window.location.origin);
         url.searchParams.set("photo", photo);
         return url.pathname + url.search + url.hash;

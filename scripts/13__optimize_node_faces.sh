@@ -1,26 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Convert all .png files from INPUT_DIR to square RESIZE_PX webp files in OUTPUT_DIR.
-# Fails loudly if any input image is not square.
+# Convert all images under node_faces_selected/ (any subdirectory) to WebP in
+# node_faces_selected_optimized/ with flat filenames (same basename as the source file,
+# extension replaced with .webp).
+#
+# Duplicate basenames in different folders are rejected (same rule as graph upload).
 #
 # Requirements:
 # - cwebp
-# - ImageMagick identify/convert (or magick)
+# - ImageMagick (magick, or convert+identify) for resizing — optional but recommended;
+#   without it, cwebp is invoked on the original file with no resize.
 #
 # Usage:
 #   bash scripts/13__optimize_node_faces.sh
 
-INPUT_DIR="../images/node_faces_unoptimized/"
-OUTPUT_DIR="../images/node_faces_optimized"
-RESIZE_PX=100
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INPUT_DIR="$REPO_DIR/images/node_faces_selected"
+OUTPUT_DIR="$REPO_DIR/images/node_faces_selected_optimized"
+
 CWEBP_QUALITY=90
-MAX_ASPECT_DIFF_PERCENT=10
+MAX_EDGE_PX=1024
 
 # Safety: refuse to wipe unexpected output locations.
 case "$OUTPUT_DIR" in
-  "../images/node_faces_optimized" | "../images/node_faces_optimized/" ) ;;
-  * ) echo "ERROR: Refusing to wipe unexpected OUTPUT_DIR='$OUTPUT_DIR'" >&2; exit 1 ;;
+  "$REPO_DIR/images/node_faces_selected_optimized" ) ;;
+  * ) echo "ERROR: Refusing unexpected OUTPUT_DIR='$OUTPUT_DIR'" >&2; exit 1 ;;
 esac
 
 if ! command -v cwebp >/dev/null 2>&1; then
@@ -28,17 +34,11 @@ if ! command -v cwebp >/dev/null 2>&1; then
   exit 1
 fi
 
-IDENTIFY_CMD=""
-CONVERT_CMD=""
-if command -v identify >/dev/null 2>&1 && command -v convert >/dev/null 2>&1; then
-  IDENTIFY_CMD="identify"
-  CONVERT_CMD="convert"
-elif command -v magick >/dev/null 2>&1; then
-  IDENTIFY_CMD="magick identify"
-  CONVERT_CMD="magick convert"
-else
-  echo "ERROR: ImageMagick identify/convert (or magick) not found in PATH." >&2
-  exit 1
+MAGICK_RESIZE=()
+if command -v magick >/dev/null 2>&1; then
+  MAGICK_RESIZE=(magick)
+elif command -v convert >/dev/null 2>&1; then
+  MAGICK_RESIZE=(convert)
 fi
 
 if [[ ! -d "$INPUT_DIR" ]]; then
@@ -46,58 +46,51 @@ if [[ ! -d "$INPUT_DIR" ]]; then
   exit 1
 fi
 
-# Empty output directory at start (contents only).
-if [[ -d "$OUTPUT_DIR" ]]; then
-  rm -rf "$OUTPUT_DIR"/* "$OUTPUT_DIR"/.[!.]* "$OUTPUT_DIR"/..?* || true
+mapfile -t found < <(
+  find "$INPUT_DIR" -type f \( \
+    -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \
+  \) | sort
+)
+
+if [[ ${#found[@]} -eq 0 ]]; then
+  echo "No images found under $INPUT_DIR (recursive). Nothing to convert."
+  exit 0
 fi
-mkdir -p "$OUTPUT_DIR"
 
-shopt -s nullglob
-png_files=("$INPUT_DIR"/*.png "$INPUT_DIR"/*.PNG)
-
-if [[ ${#png_files[@]} -eq 0 ]]; then
-  echo "ERROR: No PNG files found in $INPUT_DIR" >&2
+dup=$(for src in "${found[@]}"; do basename "$src"; done | sort | uniq -d)
+if [[ -n "$dup" ]]; then
+  echo "ERROR: Duplicate basename(s) under $INPUT_DIR (flattened output would collide):" >&2
+  echo "$dup" >&2
   exit 1
 fi
 
-tmp_dir="$(mktemp -d)"
+mkdir -p "$OUTPUT_DIR"
+# Empty output directory (contents only).
+if [[ -d "$OUTPUT_DIR" ]]; then
+  rm -rf "$OUTPUT_DIR"/* "$OUTPUT_DIR"/.[!.]* "$OUTPUT_DIR"/..?* 2>/dev/null || true
+fi
+
+tmp_root="$(mktemp -d)"
 cleanup() {
-  rm -rf "$tmp_dir"
+  rm -rf "$tmp_root"
 }
 trap cleanup EXIT
 
 count=0
-for src in "${png_files[@]}"; do
-  base="$(basename "$src")"
+for src in "${found[@]}"; do
+  base=$(basename "$src")
   stem="${base%.*}"
-  tmp_png="$tmp_dir/${stem}.png"
   out_webp="$OUTPUT_DIR/${stem}.webp"
+  tmp_proc="$tmp_root/${count}.proc.png"
 
-  dims="$($IDENTIFY_CMD -format '%w %h' "$src")"
-  w="${dims%% *}"
-  h="${dims##* }"
-  # Allow small non-square differences; fail only if aspect diff > MAX_ASPECT_DIFF_PERCENT.
-  if (( w > h )); then
-    max_dim="$w"
-    min_dim="$h"
+  if [[ ${#MAGICK_RESIZE[@]} -gt 0 ]]; then
+    "${MAGICK_RESIZE[@]}" "$src" -resize "${MAX_EDGE_PX}x${MAX_EDGE_PX}>" "$tmp_proc"
+    cwebp -quiet -q "$CWEBP_QUALITY" "$tmp_proc" -o "$out_webp"
   else
-    max_dim="$h"
-    min_dim="$w"
+    echo "WARNING: ImageMagick not found; running cwebp without resize (max edge ${MAX_EDGE_PX} ignored): $src" >&2
+    cwebp -quiet -q "$CWEBP_QUALITY" "$src" -o "$out_webp"
   fi
-  diff=$((max_dim - min_dim))
-  if (( diff * 100 > max_dim * MAX_ASPECT_DIFF_PERCENT )); then
-    echo "ERROR: Image too non-square (> ${MAX_ASPECT_DIFF_PERCENT}%): $src (${w}x${h})" >&2
-    exit 1
-  fi
-
-  # Center-crop to square using the smaller dimension, then resize.
-  $CONVERT_CMD "$src" \
-    -gravity center \
-    -crop "${min_dim}x${min_dim}+0+0" +repage \
-    -resize "${RESIZE_PX}x${RESIZE_PX}!" \
-    "$tmp_png"
-  cwebp -quiet -q "$CWEBP_QUALITY" "$tmp_png" -o "$out_webp"
   count=$((count + 1))
 done
 
-echo "Converted $count PNG image(s) to ${RESIZE_PX}x${RESIZE_PX} WebP in $OUTPUT_DIR"
+echo "Converted $count image(s) to WebP in $OUTPUT_DIR (max edge ${MAX_EDGE_PX}px when ImageMagick is available)"

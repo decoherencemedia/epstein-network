@@ -6,7 +6,16 @@ Upload graph assets to DigitalOcean Spaces.
     atlas/atlas.webp
     atlas/atlas_manifest.json
 
-Note: originals/thumbnails are already hosted and are no longer managed by this script.
+- Uploads manually selected node face crops (flattened) from:
+    images/node_faces_selected_optimized/**/*.webp
+  (produced by ``13__optimize_node_faces.sh`` from ``node_faces_selected/``) to:
+    faces/<basename>.webp
+  (files in subfolders such as ``old/`` share the same flat ``faces/`` key by basename.)
+
+When no ``*.webp`` files exist under ``node_faces_selected_optimized/``, the ``faces/`` prefix is not
+synced (existing remote ``faces/*`` objects are left unchanged).
+
+Note: document originals/thumbnails for the photo viewer are hosted separately.
 
 DigitalOcean Spaces is S3-compatible. Configure via environment variables:
 
@@ -33,10 +42,12 @@ VIZ_DATA_DIR = REPO_DIR / "viz_data"
 
 ATLAS_WEBP_PATH = REPO_DIR / "images" / "atlas.webp"
 ATLAS_MANIFEST_PATH = VIZ_DATA_DIR / "atlas_manifest.json"
-SYNC_PREFIXES = ("atlas/",)
+NODE_FACES_OPTIMIZED_DIR = REPO_DIR / "images" / "node_faces_selected_optimized"
+SYNC_PREFIXES_ATLAS = ("atlas/",)
 FORCE_UPLOAD_KEYS = {"atlas/atlas.webp", "atlas/atlas_manifest.json"}
 ATLAS_IMAGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 ATLAS_MANIFEST_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
+FACES_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
 
 
 def get_spaces_client():
@@ -81,6 +92,8 @@ def upload_file(
     if content_type is None:
         if local_path.suffix.lower() == ".webp":
             content_type = "image/webp"
+        elif local_path.suffix.lower() in (".jpg", ".jpeg"):
+            content_type = "image/jpeg"
         elif local_path.suffix.lower() == ".json":
             content_type = "application/json"
     if content_type is not None:
@@ -106,6 +119,25 @@ def list_remote_objects(s3, bucket: str, prefixes: tuple[str, ...]) -> dict[str,
     return out
 
 
+def collect_flat_face_webp_uploads() -> dict[str, Path]:
+    """
+    Map ``faces/<basename>`` -> local path for every ``*.webp`` under node_faces_selected_optimized.
+    Errors if two files share the same basename in different folders.
+    """
+    if not NODE_FACES_OPTIMIZED_DIR.is_dir():
+        return {}
+    out: dict[str, Path] = {}
+    for p in sorted(NODE_FACES_OPTIMIZED_DIR.rglob("*.webp")):
+        key = f"faces/{p.name}"
+        if key in out and out[key] != p:
+            raise RuntimeError(
+                f"Duplicate basename after flattening: {p.name!r}\n"
+                f"  First: {out[key]}\n  Second: {p}"
+            )
+        out[key] = p
+    return out
+
+
 def delete_keys(s3, bucket: str, keys: list[str]) -> None:
     """Delete keys in batches (max 1000 per request)."""
     if not keys:
@@ -128,12 +160,19 @@ def main():
     desired["atlas/atlas.webp"] = ATLAS_WEBP_PATH
     desired["atlas/atlas_manifest.json"] = ATLAS_MANIFEST_PATH
 
+    face_uploads = collect_flat_face_webp_uploads()
+    desired.update(face_uploads)
+
     # Validate all desired local files before mutating remote state.
     for key, local_path in desired.items():
         if not local_path.is_file():
             raise FileNotFoundError(f"Required file missing for upload key={key}: {local_path}")
 
-    remote = list_remote_objects(s3, bucket, SYNC_PREFIXES)
+    list_prefixes: tuple[str, ...] = SYNC_PREFIXES_ATLAS
+    if face_uploads:
+        list_prefixes = ("atlas/", "faces/")
+
+    remote = list_remote_objects(s3, bucket, list_prefixes)
 
     # Upload only missing/changed files.
     uploaded = 0
@@ -157,6 +196,22 @@ def main():
             uploaded += 1
             continue
 
+        if key.startswith("faces/"):
+            local_size = local_path.stat().st_size
+            remote_size = remote.get(key)
+            if remote_size is not None and remote_size == local_size:
+                skipped += 1
+                continue
+            upload_file(
+                s3,
+                bucket,
+                local_path,
+                key,
+                cache_control=FACES_CACHE_CONTROL,
+            )
+            uploaded += 1
+            continue
+
         local_size = local_path.stat().st_size
         remote_size = remote.get(key)
         if remote_size is not None and remote_size == local_size:
@@ -165,7 +220,7 @@ def main():
         upload_file(s3, bucket, local_path, key)
         uploaded += 1
 
-    # Delete stale remote files in managed prefixes.
+    # Delete stale remote files in managed prefixes (faces/ only when we synced faces).
     desired_keys = set(desired.keys())
     remote_keys = set(remote.keys())
     stale_keys = sorted(remote_keys - desired_keys)
@@ -174,6 +229,7 @@ def main():
     print(
         "Spaces sync complete. "
         f"desired={len(desired_keys)} uploaded={uploaded} skipped={skipped} deleted={len(stale_keys)}"
+        + (f" (faces local files: {len(face_uploads)})" if face_uploads else "")
     )
 
 
