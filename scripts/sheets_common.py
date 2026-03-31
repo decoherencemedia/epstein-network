@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import gspread
@@ -155,6 +156,37 @@ def load_best_face_ids(gc: gspread.Client) -> dict[str, str]:
     result = _load_best_face_ids_for_sheet(book, "Matches")
     result.update(_load_best_face_ids_for_sheet(book, "Unknowns"))
     return result
+
+
+def load_restricted_image_names(gc: gspread.Client) -> list[str]:
+    """
+    Load image basenames from the ``Restricted Images`` sheet (column A, row 1 = header).
+
+    Used by ``09__sheets_rekognition`` to set ``images.is_explicit = 1``. Values are stripped
+    and passed through ``os.path.basename`` so full paths still map to ``images.image_name``.
+    """
+    book = get_workbook(gc)
+    try:
+        ws = book.worksheet("Restricted Images")
+    except gspread.exceptions.WorksheetNotFound:
+        return []
+    rows = ws.get_all_values()
+    if len(rows) <= 1:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows[1:]:
+        if not row:
+            continue
+        raw = (row[0] or "").strip()
+        if not raw:
+            continue
+        name = os.path.basename(raw.replace("\\", "/"))
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
 
 
 def load_ignore(gc: gspread.Client) -> set[str]:

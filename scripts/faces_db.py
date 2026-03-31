@@ -28,7 +28,8 @@ def init_db():
             image_name TEXT PRIMARY KEY,
             duplicate_of TEXT, -- if non-NULL, this file is a byte-identical duplicate of duplicate_of
             has_face INTEGER,   -- 1 if local detector saw at least one face, 0 if not, NULL if unknown
-            indexed  INTEGER    -- 1 if sent to Rekognition, 0 or NULL otherwise
+            indexed  INTEGER,   -- 1 if sent to Rekognition, 0 or NULL otherwise
+            is_explicit INTEGER NOT NULL DEFAULT 0  -- 1 = restricted (sheet / policy); see also moderation_result
         )
     """)
 
@@ -141,6 +142,32 @@ def _ensure_images_contains_victim_column(conn):
     except sqlite3.OperationalError as e:
         if "duplicate" not in str(e).lower():
             raise
+
+
+def apply_restricted_images_explicit(conn, image_names: list[str]) -> tuple[int, list[str]]:
+    """
+    Set ``images.is_explicit = 1`` for each basename in ``image_names``.
+
+    Returns ``(rows_updated, missing)`` where ``missing`` lists names with no ``images`` row
+    (wrong spelling, not indexed yet, etc.).
+    """
+    if not image_names:
+        return 0, []
+    c = conn.cursor()
+    total_updated = 0
+    chunk_size = 400
+    for i in range(0, len(image_names), chunk_size):
+        chunk = image_names[i : i + chunk_size]
+        ph = ",".join("?" * len(chunk))
+        c.execute(f"UPDATE images SET is_explicit = 1 WHERE image_name IN ({ph})", chunk)
+        total_updated += c.rowcount
+    ph_all = ",".join("?" * len(image_names))
+    existing = {
+        row[0]
+        for row in c.execute(f"SELECT image_name FROM images WHERE image_name IN ({ph_all})", image_names)
+    }
+    missing = [n for n in image_names if n not in existing]
+    return total_updated, missing
 
 
 def refresh_images_contains_victim(conn) -> None:
@@ -262,7 +289,7 @@ def _validate_best_face_ids_exist(conn, best_face_ids: dict[str, str]) -> None:
         )
 
 
-def sync_people_from_google_sheets(conn, gc) -> None:
+def sync_people_from_google_sheets(conn, gc, *, allow_new_person_ids: set[str] | None = None) -> None:
     """
     Upsert `people` from Matches / Unknowns / Ignore sheets (see sheets_common).
     - name: from Matches (person_id -> display name), except victims get stable anonymized
@@ -290,7 +317,23 @@ def sync_people_from_google_sheets(conn, gc) -> None:
 
     _validate_best_face_ids_exist(conn, best_face_ids)
 
+    # Optional gating: avoid inserting/updating speculative new person_ids until they are approved
+    # by the Rekognition compare-faces sheet (used by 09__sheets_rekognition.py).
+    keep_ids: set[str] | None = None
+    if allow_new_person_ids is not None:
+        existing = {
+            str(r[0])
+            for r in conn.execute("SELECT person_id FROM people").fetchall()
+        }
+        keep_ids = existing | {str(p) for p in allow_new_person_ids if p and str(p).strip()}
+
     all_ids = set(names.keys()) | include_ids | ignore_ids
+    if keep_ids is not None:
+        all_ids &= keep_ids
+        include_ids &= keep_ids
+        ignore_ids &= keep_ids
+        victim_flags = {pid: victim_flags.get(pid, False) for pid in all_ids}
+        best_face_ids = {pid: fid for pid, fid in best_face_ids.items() if pid in all_ids}
     victim_pids_sorted = sorted(pid for pid in all_ids if victim_flags.get(pid))
     victim_display_name = {
         pid: f"Victim {i + 1}" for i, pid in enumerate(victim_pids_sorted)

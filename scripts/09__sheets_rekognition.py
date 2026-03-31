@@ -3,6 +3,8 @@
 
 - Syncs Matches / Unknowns / Ignore into the SQLite `people` table (name, include_in_network, is_victim).
   Column I (Victim) on Matches: ``1`` sets ``people.is_victim``; then ``images.contains_victim`` is recomputed.
+- Sheet ``Restricted Images`` (column A, header row): each listed basename gets ``images.is_explicit = 1``
+  (separate from Rekognition moderation; does not write moderation JSON).
 - Initializes the sheet with columns and formatting (frozen header, style).
 - For each row missing Confidence: downloads reference image, runs CompareFaces
   (reference vs local Image Path), writes Confidence and full JSON to the sheet.
@@ -13,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
 from urllib.parse import urlparse, parse_qs
 import time
 from pathlib import Path
@@ -23,8 +26,19 @@ import requests
 from PIL import Image, ImageDraw
 from gspread_formatting import format_cell_range, set_frozen, CellFormat, TextFormat, Color
 
-from faces_db import init_db, sync_people_from_google_sheets
-from sheets_common import get_sheet_client, get_workbook
+from faces_db import (
+    apply_restricted_images_explicit,
+    init_db,
+    parse_node_face_export_stem,
+    sync_people_from_google_sheets,
+)
+from sheets_common import (
+    get_sheet_client,
+    get_workbook,
+    load_names,
+    load_person_ids_matches_and_unknowns,
+    load_restricted_image_names,
+)
 
 try:
     import pillow_avif  # noqa: F401 — registers AVIF support with Pillow if installed
@@ -39,6 +53,7 @@ SHOW_MATCH = True  # if True, display target image with face bounding boxes (mat
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 IMAGE_DIR = SCRIPT_DIR.parent.parent.parent / "all_images"
+NODE_FACES_SELECTED_DIR = SCRIPT_DIR.parent / "images" / "node_faces_selected"
 
 COLUMNS = [
     "Name",
@@ -79,6 +94,61 @@ def init_spreadsheet(worksheet):
 def get_or_create_sheet(gc: gspread.Client):
     """Return the first worksheet of the shared workbook (main Rekognition sheet)."""
     return get_workbook(gc).sheet1
+
+
+def _sanitize_label_for_filename(label: str) -> str:
+    s = "".join(c if c.isalnum() or c in "._- " else "" for c in str(label))
+    return s.strip().replace(" ", "_").replace("/", "_") or "node"
+
+
+def _copy_person_id_node_faces_to_name_form(gc: gspread.Client) -> int:
+    """
+    If `node_faces_selected/` has manual faces for `<person_id>_*` but lacks `<Name>_*`,
+    copy the best existing file to the standard name-based stem used by `10__create_graph`.
+    """
+    if not NODE_FACES_SELECTED_DIR.is_dir():
+        return 0
+
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
+    parsed: list[tuple[Path, str, tuple[int, int | str]]] = []
+    for p in NODE_FACES_SELECTED_DIR.iterdir():
+        if not p.is_file() or p.suffix.lower() not in image_exts:
+            continue
+        out = parse_node_face_export_stem(p.stem)
+        if out is None:
+            continue
+        base_stem, sort_key = out
+        parsed.append((p, base_stem, sort_key))
+
+    by_stem: dict[str, list[tuple[Path, tuple[int, int | str]]]] = {}
+    for p, base_stem, sort_key in parsed:
+        by_stem.setdefault(base_stem, []).append((p, sort_key))
+    for k in list(by_stem.keys()):
+        by_stem[k].sort(key=lambda x: x[1])
+
+    names = load_names(gc)
+    include_ids = load_person_ids_matches_and_unknowns(gc)
+    copied = 0
+    for pid in sorted(include_ids):
+        target_stem = _sanitize_label_for_filename(names.get(pid) or pid)
+        # Already has a correctly named manual file.
+        if by_stem.get(target_stem):
+            continue
+        source_list = by_stem.get(pid)
+        if not source_list:
+            continue
+        src, sk = source_list[0]
+        if sk[0] == 0:
+            new_stem = f"{target_stem}__{int(sk[1]):03d}"
+        else:
+            new_stem = f"{target_stem}_{str(sk[1]).lower()}"
+        dst = src.with_name(new_stem + src.suffix.lower())
+        if dst.exists():
+            continue
+        shutil.copy2(src, dst)
+        copied += 1
+
+    return copied
 
 
 # ----------------------------- Rekognition -----------------------------
@@ -358,12 +428,6 @@ def show_match(
 
 def main():
     gc = get_sheet_client()
-    conn = init_db()
-    try:
-        sync_people_from_google_sheets(conn, gc)
-    finally:
-        conn.close()
-
     worksheet = get_or_create_sheet(gc)
     init_spreadsheet(worksheet)
 
@@ -385,6 +449,46 @@ def main():
     idx_archived_url = col_index["archivedreferenceimageurl"]
     idx_confidence = col_index["confidence"]
     idx_json_response = col_index["jsonresponse"]
+
+    # Gate new person_ids: only allow inserting/updating new rows in `people` once the compare-faces
+    # confidence exists and is >99%. This helps prevent speculative matches from polluting the DB.
+    allow_new_person_ids: set[str] = set()
+    for i in range(1, len(rows)):
+        row = rows[i]
+        pid = (row[idx_person_id] if idx_person_id < len(row) else "").strip()
+        if not pid:
+            continue
+        conf_raw = (row[idx_confidence] if idx_confidence < len(row) else "").strip()
+        if not conf_raw:
+            continue
+        try:
+            conf = float(conf_raw)
+        except ValueError:
+            continue
+        if conf > 99.0:
+            allow_new_person_ids.add(pid)
+
+    conn = init_db()
+    try:
+        sync_people_from_google_sheets(conn, gc, allow_new_person_ids=allow_new_person_ids)
+        copied = _copy_person_id_node_faces_to_name_form(gc)
+        if copied:
+            print(f"node_faces_selected: copied {copied} person_id-named file(s) to name-based stems.")
+        restricted = load_restricted_image_names(gc)
+        if restricted:
+            updated, missing = apply_restricted_images_explicit(conn, restricted)
+            conn.commit()
+            print(
+                f"Restricted Images sheet: set is_explicit=1 on {updated} image row(s); "
+                f"{len(missing)} listed name(s) not found in images table."
+            )
+            if missing:
+                preview = missing if len(missing) <= 25 else missing[:25] + ["..."]
+                print(f"  Not in DB: {preview}")
+        else:
+            print("Restricted Images sheet: no filenames, sheet missing, or only header row.")
+    finally:
+        conn.close()
 
     missing = []
     for i in range(1, len(rows)):

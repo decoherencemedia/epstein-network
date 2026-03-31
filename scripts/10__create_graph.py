@@ -176,7 +176,8 @@ if __name__ == "__main__":
         "f.index_face_record, "
         "i.moderation_result, "
         "i.width_px, i.height_px, "
-        "COALESCE(i.contains_victim, 0) AS contains_victim "
+        "COALESCE(i.contains_victim, 0) AS contains_victim, "
+        "COALESCE(i.is_explicit, 0) AS is_explicit_sheet "
         f"FROM faces f "
         f"LEFT JOIN images i ON i.image_name = f.image_name "
         f"WHERE f.person_id IN ({placeholders_top})",
@@ -187,8 +188,8 @@ if __name__ == "__main__":
     if df.empty:
         raise RuntimeError("No faces found in DB for person_ids from Matches/Unknowns.")
 
-    # Disallow images that are explicit or contain any face under 18.
-    df["is_explicit"] = df["moderation_result"].apply(_is_explicit_moderation)
+    # Disallow images that are explicit (Rekognition or Restricted Images sheet) or minor faces.
+    df["is_explicit"] = df["moderation_result"].apply(_is_explicit_moderation) | (df["is_explicit_sheet"] == 1)
     df["is_minor_face"] = df.apply(
         lambda r: _has_minor_face(r.get("age_range_low"), r.get("age_range_high")),
         axis=1,

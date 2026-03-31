@@ -66,6 +66,10 @@ def main() -> None:
         ).fetchall():
             if _is_explicit_moderation(moderation_result):
                 disallowed_images.add(str(image_name))
+        for (image_name,) in conn.execute(
+            "SELECT image_name FROM images WHERE COALESCE(is_explicit, 0) = 1"
+        ).fetchall():
+            disallowed_images.add(str(image_name))
 
     rows = conn.execute(
         """

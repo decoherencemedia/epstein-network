@@ -259,6 +259,10 @@ if __name__ == "__main__":
     ).fetchall():
         if _is_explicit_moderation(moderation_result):
             disallowed_images.add(image_name)
+    for (image_name,) in con.execute(
+        "SELECT image_name FROM images WHERE COALESCE(is_explicit, 0) = 1"
+    ).fetchall():
+        disallowed_images.add(image_name)
 
     # Graph / top-K: Matches + Unknowns minus Ignore. Selected crops: anyone with people.best_face_id.
     gc = get_sheet_client()
