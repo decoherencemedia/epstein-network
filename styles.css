@@ -1195,8 +1195,35 @@ body.page-home #name-search {
   margin: 0 0 14px;
   color: #1c2633;
 }
+.people-results-loading {
+  font: 15px/1.4 system-ui, sans-serif;
+  color: var(--people-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+}
+.people-results-loading[hidden] {
+  display: none !important;
+}
+/* Grid hidden until layout runs (see people-inner): no stacked-thumb flash. */
+.people-justified.people-justified--pending {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: 100%;
+  visibility: hidden;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+  margin: 0;
+}
 /* Gap between tiles; also used as left/right inset so screen edges match tile spacing. */
 .people-results-wrap {
+  position: relative;
   --people-justified-gap: 4px;
 }
 @media (max-width: 768px) {
@@ -1208,6 +1235,10 @@ body.page-home #name-search {
     width: calc(100% + 32px);
   }
   .people-results-heading {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .people-results-loading {
     margin-left: 16px;
     margin-right: 16px;
   }
@@ -1229,6 +1260,13 @@ body.page-home #name-search {
     max-width: 100vw;
     margin-left: calc(50% - 50vw);
     margin-right: calc(50% - 50vw);
+  }
+  /* Few results: stay card-width instead of full viewport (see people-inner layout). */
+  .people-justified.people-justified--few {
+    width: 100%;
+    max-width: min(100%, 42rem);
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 @media (max-width: 900px) {

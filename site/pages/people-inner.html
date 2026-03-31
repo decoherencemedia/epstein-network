@@ -61,6 +61,7 @@
 
   <section class="people-results-wrap" id="people-results-wrap" hidden>
     <h2 class="people-results-heading" id="people-results-heading">Photos</h2>
+    <div id="people-results-loading" class="people-results-loading" hidden aria-hidden="true">Loading photos…</div>
     <div class="people-justified" id="people-masonry"></div>
   </section>
 
@@ -336,6 +337,7 @@
   const resultsWrap = document.getElementById("people-results-wrap");
   const resultsHeadingEl = document.getElementById("people-results-heading");
   const masonryEl = document.getElementById("people-masonry");
+  const loadingEl = document.getElementById("people-results-loading");
   const lightboxEl = document.getElementById("people-lightbox");
   const lightboxStageEl = document.getElementById("people-lightbox-stage");
   const lightboxImgEl = document.getElementById("people-lightbox-image");
@@ -898,6 +900,12 @@
 
   function destroyPeopleMasonry() {
     justifiedState = null;
+    masonryEl.classList.remove("people-justified--few");
+    masonryEl.classList.remove("people-justified--pending");
+    if (loadingEl) {
+      loadingEl.hidden = true;
+      loadingEl.setAttribute("aria-hidden", "true");
+    }
     if (justifiedResizeObserver) {
       justifiedResizeObserver.disconnect();
       justifiedResizeObserver = null;
@@ -932,6 +940,20 @@
     const pr = parseFloat(cs.paddingRight) || 0;
     const inner = el.clientWidth;
     return Math.max(0, inner - pl - pr);
+  }
+
+  /**
+   * Same as readJustifiedContentWidth(masonryEl), but when the grid is collapsed (pending
+   * reveal) masonry clientWidth can be 0 — fall back to results wrap width minus padding.
+   */
+  function readJustifiedContentWidthForLayout() {
+    let w = readJustifiedContentWidth(masonryEl);
+    if (w > 0.5) return w;
+    const cs = getComputedStyle(masonryEl);
+    const pl = parseFloat(cs.paddingLeft) || 0;
+    const pr = parseFloat(cs.paddingRight) || 0;
+    const rw = resultsWrap ? resultsWrap.clientWidth : 0;
+    return Math.max(0, rw - pl - pr);
   }
 
   /**
@@ -993,9 +1015,44 @@
     justifiedResizeObserver.observe(masonryEl);
   }
 
+  /**
+   * One photo per row: never use the multi-row "exact fit" path that sets a tiny height for
+   * panoramas. Clamp height to the normal band and cap width; center when narrower than the row.
+   * @param {number} contentW
+   * @param {number} ar width/height
+   * @param {{ minH: number, maxH: number }} range
+   * @returns {{ h: number, w: number }}
+   */
+  function layoutSingleJustifiedItem(contentW, ar, range) {
+    const minH = range.minH;
+    const maxH = range.maxH;
+    const h0 = contentW / ar;
+    let h = Math.max(minH, Math.min(maxH, h0));
+    let w = ar * h;
+    if (w > contentW + 0.5) {
+      w = contentW;
+      h = w / ar;
+    }
+    if (h < minH - 0.5) {
+      h = minH;
+      w = Math.min(ar * h, contentW);
+    }
+    return { h: h, w: w };
+  }
+
+  /** Few total photos: use a narrower layout column (not full-bleed). */
+  const FEW_PHOTOS_THRESHOLD = 4;
+
   function layoutJustifiedFromState() {
     if (!justifiedState || !justifiedState.elements.length) return;
-    const W = readJustifiedContentWidth(masonryEl);
+    const total = justifiedState.elements.length;
+    if (total < FEW_PHOTOS_THRESHOLD) {
+      masonryEl.classList.add("people-justified--few");
+    } else {
+      masonryEl.classList.remove("people-justified--few");
+    }
+    void masonryEl.offsetWidth;
+    const W = readJustifiedContentWidthForLayout();
     if (W <= 0) return;
     const gap = readJustifiedGapPx();
     const range = readJustifiedRowHeightRange();
@@ -1008,31 +1065,43 @@
       const rowRatios = ratios.slice(row.start, row.end);
       const n = rowRatios.length;
       const contentW = W - gap * (n - 1);
-      const sumR = rowRatios.reduce(function (s, x) {
-        return s + x;
-      }, 0);
-      const hIdeal = contentW / sumR;
-      let h = Math.max(range.minH, Math.min(range.maxH, hIdeal));
-      let widths = rowRatios.map(function (r) {
-        return r * h;
-      });
-      let sumW = widths.reduce(function (s, x) {
-        return s + x;
-      }, 0);
-      if (sumW > contentW + 0.5) {
-        /* Row would overflow at clamped height — use exact aspect fit (may sit outside min/max). */
-        h = hIdeal;
-        widths = rowRatios.map(function (r) {
-          return r * h;
+      let h;
+      /** @type {number[]} */
+      let widths;
+      if (n === 1) {
+        const one = layoutSingleJustifiedItem(contentW, rowRatios[0], range);
+        h = one.h;
+        widths = [one.w];
+      } else {
+        const sumR = rowRatios.reduce(function (s, x) {
+          return s + x;
+        }, 0);
+        const hIdeal = contentW / sumR;
+        h = Math.max(range.minH, Math.min(range.maxH, hIdeal));
+        widths = rowRatios.map(function (ratio) {
+          return ratio * h;
         });
-      } else if (sumW < contentW - 0.5) {
-        /* Clamp made the row too short — fill width; fixed h + cover crops a bit less than stretching height. */
-        widths = rowRatios.map(function (r) {
-          return contentW * (r / sumR);
-        });
+        let sumW = widths.reduce(function (s, x) {
+          return s + x;
+        }, 0);
+        if (sumW > contentW + 0.5) {
+          /* Row would overflow at clamped height — use exact aspect fit (may sit outside min/max). */
+          h = hIdeal;
+          widths = rowRatios.map(function (ratio) {
+            return ratio * h;
+          });
+        } else if (sumW < contentW - 0.5) {
+          /* Clamp made the row too short — fill width; fixed h + cover crops a bit less than stretching height. */
+          widths = rowRatios.map(function (ratio) {
+            return contentW * (ratio / sumR);
+          });
+        }
       }
       const rowEl = document.createElement("div");
       rowEl.className = "people-justified-row";
+      if (n === 1 && widths[0] < contentW - 0.5) {
+        rowEl.style.justifyContent = "center";
+      }
       for (let k = row.start; k < row.end; k++) {
         const el = justifiedState.elements[k];
         const idx = k - row.start;
@@ -1043,7 +1112,24 @@
       }
       masonryEl.appendChild(rowEl);
     }
-    syncJustifiedThumbFaceBoxes();
+    if (masonryEl.classList.contains("people-justified--pending")) {
+      revealJustifiedGallery();
+    } else {
+      syncJustifiedThumbFaceBoxes();
+    }
+  }
+
+  function revealJustifiedGallery() {
+    masonryEl.classList.remove("people-justified--pending");
+    if (loadingEl) {
+      loadingEl.hidden = true;
+      loadingEl.setAttribute("aria-hidden", "true");
+    }
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        syncJustifiedThumbFaceBoxes();
+      });
+    });
   }
 
   function syncJustifiedThumbFaceBoxes() {
@@ -1292,6 +1378,17 @@
   function renderPhotoResults(photoItems) {
     destroyPeopleMasonry();
     masonryEl.innerHTML = "";
+
+    if (!photoItems.length) {
+      resultsWrap.hidden = false;
+      return [];
+    }
+
+    if (loadingEl) {
+      loadingEl.hidden = false;
+      loadingEl.removeAttribute("aria-hidden");
+    }
+    masonryEl.classList.add("people-justified--pending");
 
     const lightboxPayload = photoItems.map(function (p) {
       return {

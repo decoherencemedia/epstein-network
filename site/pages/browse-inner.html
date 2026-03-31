@@ -16,15 +16,14 @@
   const API_BASE = "https://api.epstein.photos";
 //   const API_BASE = "http://localhost:5000";
 
-  const IS_LOCAL =
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1";
   const FACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
   function faceImageUrl(path) {
     if (!path) return null;
-    if (/^https?:\/\//i.test(path)) return path;
-    return (IS_LOCAL ? "" : FACES_CDN_BASE) + path;
+    const s = String(path).trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    const normalized = s.replace(/^\/+/, "");
+    return FACES_CDN_BASE.replace(/\/$/, "") + "/" + normalized;
   }
 
   function displayName(row) {
