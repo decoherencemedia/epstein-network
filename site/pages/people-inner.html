@@ -660,12 +660,35 @@
   }
 
   /**
+   * object-fit: cover + object-position aligns that point in the image with the positioning area
+   * (same normalized space as bboxes). Uses top-most / then left-most face to match overlay order.
+   * @param {HTMLImageElement} img
+   * @param {unknown} faces
+   */
+  function setThumbObjectPositionFromPrimaryFace(img, faces) {
+    const entries = sortFaceEntries(normalizeFaceEntries(faces));
+    if (!entries.length) {
+      img.style.removeProperty("object-position");
+      return;
+    }
+    const b = entries[0].box;
+    const cx = b.left + b.w / 2;
+    const cy = b.top + b.h / 2;
+    if (![cx, cy].every(function (x) { return Number.isFinite(x); })) {
+      img.style.removeProperty("object-position");
+      return;
+    }
+    img.style.objectPosition = cx * 100 + "% " + cy * 100 + "%";
+  }
+
+  /**
    * Face bboxes are normalized to the image bitmap; thumbs use object-fit: cover — map into overlay %.
    * @param {HTMLElement} overlayEl
    * @param {unknown} faces
    * @param {HTMLImageElement} img
    */
   function positionThumbFaceBoxes(overlayEl, faces, img) {
+    setThumbObjectPositionFromPrimaryFace(img, faces);
     overlayEl.innerHTML = "";
     if (!faces || typeof faces !== "object") return;
     const rect = getCoveredImageRect(img);
@@ -707,6 +730,29 @@
     }
   }
 
+  /**
+   * object-position percentages (alignment point in image vs box). Used with contain/cover offset math.
+   * @param {string} styleStr getComputedStyle(img).objectPosition
+   */
+  function parseObjectPositionFractions(styleStr) {
+    if (!styleStr || typeof styleStr !== "string") return { px: 0.5, py: 0.5 };
+    const parts = styleStr.trim().split(/\s+/);
+    function parseToken(t) {
+      if (!t) return 0.5;
+      const lower = String(t).toLowerCase();
+      if (lower === "left" || lower === "top") return 0;
+      if (lower === "center") return 0.5;
+      if (lower === "right" || lower === "bottom") return 1;
+      const m = /^([\d.]+)%$/.exec(t);
+      if (m) return parseFloat(m[1]) / 100;
+      return 0.5;
+    }
+    if (parts.length === 1) {
+      return { px: parseToken(parts[0]), py: 0.5 };
+    }
+    return { px: parseToken(parts[0]), py: parseToken(parts[1]) };
+  }
+
   /** Pixel geometry of the image bitmap as drawn with object-fit: contain inside the img element. */
   function getContainedImageRect(img) {
     const nw = img.naturalWidth;
@@ -717,12 +763,13 @@
     const scale = Math.min(cw / nw, ch / nh);
     const dw = nw * scale;
     const dh = nh * scale;
-    const ox = (cw - dw) / 2;
-    const oy = (ch - dh) / 2;
+    const pos = parseObjectPositionFractions(getComputedStyle(img).objectPosition);
+    const ox = pos.px * (cw - dw);
+    const oy = pos.py * (ch - dh);
     return { ox, oy, dw, dh };
   }
 
-  /** Same as visible bitmap with object-fit: cover + object-position: center (search thumbs). */
+  /** Visible bitmap with object-fit: cover; ox/oy respect object-position (focal-point thumbs). */
   function getCoveredImageRect(img) {
     const nw = img.naturalWidth;
     const nh = img.naturalHeight;
@@ -732,8 +779,9 @@
     const scale = Math.max(cw / nw, ch / nh);
     const dw = nw * scale;
     const dh = nh * scale;
-    const ox = (cw - dw) / 2;
-    const oy = (ch - dh) / 2;
+    const pos = parseObjectPositionFractions(getComputedStyle(img).objectPosition);
+    const ox = pos.px * (cw - dw);
+    const oy = pos.py * (ch - dh);
     return { ox, oy, dw, dh };
   }
 
@@ -971,8 +1019,9 @@
   }
 
   /**
-   * Greedy row breaks: pack left-to-right until the next image would overflow at ideal height H_ref
-   * (midpoint of min/max row height — only affects how many items per row).
+   * Greedy row breaks: pack left-to-right until the next image would overflow at ideal height H_ref.
+   * H_ref is only for measuring horizontal space (ratio × H); using min row height packs more tiles
+   * per row (narrower cells, stronger object-fit: cover) instead of leaving orphan full-width rows.
    * @param {number[]} ratios
    * @param {number} containerWidth
    * @param {number} gap
@@ -1056,7 +1105,8 @@
     if (W <= 0) return;
     const gap = readJustifiedGapPx();
     const range = readJustifiedRowHeightRange();
-    const H_ref = (range.minH + range.maxH) / 2;
+    /* Lower reference height ⇒ smaller ideal tile width at pack time ⇒ more photos per row when possible. */
+    const H_ref = range.minH;
     const ratios = justifiedState.ratios;
     const rows = partitionJustifiedRows(ratios, W, gap, H_ref);
     masonryEl.innerHTML = "";
