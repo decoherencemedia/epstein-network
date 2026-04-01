@@ -364,7 +364,8 @@ def sync_people_from_google_sheets(conn, gc, *, allow_new_person_ids: set[str] |
                 name = excluded.name,
                 include_in_network = excluded.include_in_network,
                 is_victim = excluded.is_victim,
-                best_face_id = excluded.best_face_id
+                -- Preserve existing DB value when sheet cell is blank/missing.
+                best_face_id = COALESCE(excluded.best_face_id, people.best_face_id)
             """,
             (pid, nm, inc, is_victim, best_face_id),
         )
