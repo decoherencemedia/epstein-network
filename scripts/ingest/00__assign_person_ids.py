@@ -17,17 +17,15 @@ Does **not** run full-graph recluster; do not use this and ``05__cluster_faces``
 on the same dataset without understanding that ``05`` wipes all ``person_id`` values.
 """
 
-import json
-import re
 import sqlite3
 import time
 from collections import defaultdict
-from decimal import Decimal
 
 import boto3
 
 from epstein_photos.config import REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
-from epstein_photos.faces_db import init_db
+from epstein_photos.faces_db import init_db, next_person_id_max_plus_one
+from epstein_photos.utils import UnionFind, dumps_aws_response
 
 # Same defaults as 05__cluster_faces.py
 SEARCH_FACES_STORE_THRESHOLD = 0.0
@@ -41,38 +39,6 @@ MIN_BBOX_AREA = 0.001
 PREFIXES = ("BIRTHDAY_BOOK_", "HOUSE_OVERSIGHT_")
 
 rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
-
-
-class UnionFind:
-    def __init__(self) -> None:
-        self.parent: dict[str, str] = {}
-
-    def find(self, x: str) -> str:
-        self.parent.setdefault(x, x)
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent[x]
-
-    def union(self, x: str, y: str) -> None:
-        self.parent[self.find(x)] = self.find(y)
-
-
-def _json_default(obj):
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError
-
-
-def next_free_person_id(conn: sqlite3.Connection) -> str:
-    max_n = 0
-    c = conn.cursor()
-    for table in ("faces", "people"):
-        c.execute(f"SELECT person_id FROM {table} WHERE person_id GLOB 'person_[0-9]*'")
-        for (pid,) in c.fetchall():
-            m = re.match(r"^person_(\d+)$", str(pid).strip())
-            if m:
-                max_n = max(max_n, int(m.group(1)))
-    return f"person_{max_n + 1}"
 
 
 def load_target_face_ids(
@@ -125,7 +91,7 @@ def incremental_assign(conn: sqlite3.Connection, face_ids: list[str]) -> None:
         )
         c.execute(
             "UPDATE faces SET searched = 1, search_faces_result = ? WHERE face_id = ?",
-            (json.dumps(response, default=_json_default), face_id),
+            (dumps_aws_response(response), face_id),
         )
 
         for match in response.get("FaceMatches") or []:
@@ -165,7 +131,7 @@ def incremental_assign(conn: sqlite3.Connection, face_ids: list[str]) -> None:
             if fid in best_external:
                 candidates.append(best_external[fid])
         if not candidates:
-            pid = next_free_person_id(conn)
+            pid = next_person_id_max_plus_one(conn)
             for fid in members:
                 c.execute("UPDATE faces SET person_id = ? WHERE face_id = ?", (pid, fid))
             assigned += len(members)

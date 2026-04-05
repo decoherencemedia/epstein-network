@@ -1,21 +1,20 @@
 import json
-from pathlib import Path
+from dataclasses import asdict
 from itertools import chain
 from collections import defaultdict
 
 import requests
 import pandas as pd
 
-from epstein_photos.config import IMAGE_DIR
-from external__00__scrape_tommy import tommy_to_me
+from epstein_photos.config import EXTRACTED_FACES_DIR, IMAGE_DIR, NETWORK_ROOT
+from epstein_photos.utils import process_basename
+from epstein_photos.utils import tommy_to_me
 
 JMAIL_DATA_URL = 'https://jmail.world/api/photos'
 TOMMY_DATA_URL = "https://tommycarstensen.com/epstein/data/gallery-db.js"
 
-DATA_DIR = Path("data")
+DATA_DIR = NETWORK_ROOT / "data"
 TOMMY_JSON = DATA_DIR / "tommy_name_to_urls.json"
-
-EXTRACTED_FACES_DIR = Path("../../extracted_faces/")
 
 MAX_FOLDER_RANK = 1504
 
@@ -27,25 +26,6 @@ def jmail_to_me(s):
     doc = s.split("-")[0]
     pg = int(s.split("-")[1].split(".")[0])
     return doc + f"-{pg:>05}.jpg"
-
-def process_basename(basename):
-    """Parse the folder naming convention I've been using"""
-    parts = basename.split("__")
-    to_ignore = parts[-1] == "IGNORE"
-
-    match parts:
-        case [rank, person_id, "IGNORE"]:
-            name = None
-        case [rank, person_id, name, "IGNORE"]:
-            name = None
-        case [rank, person_id]:
-            name = None
-        case [rank, person_id, name]:
-            name = name
-        case _:
-            raise ValueError(f"folder {basename} not structured as expected")
-
-    return {"basename": basename, "rank": int(rank), "person_id": person_id, "name": name, "to_ignore": to_ignore}
 
 def sort_dict(data):
     return  dict(
@@ -94,7 +74,7 @@ if __name__ == "__main__":
 
     folders = sorted(list(EXTRACTED_FACES_DIR.glob("*")))
 
-    df = pd.DataFrame([process_basename(folder.name) for folder in folders])
+    df = pd.DataFrame([asdict(process_basename(folder.name)) for folder in folders])
     df = df[df["rank"] <= MAX_FOLDER_RANK].copy()
 
     with_name = df[df["name"].notna()].set_index("basename")["name"].apply(lambda s : s.replace("_", " ")).to_dict()

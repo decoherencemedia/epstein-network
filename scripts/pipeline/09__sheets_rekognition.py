@@ -12,7 +12,6 @@
 """
 
 import io
-import json
 import os
 import shutil
 from urllib.parse import urlparse, parse_qs
@@ -25,6 +24,7 @@ import requests
 from PIL import Image, ImageDraw
 from gspread_formatting import format_cell_range, set_frozen, CellFormat, TextFormat, Color
 
+from epstein_photos.utils import dumps_aws_response, sanitize_label_for_filename
 from epstein_photos.faces_db import (
     apply_restricted_images_explicit,
     init_db,
@@ -94,11 +94,6 @@ def get_or_create_sheet(gc: gspread.Client):
     return get_workbook(gc).sheet1
 
 
-def _sanitize_label_for_filename(label: str) -> str:
-    s = "".join(c if c.isalnum() or c in "._- " else "" for c in str(label))
-    return s.strip().replace(" ", "_").replace("/", "_") or "node"
-
-
 def _copy_person_id_node_faces_to_name_form(gc: gspread.Client) -> int:
     """
     If `node_faces_selected/` has manual faces for `<person_id>_*` but lacks `<Name>_*`,
@@ -128,7 +123,7 @@ def _copy_person_id_node_faces_to_name_form(gc: gspread.Client) -> int:
     include_ids = load_person_ids_matches_and_unknowns(gc)
     copied = 0
     for pid in sorted(include_ids):
-        target_stem = _sanitize_label_for_filename(names.get(pid) or pid)
+        target_stem = sanitize_label_for_filename(names.get(pid) or pid)
         # Already has a correctly named manual file.
         if by_stem.get(target_stem):
             continue
@@ -543,7 +538,7 @@ def main():
                 source_bytes, target_path, response, source_face_box, all_source_boxes
             )
         confidence = extract_confidence(response)
-        json_str = json.dumps(response, separators=(",", ":"))
+        json_str = dumps_aws_response(response, separators=(",", ":"))
 
         worksheet.update_cell(row_1based, idx_confidence + 1, confidence)
         worksheet.update_cell(row_1based, idx_json_response + 1, json_str)

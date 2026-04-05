@@ -27,13 +27,10 @@ DigitalOcean Spaces is S3-compatible. Configure via environment variables:
 """
 
 
-import mimetypes
-import os
 from pathlib import Path
 
-import boto3
-
 from epstein_photos.config import NETWORK_ROOT
+from epstein_photos.spaces import delete_keys, get_spaces_client, list_remote_objects, upload_file
 
 REPO_DIR = NETWORK_ROOT
 
@@ -47,75 +44,6 @@ FORCE_UPLOAD_KEYS = {"atlas/atlas.webp", "atlas/atlas_manifest.json"}
 ATLAS_IMAGE_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
 ATLAS_MANIFEST_CACHE_CONTROL = "no-cache, max-age=0, must-revalidate"
 FACES_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
-
-
-def get_spaces_client():
-    region = os.environ.get("EPSTEIN_SPACES_REGION")
-    endpoint = os.environ.get("EPSTEIN_SPACES_ENDPOINT")
-    bucket = os.environ.get("EPSTEIN_SPACES_BUCKET")
-    key = os.environ.get("EPSTEIN_SPACES_KEY")
-    secret = os.environ.get("EPSTEIN_SPACES_SECRET")
-
-    missing = [name for name, val in [
-        ("EPSTEIN_SPACES_REGION", region),
-        ("EPSTEIN_SPACES_ENDPOINT", endpoint),
-        ("EPSTEIN_SPACES_BUCKET", bucket),
-        ("EPSTEIN_SPACES_KEY", key),
-        ("EPSTEIN_SPACES_SECRET", secret),
-    ] if not val]
-    if missing:
-        raise RuntimeError(f"Missing required environment variables for Spaces: {', '.join(missing)}")
-
-    s3 = boto3.client(
-        "s3",
-        region_name=region,
-        endpoint_url=endpoint,
-        aws_access_key_id=key,
-        aws_secret_access_key=secret,
-    )
-    return s3, bucket
-
-
-def upload_file(
-    s3,
-    bucket: str,
-    local_path: Path,
-    key: str,
-    cache_control: str | None = None,
-) -> None:
-    if not local_path.is_file():
-        raise FileNotFoundError(f"Required file missing for upload: {local_path}")
-    print(f"Uploading {local_path} -> s3://{bucket}/{key}")
-    extra_args: dict[str, str] = {"ACL": "public-read"}
-    content_type, _ = mimetypes.guess_type(str(local_path))
-    if content_type is None:
-        if local_path.suffix.lower() == ".webp":
-            content_type = "image/webp"
-        elif local_path.suffix.lower() in (".jpg", ".jpeg"):
-            content_type = "image/jpeg"
-        elif local_path.suffix.lower() == ".json":
-            content_type = "application/json"
-    if content_type is not None:
-        extra_args["ContentType"] = content_type
-    if cache_control is not None:
-        extra_args["CacheControl"] = cache_control
-    s3.upload_file(
-        Filename=str(local_path),
-        Bucket=bucket,
-        Key=key,
-        ExtraArgs=extra_args,
-    )
-
-
-def list_remote_objects(s3, bucket: str, prefixes: tuple[str, ...]) -> dict[str, int]:
-    """Return {key: size_bytes} for all objects under the provided prefixes."""
-    out: dict[str, int] = {}
-    paginator = s3.get_paginator("list_objects_v2")
-    for prefix in prefixes:
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                out[obj["Key"]] = int(obj["Size"])
-    return out
 
 
 def collect_flat_face_webp_uploads() -> dict[str, Path]:
@@ -135,20 +63,6 @@ def collect_flat_face_webp_uploads() -> dict[str, Path]:
             )
         out[key] = p
     return out
-
-
-def delete_keys(s3, bucket: str, keys: list[str]) -> None:
-    """Delete keys in batches (max 1000 per request)."""
-    if not keys:
-        return
-    chunk_size = 1000
-    for i in range(0, len(keys), chunk_size):
-        chunk = keys[i:i + chunk_size]
-        print(f"Deleting {len(chunk)} stale object(s) from s3://{bucket}/...")
-        s3.delete_objects(
-            Bucket=bucket,
-            Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
-        )
 
 
 def main():

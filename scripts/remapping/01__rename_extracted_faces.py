@@ -17,15 +17,14 @@ Example:
 
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from epstein_photos.config import (
     EXTRACTED_FACES_DIR,
     EXTRACTED_FACES_INITIAL_DIR,
     SCRIPTS_DIR,
 )
+from epstein_photos.utils import process_basename
 
 
 # CONFIG (edit these to your environment)
@@ -43,44 +42,7 @@ PERSON_ID_MAP_JSON = SCRIPTS_DIR / "person_id_map.json"
 DRY_RUN = False
 
 
-@dataclass(frozen=True)
-class FolderInfo:
-    basename: str
-    rank: int
-    person_id: str
-    name: Optional[str]
-    to_ignore: bool
-
-
-def process_basename(basename: str) -> FolderInfo:
-    """
-    Mirror of standardize_lists.process_basename, but typed and reusable here.
-    """
-    parts = basename.split("__")
-    to_ignore = parts[-1] == "IGNORE"
-
-    match parts:
-        case [rank, person_id, "IGNORE"]:
-            name = None
-        case [rank, person_id, name, "IGNORE"]:
-            name = None
-        case [rank, person_id]:
-            name = None
-        case [rank, person_id, name]:
-            name = name
-        case _:
-            raise ValueError(f"Folder name not structured as expected: {basename!r}")
-
-    return FolderInfo(
-        basename=basename,
-        rank=int(rank),
-        person_id=person_id,
-        name=name,
-        to_ignore=to_ignore,
-    )
-
-
-def build_new_basename(new_rank: int, new_person_id: str, name: Optional[str], to_ignore: bool) -> str:
+def build_new_basename(new_rank: int, new_person_id: str, name: str | None, to_ignore: bool) -> str:
     """Keep new_rank (from new folder); add name and IGNORE from old folder."""
     rank_str = f"{new_rank:03d}"
     pieces: list[str] = [rank_str, new_person_id]

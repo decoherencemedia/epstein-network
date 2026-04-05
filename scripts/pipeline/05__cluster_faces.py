@@ -3,7 +3,6 @@ Run SearchFaces on indexed faces, cluster by similarity (UnionFind), and assign 
 Run after 04__index_faces.py. Requires faces already indexed in Rekognition and in faces table.
 """
 
-import json
 import time
 from collections import defaultdict
 
@@ -11,6 +10,7 @@ import boto3
 
 from epstein_photos.faces_db import init_db
 from epstein_photos.config import REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
+from epstein_photos.utils import UnionFind, dumps_aws_response
 
 # ---------------- CONFIG ----------------
 
@@ -25,20 +25,6 @@ CLUSTER_SIMILARITY_THRESHOLD = 99.0
 # --------------------------------------
 
 rekognition = boto3.client("rekognition", region_name=REKOGNITION_REGION)
-
-
-class UnionFind:
-    def __init__(self):
-        self.parent = {}
-
-    def find(self, x):
-        self.parent.setdefault(x, x)
-        if self.parent[x] != x:
-            self.parent[x] = self.find(self.parent[x])
-        return self.parent[x]
-
-    def union(self, x, y):
-        self.parent[self.find(x)] = self.find(y)
 
 
 def cluster_faces(conn):
@@ -63,7 +49,7 @@ def cluster_faces(conn):
         # Persist the raw SearchFaces response for later analysis / debugging.
         c.execute(
             "UPDATE faces SET searched = 1, search_faces_result = ? WHERE face_id = ?",
-            (json.dumps(response, default=str), face_id),
+            (dumps_aws_response(response), face_id),
         )
 
         for match in response["FaceMatches"]:

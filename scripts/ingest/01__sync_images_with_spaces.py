@@ -33,15 +33,12 @@ Run (after ``pip install -e .`` from the ``network/`` repo root)::
 Edit constants below (e.g. ``DRY_RUN``) as needed.
 """
 
-import io
-import os
 import shutil
 import sqlite3
 from pathlib import Path
 
-import boto3
-
 from epstein_photos.config import DB_PATH, IMAGE_DIR
+from epstein_photos.spaces import get_spaces_client, list_remote_basenames, upload_bytes
 from epstein_photos.webp import full_image_to_webp_bytes, thumbnail_to_webp_bytes
 
 # ----- run configuration -----
@@ -58,50 +55,6 @@ THUMB_WEBP_QUALITY = 82
 IMAGE_CACHE_CONTROL = "public, max-age=86400, stale-while-revalidate=604800"
 
 
-def get_spaces_client():
-    region = os.environ.get("EPSTEIN_SPACES_REGION")
-    endpoint = os.environ.get("EPSTEIN_SPACES_ENDPOINT")
-    bucket = os.environ.get("EPSTEIN_SPACES_BUCKET")
-    key = os.environ.get("EPSTEIN_SPACES_KEY")
-    secret = os.environ.get("EPSTEIN_SPACES_SECRET")
-
-    missing = [
-        name
-        for name, val in [
-            ("EPSTEIN_SPACES_REGION", region),
-            ("EPSTEIN_SPACES_ENDPOINT", endpoint),
-            ("EPSTEIN_SPACES_BUCKET", bucket),
-            ("EPSTEIN_SPACES_KEY", key),
-            ("EPSTEIN_SPACES_SECRET", secret),
-        ]
-        if not val
-    ]
-    if missing:
-        raise RuntimeError(f"Missing required environment variables for Spaces: {', '.join(missing)}")
-
-    s3 = boto3.client(
-        "s3",
-        region_name=region,
-        endpoint_url=endpoint,
-        aws_access_key_id=key,
-        aws_secret_access_key=secret,
-    )
-    return s3, bucket
-
-
-def list_remote_basenames(s3, bucket: str, prefix: str) -> set[str]:
-    """Basenames (e.g. ``foo.webp``) under ``prefix`` (e.g. ``images/``)."""
-    out: set[str] = set()
-    paginator = s3.get_paginator("list_objects_v2")
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            key = obj["Key"]
-            if key.endswith("/"):
-                continue
-            out.add(Path(key).name)
-    return out
-
-
 def db_has_face_image_names(conn: sqlite3.Connection) -> list[str]:
     c = conn.cursor()
     c.execute(
@@ -116,26 +69,6 @@ def db_has_face_image_names(conn: sqlite3.Connection) -> list[str]:
 
 def webp_basename(image_name: str) -> str:
     return f"{Path(image_name).stem}.webp"
-
-
-def upload_bytes(
-    s3,
-    bucket: str,
-    key: str,
-    data: bytes,
-    *,
-    dry_run: bool,
-) -> None:
-    extra: dict[str, str] = {
-        "ACL": "public-read",
-        "ContentType": "image/webp",
-        "CacheControl": IMAGE_CACHE_CONTROL,
-    }
-    if dry_run:
-        print(f"  [dry-run] would upload {len(data)} bytes -> s3://{bucket}/{key}")
-        return
-    print(f"  uploading {len(data)} bytes -> s3://{bucket}/{key}")
-    s3.upload_fileobj(io.BytesIO(data), Bucket=bucket, Key=key, ExtraArgs=extra)
 
 
 def main() -> None:
@@ -203,6 +136,8 @@ def main() -> None:
                 bucket,
                 f"images/{wname}",
                 full_image_to_webp_bytes(local, FULL_WEBP_QUALITY),
+                content_type="image/webp",
+                cache_control=IMAGE_CACHE_CONTROL,
                 dry_run=False,
             )
         if need_thumb:
@@ -215,6 +150,8 @@ def main() -> None:
                     max_px=THUMB_MAX_PX,
                     quality=THUMB_WEBP_QUALITY,
                 ),
+                content_type="image/webp",
+                cache_control=IMAGE_CACHE_CONTROL,
                 dry_run=False,
             )
 

@@ -3,13 +3,13 @@ Index faces into a Rekognition collection (IndexFaces). Populates faces table an
 Run 05__cluster_faces.py afterwards to run SearchFaces and assign person_id.
 """
 
-import json
 import time
 from decimal import Decimal
 from pathlib import Path
 
 import boto3
 
+from epstein_photos.utils import dumps_aws_response
 from epstein_photos.config import IMAGE_DIR, REKOGNITION_COLLECTION_ID, REKOGNITION_REGION
 from epstein_photos.faces_db import get_images_to_index, init_db, upsert_image_status
 
@@ -27,13 +27,6 @@ def ensure_collection():
         rekognition.describe_collection(CollectionId=REKOGNITION_COLLECTION_ID)
     except rekognition.exceptions.ResourceNotFoundException:
         rekognition.create_collection(CollectionId=REKOGNITION_COLLECTION_ID)
-
-
-def _json_serial(obj):
-    """JSON-serialize Rekognition response (Decimal -> float)."""
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
 def index_image(image_path: Path, conn):
@@ -63,7 +56,7 @@ def index_image(image_path: Path, conn):
             age_low = int(age_low)
         if age_high is not None and isinstance(age_high, Decimal):
             age_high = int(age_high)
-        index_record_json = json.dumps(record, default=_json_serial)
+        index_record_json = dumps_aws_response(record)
 
         c.execute("""
             INSERT OR IGNORE INTO faces

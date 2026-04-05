@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 from epstein_photos.config import IMAGE_DIR
+from epstein_photos.webp import magick_bin
 
 # ----- run configuration -----
 INPUT_DIR = IMAGE_DIR
@@ -33,14 +34,6 @@ def _file_mime(path: Path) -> str:
     if r.returncode != 0:
         return ""
     return (r.stdout or "").strip()
-
-
-def _magick() -> list[str] | None:
-    if shutil.which("magick"):
-        return ["magick"]
-    if shutil.which("convert"):
-        return ["convert"]
-    return None
 
 
 def _png_to_jpeg_inplace(path: Path, magick: list[str]) -> None:
@@ -69,7 +62,7 @@ def main() -> None:
     out_dir = (input_dir / BACKUP_SUBDIR).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    magick = _magick()
+    magick = magick_bin()
 
     count_found = count_copied = count_optimized = count_png = 0
 

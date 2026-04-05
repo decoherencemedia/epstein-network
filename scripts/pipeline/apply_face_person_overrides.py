@@ -35,12 +35,12 @@ Example overrides.json:
 
 
 import json
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from epstein_photos.config import DB_PATH, SCRIPTS_DIR
+from epstein_photos.faces_db import smallest_unused_person_id_in_people
 
 # ---------------- CONFIG ----------------
 
@@ -49,7 +49,6 @@ OVERRIDE_JSON = SCRIPTS_DIR / "face_person_overrides.json"
 # ---------------------------------------
 
 KEY_NONE = "none"
-PERSON_ID_NUM_RE = re.compile(r"^person_(\d+)$")
 
 
 def _db_path() -> Path:
@@ -125,18 +124,6 @@ def assert_existing_person_keys_in_db(conn: sqlite3.Connection, overrides: dict[
             )
 
 
-def next_free_person_id(conn: sqlite3.Connection) -> str:
-    used: set[int] = set()
-    for (pid,) in conn.execute("SELECT person_id FROM people").fetchall():
-        m = PERSON_ID_NUM_RE.match(str(pid))
-        if m:
-            used.add(int(m.group(1)))
-    n = 1
-    while n in used:
-        n += 1
-    return f"person_{n}"
-
-
 def person_id_for_display_name(conn: sqlite3.Connection, display_name: str) -> str | None:
     """
     Return person_id if exactly one `people` row has name == display_name; None if none.
@@ -188,7 +175,7 @@ def apply_overrides(
                 reused.append((existing_pid, person_key))
                 target_pid = existing_pid
             else:
-                target_pid = next_free_person_id(conn)
+                target_pid = smallest_unused_person_id_in_people(conn)
                 c.execute(
                     """
                 INSERT INTO people (person_id, celebrity_check_done, name, include_in_network, is_victim)

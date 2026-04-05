@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple
 import boto3
 from PIL import Image
 
+from epstein_photos.utils import rekognition_bbox_iou
 from epstein_photos.config import IMAGE_DIR, REKOGNITION_REGION
 from epstein_photos.faces_db import init_db, pick_best_images, upsert_celebrity_check_done
 
@@ -52,21 +53,6 @@ def load_image_bytes(path: Path) -> bytes:
             f"File exceeds 5 MiB Rekognition limit: {len(raw)} bytes"
         )
     return raw
-
-
-def bbox_iou(a: dict, b: dict) -> float:
-    """Intersection-over-union of two Rekognition-style boxes (Left, Top, Width, Height, 0-1)."""
-    l1, t1, w1, h1 = a["Left"], a["Top"], a["Width"], a["Height"]
-    l2, t2, w2, h2 = b["Left"], b["Top"], b["Width"], b["Height"]
-    xi1 = max(l1, l2)
-    yi1 = max(t1, t2)
-    xi2 = min(l1 + w1, l2 + w2)
-    yi2 = min(t1 + h1, t2 + h2)
-    inter_w = max(0, xi2 - xi1)
-    inter_h = max(0, yi2 - yi1)
-    inter = inter_w * inter_h
-    union = w1 * h1 + w2 * h2 - inter
-    return inter / union if union > 0 else 0.0
 
 
 def get_person_ids(conn, skip_already_done=True):
@@ -107,7 +93,7 @@ def _match_celebrity_in_response(
     best_celeb = None
     best_iou = 0.0
     for celeb in celebrity_faces:
-        iou = bbox_iou(our_bbox, celeb["Face"]["BoundingBox"])
+        iou = rekognition_bbox_iou(our_bbox, celeb["Face"]["BoundingBox"])
         if iou >= MIN_IOU and iou > best_iou:
             best_iou = iou
             best_celeb = celeb

@@ -812,3 +812,40 @@ def pick_best_images(
             if len(selected) >= n:
                 break
     return selected[:n]
+
+
+# --- person_id allocation (distinct semantics; do not merge blindly) ---
+
+_PERSON_ID_DIGITS_RE = re.compile(r"^person_(\d+)$")
+
+
+def next_person_id_max_plus_one(conn: sqlite3.Connection) -> str:
+    """
+    Next ``person_<N>`` where ``N = 1 + max`` over all ``person_<digits>`` in ``faces`` and ``people``.
+    Does not reuse numeric gaps.
+    """
+    max_n = 0
+    c = conn.cursor()
+    for table in ("faces", "people"):
+        c.execute(f"SELECT person_id FROM {table} WHERE person_id GLOB 'person_[0-9]*'")
+        for (pid,) in c.fetchall():
+            m = _PERSON_ID_DIGITS_RE.match(str(pid).strip())
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+    return f"person_{max_n + 1}"
+
+
+def smallest_unused_person_id_in_people(conn: sqlite3.Connection) -> str:
+    """
+    Smallest ``person_<digits>`` not already present in ``people`` (reuses gaps).
+    Used when inserting a new ``people`` row for a display name.
+    """
+    used: set[int] = set()
+    for (pid,) in conn.execute("SELECT person_id FROM people").fetchall():
+        m = _PERSON_ID_DIGITS_RE.match(str(pid))
+        if m:
+            used.add(int(m.group(1)))
+    n = 1
+    while n in used:
+        n += 1
+    return f"person_{n}"

@@ -23,6 +23,9 @@ SCRIPTS_DIR = NETWORK_ROOT / "scripts"
 SCRIPT_DIR = SCRIPTS_DIR
 
 IMAGE_DIR = EPSTEIN_ROOT / "all_images"
+# WebP originals + thumbnails tree (often under ``EPSTEIN_ROOT``; used by ``17__upload_everything_to_spaces``).
+ALL_IMAGES_WITH_FACES_WEBP_DIR = EPSTEIN_ROOT / "all_images_with_faces_webp" / "images"
+ALL_IMAGES_WITH_FACES_THUMBNAILS_DIR = EPSTEIN_ROOT / "all_images_with_faces_thumbnails" / "images"
 DB_PATH = SCRIPTS_DIR / "faces.db"
 
 # ---------------- Rekognition ----------------

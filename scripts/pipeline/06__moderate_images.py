@@ -4,11 +4,11 @@ filter_explicit_labels() is available for downstream use when you only care abou
 Run after 04__index_faces (indexing). Skips images that already have moderation_result set.
 """
 
-import json
 import time
 
 import boto3
 
+from epstein_photos.utils import dumps_aws_response
 from epstein_photos.config import IMAGE_DIR, REKOGNITION_REGION
 from epstein_photos.faces_db import get_images_for_moderation, init_db, upsert_image_moderation
 
@@ -44,7 +44,7 @@ def main():
         with open(path, "rb") as f:
             image_bytes = f.read()
         response = rekognition.detect_moderation_labels(Image={"Bytes": image_bytes})
-        result_json = json.dumps(response, default=str)
+        result_json = dumps_aws_response(response)
         upsert_image_moderation(conn, image_name, result_json, commit=True)
         print(image_name)
         time.sleep(API_DELAY_SECONDS)

@@ -25,6 +25,7 @@ from pathlib import Path
 from PIL import Image
 
 from epstein_photos.config import DB_PATH, NETWORK_ROOT
+from epstein_photos.utils import sanitize_label_for_filename
 from epstein_photos.sheets_common import get_sheet_client, load_names
 
 
@@ -83,12 +84,6 @@ def parse_atlas_face_stem(stem: str) -> tuple[str, tuple[int, int | str]] | None
 
 def is_victim_label(label: str) -> bool:
     return bool(VICTIM_LABEL_RE.match(label.strip()))
-
-
-def sanitize_label_for_filename(label: str) -> str:
-    """Match 11__export_node_faces: safe filename stem from node label."""
-    s = "".join(c if c.isalnum() or c in "._- " else "" for c in label)
-    return s.strip().replace(" ", "_").replace("/", "_") or "node"
 
 
 def load_victim_sanitized_stems(conn: sqlite3.Connection, gc) -> set[str]:

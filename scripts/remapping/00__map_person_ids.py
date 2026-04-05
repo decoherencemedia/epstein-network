@@ -30,12 +30,13 @@ from typing import Any, Iterable, Iterator
 
 from PIL import Image
 
-from epstein_photos.config import IMAGE_DIR
+from epstein_photos.utils import normalized_box_iou
+from epstein_photos.config import DB_PATH, IMAGE_DIR, SCRIPTS_DIR
 
-
-OLD_DB_PATH = Path("faces_20260324__before_reclustering.db")  # relative to scripts/
-NEW_DB_PATH = Path("faces.db")  # relative to scripts/
-OUT_PREFIX: Path | None = Path("person_id_map")  # writes .json + .csv; set None to print JSON
+_SCRIPTS = SCRIPTS_DIR
+OLD_DB_PATH = _SCRIPTS / "faces_20260324__before_reclustering.db"
+NEW_DB_PATH = DB_PATH
+OUT_PREFIX: Path | None = _SCRIPTS / "person_id_map"  # writes .json + .csv; set None to print JSON
 
 TOP_N = 400
 
@@ -95,19 +96,9 @@ class BBox:
 
 
 def iou(a: BBox, b: BBox) -> float:
-    ix1 = max(a.left, b.left)
-    iy1 = max(a.top, b.top)
-    ix2 = min(a.right, b.right)
-    iy2 = min(a.bottom, b.bottom)
-    iw = max(0.0, ix2 - ix1)
-    ih = max(0.0, iy2 - iy1)
-    inter = iw * ih
-    if inter <= 0:
-        return 0.0
-    union = a.area + b.area - inter
-    if union <= 0:
-        return 0.0
-    return inter / union
+    return normalized_box_iou(
+        a.left, a.top, a.width, a.height, b.left, b.top, b.width, b.height
+    )
 
 
 def center_distance(a: BBox, b: BBox) -> float:
@@ -670,8 +661,8 @@ def _resolve_paths() -> tuple[Path, Path, Path | None]:
     if len(argv) == 3:
         out_prefix = Path(argv[2]) if argv[2].lower() != "none" else None
 
-    # If called from repo root, constants are relative to scripts/; make that work.
-    scripts_dir = Path(__file__).resolve().parent
+    # Resolve paths relative to network/scripts/ (not this file's remapping/ dir).
+    scripts_dir = SCRIPTS_DIR
     if not old_db.is_absolute():
         old_db = (scripts_dir / old_db).resolve()
     if not new_db.is_absolute():

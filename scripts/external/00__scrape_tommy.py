@@ -1,21 +1,13 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
-from bs4 import BeautifulSoup
 import requests
-
+from bs4 import BeautifulSoup
 
 TOMMY_BASE_URL = "https://tommycarstensen.com/epstein/"
 
 OUTPUT_DIR = Path("data")
 TOMMY_JSON = OUTPUT_DIR / "tommy_name_to_urls.json"
-
-
-def tommy_to_me(s):
-    filename = s.strip("/").split("/")[-1]
-    doc = filename.split("_")[0]
-    pg = int(filename.split("_p")[1].split("_")[0])
-    return doc + f"-{pg-1:>05}.jpg"
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ from epstein_photos.sheets_common import (
     load_person_ids_matches_and_unknowns,
 )
 from epstein_photos.config import DB_PATH, NETWORK_ROOT
+from epstein_photos.utils import sanitize_label_for_filename
 from epstein_photos.faces_db import parse_node_face_export_stem, pick_best_images
 
 
@@ -121,17 +122,11 @@ def _has_minor_face(age_low: Any, age_high: Any) -> bool:
     return False
 
 
-def _sanitize_label_for_filename(label: str) -> str:
-    """Match ``12__export_node_faces`` / atlas: safe filename stem from graph node label."""
-    s = "".join(c if c.isalnum() or c in "._- " else "" for c in label)
-    return s.strip().replace(" ", "_").replace("/", "_") or "node"
-
-
 def _stem_to_label_from_graph(nodes: Any) -> dict[str, str]:
     """Map sanitized stem -> graph label for all nodes in G."""
     stem_to_label: dict[str, str] = {}
     for label in nodes:
-        stem = _sanitize_label_for_filename(str(label))
+        stem = sanitize_label_for_filename(str(label))
         stem_to_label[stem] = str(label)
     return stem_to_label
 

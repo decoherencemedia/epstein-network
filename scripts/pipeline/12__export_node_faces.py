@@ -21,6 +21,7 @@ from typing import Any
 from PIL import Image
 
 from epstein_photos.config import DB_PATH, IMAGE_DIR, IMAGES_DIR
+from epstein_photos.utils import sanitize_label_for_filename
 from epstein_photos.faces_db import parse_node_face_export_stem, pick_best_images
 from epstein_photos.sheets_common import (
     get_sheet_client,
@@ -110,11 +111,6 @@ def _best_roll_for_bbox(
             best_d = d
             best = rec
     return _extract_roll(best)
-
-def _sanitize_label_for_filename(label: str) -> str:
-    """Safe filename from node label."""
-    s = "".join(c if c.isalnum() or c in "._- " else "" for c in label)
-    return s.strip().replace(" ", "_").replace("/", "_") or "node"
 
 
 def _square_crop_region(
@@ -295,7 +291,7 @@ if __name__ == "__main__":
     label_by_person_id = {pid: _display_label(pid) for pid in union_person_ids}
     sanitized_to_label: dict[str, str] = {}
     for label in label_by_person_id.values():
-        s = _sanitize_label_for_filename(label)
+        s = sanitize_label_for_filename(label)
         prev = sanitized_to_label.get(s)
         if prev is not None and prev != label:
             raise RuntimeError(
@@ -330,7 +326,7 @@ if __name__ == "__main__":
     failed_exports: list[tuple[str, str, str]] = []
     for person_id in sorted(union_person_ids):
         label = label_by_person_id[person_id]
-        safe_label = _sanitize_label_for_filename(label)
+        safe_label = sanitize_label_for_filename(label)
 
         # Export DB-selected face_id (synced earlier by 09) even if top-K already exists for this person/label.
         selected_face_id = (best_face_ids.get(person_id) or "").strip()
