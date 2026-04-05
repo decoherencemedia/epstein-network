@@ -37,13 +37,23 @@ cat "$SITE/partials/head-about.html" \
 
 cp "$ROOT/styles.css" "$DIST/"
 cp "$ROOT/favicon.svg" "$DIST/"
-cp -r "$ROOT/viz_data" "$DIST/"
+
+# Pipeline writes JSON under epstein-web/viz_data/ (see epstein_photos.config.VIZ_DATA_DIR).
+if [[ -d "$ROOT/viz_data" ]]; then
+  cp -r "$ROOT/viz_data" "$DIST/"
+else
+  mkdir -p "$DIST/viz_data"
+  echo "warning: no viz_data/ in repo root (run pipeline steps that write dataset.json, etc.)" >&2
+fi
+
 cp -r "$SITE/js" "$DIST/"
 
-# Local dev only: home-inner uses ./images/atlas.webp when IS_LOCAL_DEV; production uses
-# the DigitalOcean Spaces URL and never loads atlas from dist/. Optional copy so
-# `cd dist && python3 -m http.server` can show the atlas after 15__build_atlas.py.
-if [[ -f "$ROOT/images/atlas.webp" ]]; then
+# Local dev: atlas from pipeline output (``network/images/``, see FACES_IMAGE_DIR), else in-repo copy.
+ATLAS_PIPELINE="$ROOT/../images/atlas.webp"
+if [[ -f "$ATLAS_PIPELINE" ]]; then
+  mkdir -p "$DIST/images"
+  cp "$ATLAS_PIPELINE" "$DIST/images/"
+elif [[ -f "$ROOT/images/atlas.webp" ]]; then
   mkdir -p "$DIST/images"
   cp "$ROOT/images/atlas.webp" "$DIST/images/"
 fi
