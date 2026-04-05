@@ -49,3 +49,4 @@ Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
 - update scripts and descriptions in README
 - separate repos for scripts and web
 - double check pdfimages to make sure pbm and non-jpg images are kept
+- change API such that search returns duplicated images of documents correctly

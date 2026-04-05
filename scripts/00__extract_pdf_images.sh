@@ -11,5 +11,5 @@ OUTPUT_DIR="/home/tristan/Documents/misc/epstein/all_images"
 INPUT_ROOT="$(cd "$INPUT_DIR" && pwd)"
 export PDF_INPUT_ROOT="$INPUT_ROOT"
 
-python3 "$SCRIPT_DIR/extract_pdf_images_parallel.py" "$INPUT_DIR" "$OUTPUT_DIR" --list-pdfs | \
+python3 "$SCRIPT_DIR/_00__extract_pdf_images_parallel.py" "$INPUT_DIR" "$OUTPUT_DIR" --list-pdfs | \
     parallel -j $(nproc) --halt now,fail=1 env PDF_INPUT_ROOT="$INPUT_ROOT" python3 "$SCRIPT_DIR/extract_pdf_images_parallel.py" {} "$OUTPUT_DIR"

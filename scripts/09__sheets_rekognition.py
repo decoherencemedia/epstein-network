@@ -68,6 +68,8 @@ COLUMNS = [
     "Best Face ID",
     "Links",
     "Notes",
+    "Previously Reported",
+    "Jmail"
 ]
 
 REKOGNITION_REGION = os.environ.get("AWS_REGION", "us-east-1")
@@ -88,7 +90,7 @@ def init_spreadsheet(worksheet):
         textFormat=TextFormat(bold=True),
         backgroundColor=Color(0.95, 0.95, 0.95),
     )
-    format_cell_range(worksheet, "A1:L1", fmt)
+    format_cell_range(worksheet, "A1:N1", fmt)
 
 
 def get_or_create_sheet(gc: gspread.Client):
