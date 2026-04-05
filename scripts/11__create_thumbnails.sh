@@ -22,7 +22,6 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
 # Find common image types (case-insensitive) and convert to WebP.
-# - auto-orient: respects EXIF orientation
 # - strip: removes metadata (smaller files)
 # - resize "${MAX_PX}x${MAX_PX}>": only shrink if larger than MAX_PX
 find "$IN_DIR" -type f \( \
@@ -44,7 +43,6 @@ while IFS= read -r -d '' src; do
   fi
 
   convert "$src" \
-    -auto-orient \
     -resize "${MAX_PX}x${MAX_PX}>" \
     -strip \
     -quality "$QUALITY" \

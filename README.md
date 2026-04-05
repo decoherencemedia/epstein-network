@@ -46,6 +46,6 @@ Shared config: `config.py` (IMAGE_DIR, DB_PATH). DB: `faces.db` in `scripts/`.
 
 ## TODO
 - add "Unknown" page
-- add searching by image/file
 - update scripts and descriptions in README
 - separate repos for scripts and web
+- double check pdfimages to make sure pbm and non-jpg images are kept

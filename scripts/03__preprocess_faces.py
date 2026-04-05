@@ -10,6 +10,9 @@ This script:
     has_face   INTEGER  -- 1 if local detector saw at least one face, 0 if not
 
 It does NOT call AWS Rekognition. Run 04__index_faces.py then 05__cluster_faces.py to index and cluster.
+
+Only processes canonical rows (``duplicate_of IS NULL``) where ``has_face`` is still unknown
+(``has_face IS NULL``). Images with ``has_face`` already set (0 or 1) are skipped entirely.
 """
 
 import os
@@ -19,7 +22,7 @@ import cv2
 from insightface.app import FaceAnalysis
 import onnxruntime as ort
 
-from faces_db import get_already_has_face, init_db, upsert_image_status
+from faces_db import init_db, upsert_image_status
 
 # ---------------- CONFIG ----------------
 
@@ -89,24 +92,27 @@ def _format_eta(sec):
 
 def preprocess_all_images(conn):
     # 01__dedup_images.py is expected to populate `images` table (and duplicate_of).
-    # Preprocess only canonical images (duplicate_of IS NULL).
+    # Preprocess only canonical images (duplicate_of IS NULL) that still need has_face.
     c = conn.cursor()
-    c.execute("SELECT image_name FROM images WHERE duplicate_of IS NULL")
-    entries = [row[0] for row in c.fetchall()]
-    print(f"{len(entries)} canonical image(s) in DB (duplicate_of IS NULL)")
-    if len(entries) == 0:
-        raise RuntimeError("No images found in DB. Run 01__dedup_images.py first.")
-
-    # One query: skip all images that already have has_face set (avoids 10k+ get_image_status calls).
-    already_done = get_already_has_face(conn)
-    image_exts = (".jpg", ".jpeg", ".png", ".ppm")
-    todo_count = sum(
-        1 for f in entries
-        if f.lower().endswith(image_exts) and f not in already_done
+    c.execute(
+        "SELECT image_name FROM images WHERE duplicate_of IS NULL AND has_face IS NULL"
     )
-    skipped = sum(1 for f in entries if f.lower().endswith(image_exts) and f in already_done)
-    print(f"Already have has_face (will skip): {len(already_done)}")
-    print(f"To process this run: {todo_count}")
+    entries = [row[0] for row in c.fetchall()]
+    skipped = c.execute(
+        "SELECT COUNT(*) FROM images WHERE duplicate_of IS NULL AND has_face IS NOT NULL"
+    ).fetchone()[0]
+    canonical_total = c.execute(
+        "SELECT COUNT(*) FROM images WHERE duplicate_of IS NULL"
+    ).fetchone()[0]
+    print(f"{canonical_total} canonical image(s) in DB (duplicate_of IS NULL)")
+    print(f"Already have has_face set (skipped): {skipped}")
+    if len(entries) == 0:
+        print("No canonical images left to preprocess (all have has_face set, or run 01__dedup_images.py first).")
+        return
+
+    image_exts = (".jpg", ".jpeg", ".png", ".ppm")
+    todo_count = sum(1 for f in entries if f.lower().endswith(image_exts))
+    print(f"To process this run (has_face IS NULL, supported extension): {todo_count}")
 
     processed = 0
     batch_start = None
@@ -114,9 +120,6 @@ def preprocess_all_images(conn):
     for filename in entries:
 
         if not filename.lower().endswith(image_exts):
-            continue
-
-        if filename in already_done:
             continue
 
         # print(filename)
@@ -147,7 +150,7 @@ def preprocess_all_images(conn):
         rate = batch_elapsed / (processed % COMMIT_BATCH)
         print(f"{processed}/{todo_count} done. Last batch: {batch_elapsed:.1f}s ({rate:.3f} s/img).")
     print("Preprocessing complete.")
-    print(f"Images with has_face previously set (skipped): {skipped}")
+    print(f"Canonical images that already had has_face before this run: {skipped}")
     print(f"Images newly processed this run: {processed}")
 
 

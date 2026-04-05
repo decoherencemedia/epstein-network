@@ -44,7 +44,7 @@ OUT_DIR="$(mkdir -p "${OUT_DIR}" && cd "${OUT_DIR}" && pwd)"
 
 # Rekognition Bytes limit is 5 MiB = 5 * 1024 * 1024 bytes = 5120 KiB.
 MAX_BYTES=$((5 * 1024 * 1024))
-TARGET_KB=5120
+TARGET_KB=5000
 
 mkdir -p "${OUT_DIR}"
 
