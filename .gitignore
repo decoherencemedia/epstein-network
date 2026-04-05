@@ -23,6 +23,7 @@ scripts/map_person_ids/*
 !README.md
 *.db-journal
 *.ods
+*.egg-info
 
 api.py
 epstein_face.png

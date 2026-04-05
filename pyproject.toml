@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "epstein-photos"
+version = "0.1.0"
+description = "Face pipeline and visualization helpers for the Epstein photo network project"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+pipeline = [
+    "boto3",
+    "gspread",
+    "gspread-formatting",
+    "google-auth-oauthlib",
+    "networkx",
+    "pandas",
+    "requests",
+    "flask",
+    "flask-caching",
+    "flask-cors",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["epstein_photos*"]
