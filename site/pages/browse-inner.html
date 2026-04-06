@@ -11,25 +11,13 @@
   <div class="browse-grid" id="browse-grid" hidden></div>
 </main>
 
+<script src="../js/shared.js"></script>
 <script>
 (function () {
-  const API_BASE = "https://api.epstein.photos";
-//   const API_BASE = "http://localhost:5000";
-
-  const FACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
-
-  function faceImageUrl(path) {
-    if (!path) return null;
-    const s = String(path).trim();
-    if (/^https?:\/\//i.test(s)) return s;
-    const normalized = s.replace(/^\/+/, "");
-    return FACES_CDN_BASE.replace(/\/$/, "") + "/" + normalized;
-  }
-
   function displayName(row) {
     if (row.name && String(row.name).trim()) return String(row.name).trim();
-    const m = /^person_(\d+)$/i.exec(String(row.person_id || ""));
-    if (m) return "Person " + Number(m[1]);
+    const n = SiteShared.personStubNumber(row.person_id);
+    if (n != null) return "Person " + n;
     return String(row.person_id || "");
   }
 
@@ -43,7 +31,7 @@
   const gridEl = document.getElementById("browse-grid");
   const countEl = document.getElementById("browse-title-count");
 
-  fetch(API_BASE + "/faces", { credentials: "omit" })
+  fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" })
     .then(function (res) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.json();
@@ -81,7 +69,7 @@
         const media = document.createElement("div");
         media.className = "browse-tile-media";
 
-        const url = faceImageUrl(row.image);
+        const url = SiteShared.cdnAssetUrl(row.image);
         if (url) {
           const img = document.createElement("img");
           img.className = "browse-tile-img";

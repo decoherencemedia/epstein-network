@@ -95,7 +95,6 @@
     const linkSource = (d) => d.source;
     const linkTarget = (d) => d.target;
 
-    const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
     const IS_LOCAL_DEV =
       typeof window !== "undefined" &&
       (
@@ -159,7 +158,7 @@
 
       const NODE_ATLAS_IMAGE_HREF = IS_LOCAL_DEV
         ? "images/atlas.webp"
-        : `${SPACES_CDN_BASE}/atlas/atlas.webp`;
+        : SiteShared.cdnAtlasWebpUrl();
 
       function sanitizeLabelForAtlasKey(label) {
         // Match scripts/12__export_node_faces.py and scripts/15__build_atlas.py.
@@ -307,26 +306,84 @@
         return typeof filename === "string" && filename.startsWith("faces/");
       }
 
-      function toFacesCdnUrl(filename) {
-        if (!filename) return null;
-        const base = String(filename).split("/").pop();
-        return `${SPACES_CDN_BASE}/faces/${encodeURIComponent(base)}`;
-      }
-
-      function toWebpThumbPath(filename) {
-        if (!filename) return null;
-        const base = String(filename).split("/").pop();
-        const stem = base.replace(/\.[^.]+$/, "");
-        return `${SPACES_CDN_BASE}/thumbnails/${encodeURIComponent(stem)}.webp`;
-      }
-
-      function toOriginalImageUrl(filename) {
-        if (!filename) return null;
-        const base = String(filename).split("/").pop();
-        return `${SPACES_CDN_BASE}/images/${encodeURIComponent(base)}`;
-      }
-
       let currentBboxes = [];
+
+      /**
+       * Same normalized bbox tuples as Search thumbs; align with people-inner
+       * `setThumbObjectPositionFromPrimaryFace` (top-most, then left-most box center).
+       */
+      function parseObjectPositionFractions(styleStr) {
+        if (!styleStr || typeof styleStr !== "string") return { px: 0.5, py: 0.5 };
+        const parts = styleStr.trim().split(/\s+/);
+        function parseToken(t) {
+          if (!t) return 0.5;
+          const lower = String(t).toLowerCase();
+          if (lower === "left" || lower === "top") return 0;
+          if (lower === "center") return 0.5;
+          if (lower === "right" || lower === "bottom") return 1;
+          const m = /^([\d.]+)%$/.exec(t);
+          if (m) return parseFloat(m[1]) / 100;
+          return 0.5;
+        }
+        if (parts.length === 1) {
+          return { px: parseToken(parts[0]), py: 0.5 };
+        }
+        return { px: parseToken(parts[0]), py: parseToken(parts[1]) };
+      }
+
+      /**
+       * @param {boolean} [focalEdgeAverage] graph edge preview only: average of all bbox centers (Search page unchanged).
+       */
+      function setPreviewImgObjectPositionFromBboxes(img, bboxes, focalEdgeAverage) {
+        if (!bboxes || !bboxes.length) {
+          img.style.removeProperty("object-position");
+          return;
+        }
+        if (focalEdgeAverage) {
+          let sx = 0;
+          let sy = 0;
+          let n = 0;
+          for (let i = 0; i < bboxes.length; i++) {
+            const bb = bboxes[i];
+            if (!Array.isArray(bb) || bb.length < 4) continue;
+            const cx = bb[0] + bb[2] / 2;
+            const cy = bb[1] + bb[3] / 2;
+            if (![cx, cy].every(function (x) { return Number.isFinite(x); })) continue;
+            sx += cx;
+            sy += cy;
+            n++;
+          }
+          if (!n) {
+            img.style.removeProperty("object-position");
+            return;
+          }
+          const cx = sx / n;
+          const cy = sy / n;
+          img.style.objectPosition = cx * 100 + "% " + cy * 100 + "%";
+          return;
+        }
+        const sorted = bboxes.slice().sort(function (a, b) {
+          const at = a[1];
+          const bt = b[1];
+          if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
+          const ax = a[0];
+          const bx = b[0];
+          if (Number.isFinite(ax) && Number.isFinite(bx) && ax !== bx) return ax - bx;
+          return 0;
+        });
+        const b = sorted[0];
+        if (!Array.isArray(b) || b.length < 4) {
+          img.style.removeProperty("object-position");
+          return;
+        }
+        const cx = b[0] + b[2] / 2;
+        const cy = b[1] + b[3] / 2;
+        if (![cx, cy].every(function (x) { return Number.isFinite(x); })) {
+          img.style.removeProperty("object-position");
+          return;
+        }
+        img.style.objectPosition = cx * 100 + "% " + cy * 100 + "%";
+      }
 
       function positionBboxEl(el, bbox, displayW, displayH, offsetX, offsetY) {
         const [left, top, width, height] = bbox;
@@ -345,11 +402,13 @@
         const naturalW = imgEl.naturalWidth;
         const naturalH = imgEl.naturalHeight;
         if (!naturalW || !naturalH || !containerW || !containerH) return;
-        const scale = Math.min(containerW / naturalW, containerH / naturalH);
+        /* object-fit: cover + object-position (see setPreviewImgObjectPositionFromBboxes) — same math as Search thumbs */
+        const scale = Math.max(containerW / naturalW, containerH / naturalH);
         const displayW = naturalW * scale;
         const displayH = naturalH * scale;
-        const offsetX = (containerW - displayW) / 2;
-        const offsetY = (containerH - displayH) / 2;
+        const pos = parseObjectPositionFractions(getComputedStyle(imgEl).objectPosition);
+        const offsetX = pos.px * (containerW - displayW);
+        const offsetY = pos.py * (containerH - displayH);
         if (previewBboxEl && currentBboxes[0]) {
           positionBboxEl(previewBboxEl, currentBboxes[0], displayW, displayH, offsetX, offsetY);
           previewBboxEl.style.borderColor = EDGE_BBOX_COLOR_ALPHABETIC_FIRST;
@@ -366,6 +425,12 @@
       }
 
       previewImgEl.addEventListener("load", updateBboxOverlay);
+      if (typeof ResizeObserver !== "undefined" && previewImgEl) {
+        const thumbRo = new ResizeObserver(function () {
+          updateBboxOverlay();
+        });
+        thumbRo.observe(previewImgEl);
+      }
 
       if (!previewNeighborsEl) throw new Error("Missing #thumb-top-neighbors");
       if (!previewDefaultEl) throw new Error("Missing #thumb-default");
@@ -382,6 +447,7 @@
         previewImgLinkEl.removeAttribute("href");
         previewImgEl.src = "";
         previewImgEl.alt = "";
+        previewImgEl.style.removeProperty("object-position");
         previewEmptyEl.style.display = "none";
         previewNeighborsEl.style.display = "none";
         previewNeighborsEl.innerHTML = "";
@@ -566,15 +632,20 @@
         totalLabel,
         bboxes,
         onNavigateToNeighbor,
-        peopleIdsForPreviewLink
+        peopleIdsForPreviewLink,
+        previewOptions
       ) {
+        const focalEdgeAverage =
+          previewOptions &&
+          typeof previewOptions === "object" &&
+          previewOptions.focalEdgeAverage === true;
         const src = isFacesBucketFilename(filename)
-          ? toFacesCdnUrl(filename)
-          : toWebpThumbPath(filename);
+          ? SiteShared.cdnFacesUrl(filename)
+          : SiteShared.cdnThumbnailWebpUrl(filename);
         const peopleUrl = peopleUrlForPersonIdsWithPhoto(peopleIdsForPreviewLink, filename);
         const origUrl =
           peopleUrl ||
-          (isFacesBucketFilename(filename) ? toFacesCdnUrl(filename) : toOriginalImageUrl(filename));
+          (isFacesBucketFilename(filename) ? SiteShared.cdnFacesUrl(filename) : SiteShared.cdnImagesUrl(filename));
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
@@ -606,6 +677,11 @@
           }
           previewImgEl.src = src;
           previewImgEl.alt = title || "";
+          setPreviewImgObjectPositionFromBboxes(
+            previewImgEl,
+            currentBboxes,
+            focalEdgeAverage
+          );
           if (currentBboxes.length && previewImgEl.complete && previewImgEl.naturalWidth) {
             updateBboxOverlay();
           }
@@ -614,6 +690,7 @@
           previewImgLinkEl.removeAttribute("href");
           previewImgEl.src = "";
           previewImgEl.alt = "";
+          previewImgEl.style.removeProperty("object-position");
           previewEmptyEl.style.display = "block";
         }
         setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle, onNavigateToNeighbor);
@@ -713,7 +790,7 @@
       }
 
       function openOriginalImage(filename) {
-        openInNewTab(toOriginalImageUrl(filename));
+        openInNewTab(SiteShared.cdnImagesUrl(filename));
       }
 
       function openPeopleForPersonIds(personIds) {
@@ -1266,7 +1343,8 @@
             if (!target) return;
             showNodeInSidebar(target);
           },
-          personIdsForEdge(d)
+          personIdsForEdge(d),
+          { focalEdgeAverage: true }
         );
         syncSidebarEdgeToUrl(personIdsForEdge(d));
       }

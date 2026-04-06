@@ -415,23 +415,28 @@ body.page-home #thumb-preview {
 }
 #thumb-img-link {
   display: block;
+  width: 100%;
   text-decoration: none;
   border-radius: var(--radius-8);
 }
 #thumb-img-link:focus { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+/* Block + full width: inline-block used to shrink-wrap small intrinsic images. */
 .thumb-img-wrapper {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
-}
-#thumb-img {
-  width: 100%;
-  height: auto;
   display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
   border-radius: var(--radius-8);
   background: #f3f3f3;
-  max-height: 55vh;
-  object-fit: contain;
+}
+/* Cover: smallest image dimension scales up to fill the square; overflow cropped (same idea as min-dim = sidebar width when the box is square). */
+#thumb-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
 }
 /* Default borders match SiteShared.personColorPalette[0] / [1]; JS sets borderColor in updateBboxOverlay. */
 .thumb-bbox {
@@ -859,11 +864,18 @@ body.page-home #name-search {
     display: flex;
     flex-direction: column;
   }
-  #thumb-img {
+  .thumb-img-wrapper {
     flex: 0 0 auto;
     width: 100%;
-    max-height: 18vh;
+    max-height: min(28vh, 100%);
+    aspect-ratio: 1 / 1;
+  }
+  #thumb-img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
     min-height: 0;
+    object-fit: cover;
   }
   #thumb-preview .thumb-title {
     font-size: 19px;
