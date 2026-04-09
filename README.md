@@ -28,3 +28,5 @@ GitHub Actions (if configured) runs `./site/build.sh` and deploys **`dist/`** to
 
 ## TODO
 - fix issue where original PDF source link not visible on some screens (Google Pixel Pro 9 XL)
+- fix issue with down arrow key selection on autocomplete
+- add fuzzy search to People page (with filters for category?)
