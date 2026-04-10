@@ -46,6 +46,11 @@ else
   echo "warning: no viz_data/ in repo root (run pipeline steps that write dataset.json, etc.)" >&2
 fi
 
+# Third-party script (not committed): fetch at build time so /search doesn’t block on unpkg at runtime.
+IMAGELOADED_URL="https://unpkg.com/imagesloaded@5.0.0/imagesloaded.pkgd.min.js"
+IMAGELOADED_OUT="$SITE/js/imagesloaded.pkgd.min.js"
+curl -fsSL "$IMAGELOADED_URL" -o "$IMAGELOADED_OUT"
+
 cp -r "$SITE/js" "$DIST/"
 
 # Local dev: atlas from pipeline output (``network/images/``, see FACES_IMAGE_DIR), else in-repo copy.

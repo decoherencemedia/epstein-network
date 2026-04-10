@@ -1182,18 +1182,29 @@
         searchState.resultsEl.style.display = "none";
         searchState.resultsEl.setAttribute("aria-hidden", "true");
         searchState.activeIndex = -1;
+        searchState.pointerOptionIndex = null;
         searchState.current = [];
       }
 
-      function setActiveNameSearchResult(searchState, nextIndex) {
+      function applyNameSearchHighlightClasses(searchState) {
+        const nextIndex = searchState.activeIndex;
         const kids = Array.from(searchState.resultsEl.children);
         kids.forEach((el, i) => {
           if (!(el instanceof HTMLElement)) return;
-          const active = i === nextIndex;
-          el.classList.toggle("active", active);
-          el.setAttribute("aria-selected", active ? "true" : "false");
+          const keyboardOn = nextIndex >= 0 && i === nextIndex;
+          const enterDefault =
+            nextIndex < 0 &&
+            i === 0 &&
+            (searchState.pointerOptionIndex === null || searchState.pointerOptionIndex === 0);
+          el.classList.toggle("active", keyboardOn);
+          el.classList.toggle("name-search-result-enter-default", enterDefault);
+          el.setAttribute("aria-selected", keyboardOn || enterDefault ? "true" : "false");
         });
+      }
+
+      function setActiveNameSearchResult(searchState, nextIndex) {
         searchState.activeIndex = nextIndex;
+        applyNameSearchHighlightClasses(searchState);
       }
 
       function renderNameSearchResults(searchState, items) {
@@ -1210,7 +1221,7 @@
         items.forEach((item) => {
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.className = "name-search-result" + (searchState.resultsEl.children.length === 0 ? " name-search-result-top" : "");
+          btn.className = "name-search-result";
           btn.setAttribute("role", "option");
           btn.setAttribute("aria-selected", "false");
           btn.textContent = item.label;
@@ -1228,6 +1239,7 @@
           });
           searchState.resultsEl.appendChild(btn);
         });
+        applyNameSearchHighlightClasses(searchState);
       }
 
       function setupNameSearch() {
@@ -1240,7 +1252,25 @@
           resultsEl: nameSearchResultsEl,
           current: [],
           activeIndex: -1,
+          pointerOptionIndex: null,
         };
+
+        nameSearchResultsEl.addEventListener(
+          "pointerover",
+          function (e) {
+            const btn = e.target && e.target.closest && e.target.closest(".name-search-result");
+            if (!btn || !nameSearchResultsEl.contains(btn)) return;
+            const kids = Array.from(nameSearchResultsEl.children);
+            const idx = kids.indexOf(btn);
+            searchState.pointerOptionIndex = idx >= 0 ? idx : null;
+            applyNameSearchHighlightClasses(searchState);
+          },
+          true
+        );
+        nameSearchResultsEl.addEventListener("pointerleave", function () {
+          searchState.pointerOptionIndex = null;
+          applyNameSearchHighlightClasses(searchState);
+        });
 
         nameSearchInputEl.addEventListener("input", () => {
           const q = nameSearchInputEl.value;
@@ -1266,21 +1296,27 @@
           if (e.key === "ArrowDown") {
             if (!searchState.current.length) return;
             e.preventDefault();
-            const next = Math.min(searchState.current.length - 1, searchState.activeIndex + 1);
+            let next;
+            if (searchState.activeIndex < 0) {
+              next = searchState.current.length > 1 ? 1 : 0;
+            } else {
+              next = Math.min(searchState.current.length - 1, searchState.activeIndex + 1);
+            }
             setActiveNameSearchResult(searchState, next);
             return;
           }
           if (e.key === "ArrowUp") {
             if (!searchState.current.length) return;
             e.preventDefault();
-            const next = Math.max(0, searchState.activeIndex - 1);
+            const next = searchState.activeIndex <= 0 ? -1 : searchState.activeIndex - 1;
             setActiveNameSearchResult(searchState, next);
             return;
           }
           if (e.key === "Enter") {
             if (!searchState.current.length || !hasTypedQuery) return;
             e.preventDefault();
-            const chosen = searchState.current[Math.max(0, searchState.activeIndex)];
+            const chosen =
+              searchState.current[searchState.activeIndex >= 0 ? searchState.activeIndex : 0];
             if (!chosen) return;
             showNodeInSidebar(chosen.node);
             centerNodeInViewport(chosen.node);

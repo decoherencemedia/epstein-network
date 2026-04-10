@@ -38,7 +38,7 @@
             id="people-document-input"
             type="text"
             class="people-search-input"
-            placeholder="EFTA00000005 or HOUSE_OVERSIGHT_…"
+            placeholder="EFTA00249282 or HOUSE_OVERSIGHT…"
             maxlength="80"
             aria-label="Document ID"
             aria-describedby="people-document-hint"
@@ -47,7 +47,7 @@
           />
         </div>
         <p id="people-document-validation" class="people-document-validation" role="alert" aria-live="polite" hidden></p>
-        <p id="people-document-hint" class="people-document-hint">Document id prefix: EFTA, BIRTHDAY_BOOK_, or HOUSE_OVERSIGHT_ (case-insensitive), then digits — partial search ok</p>
+        <p id="people-document-hint" class="people-document-hint">Search by document name, allows partial matches</p>
       </div>
 
       <div class="people-actions">
@@ -333,7 +333,7 @@
 </style>
 
 <script src="../js/shared.js"></script>
-<script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js" crossorigin="anonymous"></script>
+<script src="../js/imagesloaded.pkgd.min.js"></script>
 <script>
 (function () {
   async function fetchPeopleNamesJson() {
@@ -1702,6 +1702,8 @@
   let namesById = {};
   let namesLoaded = false;
   let activeIndex = -1;
+  /** Index of option under pointer, or null — hides row-0 “Enter default” style when hovering another row. */
+  let peopleSearchPointerOptionIndex = null;
   /** @type {{ url: string, image: string, faces: unknown }[]} */
   let lightboxPhotos = [];
   let lightboxIndex = -1;
@@ -2067,6 +2069,37 @@
   function setListboxOpen(isOpen) {
     listboxEl.hidden = !isOpen;
     inputEl.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    if (!isOpen) {
+      inputEl.removeAttribute("aria-activedescendant");
+      activeIndex = -1;
+      peopleSearchPointerOptionIndex = null;
+    }
+  }
+
+  function syncPeopleSearchListboxHighlight() {
+    const opts = listboxEl.querySelectorAll(".people-search-option");
+    if (!opts.length) return;
+    opts.forEach((el, i) => {
+      const keyboardOn = activeIndex >= 0 && i === activeIndex;
+      const enterDefault =
+        activeIndex < 0 &&
+        i === 0 &&
+        (peopleSearchPointerOptionIndex === null || peopleSearchPointerOptionIndex === 0);
+      el.classList.toggle("people-search-option-active", keyboardOn);
+      el.classList.toggle("people-search-option-enter-default", enterDefault);
+      const ariaSel = keyboardOn || enterDefault;
+      el.setAttribute("aria-selected", ariaSel ? "true" : "false");
+    });
+    if (activeIndex >= 0) {
+      inputEl.setAttribute("aria-activedescendant", "people-opt-" + activeIndex);
+    } else if (
+      peopleSearchPointerOptionIndex === null ||
+      peopleSearchPointerOptionIndex === 0
+    ) {
+      inputEl.setAttribute("aria-activedescendant", "people-opt-0");
+    } else {
+      inputEl.removeAttribute("aria-activedescendant");
+    }
   }
 
   function renderListbox(matches) {
@@ -2081,7 +2114,7 @@
       li.setAttribute("role", "option");
       li.id = "people-opt-" + i;
       li.dataset.personId = row.person_id;
-      li.className = "people-search-option" + (i === 0 ? " people-search-option-top" : "");
+      li.className = "people-search-option";
       li.textContent = row.label;
       li.addEventListener("mousedown", (e) => {
         e.preventDefault();
@@ -2091,6 +2124,8 @@
     });
     setListboxOpen(true);
     activeIndex = -1;
+    peopleSearchPointerOptionIndex = null;
+    syncPeopleSearchListboxHighlight();
   }
 
   function pickPerson(person_id) {
@@ -2175,16 +2210,39 @@
     }
   });
 
+  listboxEl.addEventListener(
+    "pointerover",
+    function (e) {
+      const li = e.target && e.target.closest && e.target.closest(".people-search-option");
+      if (!li || !listboxEl.contains(li)) return;
+      const opts = listboxEl.querySelectorAll(".people-search-option");
+      const idx = Array.prototype.indexOf.call(opts, li);
+      peopleSearchPointerOptionIndex = idx >= 0 ? idx : null;
+      syncPeopleSearchListboxHighlight();
+    },
+    true
+  );
+  listboxEl.addEventListener("pointerleave", function () {
+    peopleSearchPointerOptionIndex = null;
+    syncPeopleSearchListboxHighlight();
+  });
+
   inputEl.addEventListener("keydown", (e) => {
     const opts = listboxEl.querySelectorAll(".people-search-option");
     const hasTypedQuery = String(inputEl.value || "").trim().length > 0;
     if (!opts.length) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      activeIndex = e.key === "ArrowDown"
-        ? Math.min(activeIndex + 1, opts.length - 1)
-        : Math.max(activeIndex - 1, 0);
-      opts.forEach((el, i) => el.classList.toggle("people-search-option-active", i === activeIndex));
+      if (e.key === "ArrowDown") {
+        if (activeIndex < 0) {
+          activeIndex = opts.length > 1 ? 1 : 0;
+        } else {
+          activeIndex = Math.min(activeIndex + 1, opts.length - 1);
+        }
+      } else {
+        activeIndex = activeIndex <= 0 ? -1 : activeIndex - 1;
+      }
+      syncPeopleSearchListboxHighlight();
       return;
     }
     if (e.key === "Enter" && hasTypedQuery) {

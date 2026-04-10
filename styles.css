@@ -514,11 +514,9 @@ body.page-home #name-search {
   cursor: pointer;
 }
 .name-search-result:hover,
-.name-search-result.active {
+.name-search-result.active,
+.name-search-result-enter-default {
   background: rgba(21, 101, 192, 0.10);
-}
-.name-search-result-top {
-  background: rgba(21, 101, 192, 0.14);
 }
 .name-search-result:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -1088,12 +1086,11 @@ body.page-home #name-search {
   color: #222;
   cursor: pointer;
 }
+/* enter-default: first row when Enter will apply to it (activeIndex −1); removed when another row is keyboard- or pointer-highlighted */
 .people-search-option:hover,
-.people-search-option-active {
+.people-search-option-active,
+.people-search-option-enter-default {
   background: rgba(90, 121, 184, 0.14);
-}
-.people-search-option-top {
-  background: rgba(90, 121, 184, 0.2);
 }
 .people-selected {
   display: flex;
