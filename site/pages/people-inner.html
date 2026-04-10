@@ -109,12 +109,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Real phones: vh includes space behind browser chrome; dvh tracks the visible viewport. */
   padding: 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(24px + env(safe-area-inset-left, 0px));
+  padding-right: calc(24px + env(safe-area-inset-right, 0px));
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
 }
 .people-lightbox-dialog {
   position: relative;
   width: min(96vw, 1400px);
+  /* 92vh is often taller than what users see on Android/iOS when toolbars are visible. */
   height: min(92vh, 1000px);
+  height: min(92dvh, 1000px);
+  max-height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -131,6 +140,7 @@
   display: block;
   max-width: 100%;
   max-height: calc(min(92vh, 1000px) - 92px);
+  max-height: calc(min(92dvh, 1000px) - 92px);
   width: auto;
   height: auto;
   object-fit: contain;
@@ -193,9 +203,13 @@
 .people-lightbox-nav {
   position: absolute;
   z-index: 2;
-  border: 0;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  /* Dark pill + single light outline (avoid stacking a second dark ring — reads as “double border”). */
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(12, 12, 14, 0.62);
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
   padding: 0;
@@ -228,6 +242,8 @@
   width: 20px;
   height: 20px;
   display: block;
+  /* Single soft halo so white chevrons stay visible on pale image areas. */
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
 }
 .people-lightbox-close svg path,
 .people-lightbox-nav svg path {
@@ -247,7 +263,7 @@
 .people-lightbox-footer {
   position: absolute;
   left: 50%;
-  bottom: 10px;
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -300,7 +316,13 @@
   pointer-events: none;
 }
 @media (max-width: 800px) {
-  .people-lightbox { padding: 10px; }
+  .people-lightbox {
+    padding: 10px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(10px + env(safe-area-inset-left, 0px));
+    padding-right: calc(10px + env(safe-area-inset-right, 0px));
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  }
   .people-lightbox-dialog { padding-bottom: 62px; }
   .people-lightbox-prev { left: 4px; }
   .people-lightbox-next { right: 4px; }
@@ -1685,6 +1707,8 @@
   let lightboxIndex = -1;
   let lightboxTouchStartX = null;
   let lightboxTouchStartY = null;
+  /** Element that had focus before the lightbox opened; restored on close so aria-hidden is not applied while focus remains inside. */
+  let lightboxPreviousFocus = null;
 
   function updateLightboxMeta(item, totalCount) {
     lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + totalCount;
@@ -1726,6 +1750,8 @@
 
   function openLightbox(photos, index) {
     if (!Array.isArray(photos) || !photos.length) return;
+    lightboxPreviousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     lightboxPhotos = photos.slice();
     lightboxIndex = Math.max(0, Math.min(index, lightboxPhotos.length - 1));
     lightboxBboxesEl.innerHTML = "";
@@ -1749,6 +1775,19 @@
     if (lightboxResizeObserver) {
       lightboxResizeObserver.disconnect();
       lightboxResizeObserver = null;
+    }
+    const prev = lightboxPreviousFocus;
+    lightboxPreviousFocus = null;
+    if (prev && document.body.contains(prev) && typeof prev.focus === "function") {
+      try {
+        prev.focus({ preventScroll: true });
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    const ae = document.activeElement;
+    if (ae && lightboxEl.contains(ae)) {
+      ae.blur();
     }
     lightboxEl.hidden = true;
     lightboxEl.setAttribute("aria-hidden", "true");
