@@ -15,16 +15,16 @@ cat "$SITE/partials/head-root.html" \
   "$SITE/partials/close.html" > "$DIST/index.html"
 
 # Search (/search)
-cat "$SITE/partials/head-people.html" \
-  "$SITE/partials/nav-people.html" \
-  "$SITE/pages/people-inner.html" \
+cat "$SITE/partials/head-search.html" \
+  "$SITE/partials/nav-search.html" \
+  "$SITE/pages/search-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/search/index.html"
 
 # People gallery (/people) — data from /faces API
-cat "$SITE/partials/head-browse.html" \
-  "$SITE/partials/nav-browse.html" \
-  "$SITE/pages/browse-inner.html" \
+cat "$SITE/partials/head-people.html" \
+  "$SITE/partials/nav-people.html" \
+  "$SITE/pages/people-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/people/index.html"
 

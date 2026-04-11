@@ -1217,7 +1217,7 @@ body.page-home #name-search {
 .people-results-loading[hidden] {
   display: none !important;
 }
-/* Grid hidden until layout runs (see people-inner): no stacked-thumb flash. */
+/* Grid hidden until layout runs (see search-inner): no stacked-thumb flash. */
 .people-justified.people-justified--pending {
   position: absolute;
   left: 0;
@@ -1234,7 +1234,7 @@ body.page-home #name-search {
  * While pending, JS packs rows using clientWidth. Without this, pending uses width:100% of the
  * narrow .site-page column, then post-reveal uses 100vw + negative margins — first paint clusters
  * on the left until ResizeObserver relayout (~9/60s). Match desktop full-bleed here so the first
- * layout matches the final geometry (Search /people-inner, not browse-inner).
+ * layout matches the final geometry (Search /search-inner, not People /people-inner).
  */
 @media (min-width: 769px) {
   .people-justified.people-justified--pending:not(.people-justified--few) {
@@ -1276,7 +1276,7 @@ body.page-home #name-search {
     margin-right: 16px;
   }
 }
-/* Search page: justified rows; JS reads min/max + gap (see people-inner.html). */
+/* Search page: justified rows; JS reads min/max + gap (see search-inner.html). */
 .people-justified {
   --people-justified-row-height-min: 190px;
   --people-justified-row-height-max: 228px;
@@ -1294,7 +1294,7 @@ body.page-home #name-search {
     margin-left: calc(50% - 50vw);
     margin-right: calc(50% - 50vw);
   }
-  /* Few results: stay card-width instead of full viewport (see people-inner layout). */
+  /* Few results: stay card-width instead of full viewport (see search-inner layout). */
   .people-justified.people-justified--few {
     width: 100%;
     max-width: min(100%, 42rem);
