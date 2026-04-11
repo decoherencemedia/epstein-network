@@ -1230,6 +1230,30 @@ body.page-home #name-search {
   overflow: hidden;
   margin: 0;
 }
+/*
+ * While pending, JS packs rows using clientWidth. Without this, pending uses width:100% of the
+ * narrow .site-page column, then post-reveal uses 100vw + negative margins — first paint clusters
+ * on the left until ResizeObserver relayout (~9/60s). Match desktop full-bleed here so the first
+ * layout matches the final geometry (Search /people-inner, not browse-inner).
+ */
+@media (min-width: 769px) {
+  .people-justified.people-justified--pending:not(.people-justified--few) {
+    left: calc(50% - 50vw);
+    right: auto;
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  .people-justified.people-justified--pending.people-justified--few {
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: min(100%, 42rem);
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
 /* Gap between tiles; also used as left/right inset so screen edges match tile spacing. */
 .people-results-wrap {
   position: relative;
