@@ -345,6 +345,8 @@
   }
   const PHOTOS_URL = SiteShared.API_BASE + "/photos";
   const PHOTO_PAGE_SIZE = 1000;
+  /** First N thumbs per batch: hint CDN/browser to prioritize above-the-fold rows. */
+  const THUMB_FETCHPRIORITY_HIGH_COUNT = 24;
   const DEFAULT_RESULTS_LOADING_LABEL = "Loading photos…";
   const LOAD_MORE_LOADING_LABEL = "Loading more photos…";
   const PEOPLE_NAMES_CACHE_KEY = "people_names_cache_v1";
@@ -772,19 +774,14 @@
   }
 
   /**
+   * Store face data for thumbs only; `positionThumbFaceBoxes` runs after justified layout in
+   * `syncJustifiedThumbFaceBoxes` when cell sizes and decoded bitmaps are valid (avoids duplicate
+   * work during the load burst before `imagesLoaded`).
    * @param {HTMLElement} overlayEl
    * @param {unknown} faces
-   * @param {HTMLImageElement} img
    */
-  function appendThumbFaceBoxes(overlayEl, faces, img) {
+  function appendThumbFaceBoxes(overlayEl, faces) {
     overlayEl._thumbFaces = faces;
-    function sync() {
-      positionThumbFaceBoxes(overlayEl, faces, img);
-    }
-    sync();
-    if (!img.complete || !img.naturalWidth) {
-      img.addEventListener("load", sync, { once: true });
-    }
   }
 
   /**
@@ -1259,11 +1256,10 @@
   function revealJustifiedGallery() {
     masonryEl.classList.remove("people-justified--pending");
     hidePeopleResultsLoading();
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        syncJustifiedThumbFaceBoxes();
-      });
-    });
+    /* Reflow after reveal so thumb cells have non-zero client dimensions; sync in the same turn as
+       first visible paint (double rAF deferred boxes ~1–2 frames after images). */
+    void masonryEl.offsetWidth;
+    syncJustifiedThumbFaceBoxes();
   }
 
   function syncJustifiedThumbFaceBoxes() {
@@ -1627,15 +1623,18 @@
       const fullSrc = lightboxPayload[idx].url;
       img.src = thumbSrc;
       img.alt = "";
-      img.loading = "lazy";
+      img.loading = "eager";
       img.decoding = "async";
+      if (idx < THUMB_FETCHPRIORITY_HIGH_COUNT) {
+        img.fetchPriority = "high";
+      }
       const wrap = document.createElement("div");
       wrap.className = "people-thumb-wrap";
       const bboxes = document.createElement("div");
       bboxes.className = "people-thumb-bboxes";
       wrap.appendChild(img);
       wrap.appendChild(bboxes);
-      appendThumbFaceBoxes(bboxes, photo.faces, img);
+      appendThumbFaceBoxes(bboxes, photo.faces);
       const a = document.createElement("a");
       a.href = fullSrc;
       a.addEventListener("click", function (e) {
