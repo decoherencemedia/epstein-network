@@ -373,12 +373,18 @@
     photoItems: /** @type {unknown[] | null} */ (null),
     /** Total distinct images matching the query (from API); used for load-more and status. */
     photoTotal: /** @type {number | null} */ (null),
+    /**
+     * 0-based index in the full result set of the first loaded image (``offset`` from the first
+     * ``/photos`` response; non-zero when ``photo=`` resolved to a later page).
+     */
+    photoListStartOffset: /** @type {number | null} */ (null),
     statusSnapshot: /** @type {{ text: string, html: string, isError: boolean } | null} */ (null),
   };
   const documentState = {
     input: "",
     photoItems: /** @type {unknown[] | null} */ (null),
     photoTotal: /** @type {number | null} */ (null),
+    photoListStartOffset: /** @type {number | null} */ (null),
     statusSnapshot: /** @type {{ text: string, html: string, isError: boolean } | null} */ (null),
   };
   /** Last rendered result lists for the active tab’s search (used when persisting tab state). */
@@ -1023,6 +1029,7 @@
     loadingEl.textContent = label;
     loadingEl.hidden = false;
     loadingEl.removeAttribute("aria-hidden");
+    if (loadMoreWrap) loadMoreWrap.hidden = true;
   }
 
   function hidePeopleResultsLoading() {
@@ -1306,18 +1313,24 @@
   /**
    * @param {number} total
    * @param {number} displayedCount images currently shown (cumulative when using load more)
+   * @param {number} [listStartOffset] 0-based global index of the first displayed image (API ``offset`` from the first fetch for this result set)
    */
-  function setStatusPhotoRange(total, displayedCount) {
+  function setStatusPhotoRange(total, displayedCount, listStartOffset) {
     if (total === 0) {
       setStatus("0 images found");
       return;
     }
-    if (total <= PHOTO_PAGE_SIZE) {
+    const base =
+      typeof listStartOffset === "number" && listStartOffset >= 0 ? listStartOffset : 0;
+    const start = base + 1;
+    const end = Math.min(base + displayedCount, total);
+    const showRange =
+      total > PHOTO_PAGE_SIZE || base > 0 || displayedCount < total;
+    if (!showRange) {
       setStatus(total + " images found");
       return;
     }
-    const end = Math.min(displayedCount, total);
-    setStatus(total + " images found, displaying 1–" + end);
+    setStatus(total + " images found, displaying " + start + "–" + end);
   }
 
   function updateLoadMoreButton(total, loadedCount) {
@@ -1365,13 +1378,16 @@
       if (loadMoreWrap) loadMoreWrap.hidden = true;
       return;
     }
-    renderPhotoResults(photoItems.slice());
+    renderPhotoResults(photoItems.slice(), {
+      onReady: function () {
+        updateLoadMoreButton(
+          typeof photoTotal === "number" ? photoTotal : null,
+          photoItems.length
+        );
+      },
+    });
     setHeading();
     restoreStatusFromSnapshot(statusSnapshot);
-    updateLoadMoreButton(
-      typeof photoTotal === "number" ? photoTotal : null,
-      photoItems.length
-    );
   }
 
   function clearResultsUiOnly() {
@@ -1389,11 +1405,13 @@
       lastPeoplePhotoItems = null;
       peopleState.photoItems = null;
       peopleState.photoTotal = null;
+      peopleState.photoListStartOffset = null;
       peopleState.statusSnapshot = null;
     } else {
       lastDocumentPhotoItems = null;
       documentState.photoItems = null;
       documentState.photoTotal = null;
+      documentState.photoListStartOffset = null;
       documentState.statusSnapshot = null;
     }
   }
@@ -1499,14 +1517,22 @@
 
   /**
    * @param {number} [offset]
+   * @param {string | null | undefined} [apiPhoto] — if set (URL bootstrap only), sent as ``photo=`` for offset 0 so the API returns the page containing that image.
    * @returns {Promise<{ items: unknown[], total: number, limit: number, offset: number }>}
    */
-  async function fetchPhotoItemsForSelection(offset) {
+  async function fetchPhotoItemsForSelection(offset, apiPhoto) {
     const params = new URLSearchParams();
     params.set("person_ids", selected.map((p) => p.person_id).join(","));
     const off = typeof offset === "number" && offset >= 0 ? offset : 0;
     params.set("offset", String(off));
     params.set("limit", String(PHOTO_PAGE_SIZE));
+    const photoArg =
+      off === 0 && apiPhoto != null && String(apiPhoto).trim()
+        ? String(apiPhoto).trim()
+        : "";
+    if (photoArg) {
+      params.set("photo", photoArg);
+    }
     const url = PHOTOS_URL + "?" + params.toString();
     const res = await fetch(url, { credentials: "omit" });
     if (!res.ok) {
@@ -1536,9 +1562,10 @@
   /**
    * @param {string} prefix
    * @param {number} [offset]
+   * @param {string | null | undefined} [apiPhoto] — URL bootstrap only; see ``fetchPhotoItemsForSelection``.
    * @returns {Promise<{ items: unknown[], total: number, limit: number, offset: number }>}
    */
-  async function fetchPhotoItemsForDocumentPrefix(prefix, offset) {
+  async function fetchPhotoItemsForDocumentPrefix(prefix, offset, apiPhoto) {
     const p = normalizeDocumentPrefixForApi(String(prefix || ""));
     if (!p) throw new Error(DOCUMENT_ID_FORMAT_MESSAGE);
     const params = new URLSearchParams();
@@ -1546,6 +1573,13 @@
     const off = typeof offset === "number" && offset >= 0 ? offset : 0;
     params.set("offset", String(off));
     params.set("limit", String(PHOTO_PAGE_SIZE));
+    const photoArg =
+      off === 0 && apiPhoto != null && String(apiPhoto).trim()
+        ? String(apiPhoto).trim()
+        : "";
+    if (photoArg) {
+      params.set("photo", photoArg);
+    }
     const url = PHOTOS_URL + "?" + params.toString();
     const res = await fetch(url, { credentials: "omit" });
     if (!res.ok) {
@@ -1680,7 +1714,7 @@
         justifiedState = { elements: elements, ratios: ratios };
       }
       layoutJustifiedFromState();
-      if (append && onReady) {
+      if (typeof onReady === "function") {
         onReady();
       }
     };
@@ -2298,6 +2332,10 @@
     const opts = options || {};
     const shouldSyncUrl = opts.syncUrl !== false;
     const preferredPhoto = String(opts.preferredPhoto || "").trim();
+    const apiPhoto =
+      opts.apiPhoto != null && String(opts.apiPhoto).trim()
+        ? String(opts.apiPhoto).trim()
+        : null;
     if (!selected.length) return;
     if (shouldSyncUrl) {
       syncPeopleQueryToUrl();
@@ -2308,12 +2346,14 @@
     setStatus("Searching…");
     prepareResultsSearchUi();
     try {
-      const { items: photoItems, total } = await fetchPhotoItemsForSelection(0);
+      const { items: photoItems, total, offset: pageOffset } =
+        await fetchPhotoItemsForSelection(0, apiPhoto);
       if (!photoItems.length) {
         setNoImagesContentPolicyStatus();
         lastPeoplePhotoItems = null;
         peopleState.photoItems = null;
         peopleState.photoTotal = typeof total === "number" ? total : 0;
+        peopleState.photoListStartOffset = null;
         peopleState.statusSnapshot = captureStatusSnapshot();
         updateLoadMoreButton(peopleState.photoTotal, 0);
         return;
@@ -2321,11 +2361,20 @@
       lastPeoplePhotoItems = photoItems.slice();
       peopleState.photoItems = lastPeoplePhotoItems;
       peopleState.photoTotal = total;
-      const lightboxPayload = renderPhotoResults(photoItems);
+      peopleState.photoListStartOffset =
+        typeof pageOffset === "number" && pageOffset >= 0 ? pageOffset : 0;
+      const lightboxPayload = renderPhotoResults(photoItems, {
+        onReady: function () {
+          updateLoadMoreButton(total, lastPeoplePhotoItems.length);
+        },
+      });
       setResultsHeadingForPeopleSelection();
       openLightboxIfPreferred(lightboxPayload, preferredPhoto);
-      setStatusPhotoRange(total, lastPeoplePhotoItems.length);
-      updateLoadMoreButton(total, lastPeoplePhotoItems.length);
+      setStatusPhotoRange(
+        total,
+        lastPeoplePhotoItems.length,
+        peopleState.photoListStartOffset ?? 0
+      );
       peopleState.statusSnapshot = captureStatusSnapshot();
     } catch (e) {
       resetResultsHeading();
@@ -2367,18 +2416,21 @@
     if (!preferredPhoto) {
       syncPhotoQueryToUrl(null);
     }
+    const apiPhoto =
+      opts.apiPhoto != null && String(opts.apiPhoto).trim()
+        ? String(opts.apiPhoto).trim()
+        : null;
     setStatus("Searching…");
     prepareResultsSearchUi();
     try {
-      const { items: photoItems, total } = await fetchPhotoItemsForDocumentPrefix(
-        normalized,
-        0
-      );
+      const { items: photoItems, total, offset: pageOffset } =
+        await fetchPhotoItemsForDocumentPrefix(normalized, 0, apiPhoto);
       if (!photoItems.length) {
         setNoImagesContentPolicyStatus();
         lastDocumentPhotoItems = null;
         documentState.photoItems = null;
         documentState.photoTotal = typeof total === "number" ? total : 0;
+        documentState.photoListStartOffset = null;
         documentState.input = normalized;
         documentState.statusSnapshot = captureStatusSnapshot();
         updateLoadMoreButton(documentState.photoTotal, 0);
@@ -2388,11 +2440,20 @@
       documentState.photoItems = lastDocumentPhotoItems;
       documentState.photoTotal = total;
       documentState.input = normalized;
-      const lightboxPayload = renderPhotoResults(photoItems);
+      documentState.photoListStartOffset =
+        typeof pageOffset === "number" && pageOffset >= 0 ? pageOffset : 0;
+      const lightboxPayload = renderPhotoResults(photoItems, {
+        onReady: function () {
+          updateLoadMoreButton(total, lastDocumentPhotoItems.length);
+        },
+      });
       setResultsHeadingForDocumentPrefix(normalized);
       openLightboxIfPreferred(lightboxPayload, preferredPhoto);
-      setStatusPhotoRange(total, lastDocumentPhotoItems.length);
-      updateLoadMoreButton(total, lastDocumentPhotoItems.length);
+      setStatusPhotoRange(
+        total,
+        lastDocumentPhotoItems.length,
+        documentState.photoListStartOffset ?? 0
+      );
       documentState.statusSnapshot = captureStatusSnapshot();
     } catch (e) {
       resetResultsHeading();
@@ -2435,13 +2496,17 @@
         lastPeoplePhotoItems = prev.concat(items);
         peopleState.photoItems = lastPeoplePhotoItems;
         peopleState.photoTotal = total;
-        setStatusPhotoRange(total, lastPeoplePhotoItems.length);
-        updateLoadMoreButton(total, lastPeoplePhotoItems.length);
-        peopleState.statusSnapshot = captureStatusSnapshot();
         renderPhotoResults(items, {
           append: true,
           indexOffset: offset,
           onReady: function () {
+            setStatusPhotoRange(
+              total,
+              lastPeoplePhotoItems.length,
+              peopleState.photoListStartOffset ?? 0
+            );
+            updateLoadMoreButton(total, lastPeoplePhotoItems.length);
+            peopleState.statusSnapshot = captureStatusSnapshot();
             hidePeopleResultsLoading();
             loadMoreBtn.disabled = false;
           },
@@ -2473,13 +2538,17 @@
         lastDocumentPhotoItems = prev.concat(items);
         documentState.photoItems = lastDocumentPhotoItems;
         documentState.photoTotal = total;
-        setStatusPhotoRange(total, lastDocumentPhotoItems.length);
-        updateLoadMoreButton(total, lastDocumentPhotoItems.length);
-        documentState.statusSnapshot = captureStatusSnapshot();
         renderPhotoResults(items, {
           append: true,
           indexOffset: offset,
           onReady: function () {
+            setStatusPhotoRange(
+              total,
+              lastDocumentPhotoItems.length,
+              documentState.photoListStartOffset ?? 0
+            );
+            updateLoadMoreButton(total, lastDocumentPhotoItems.length);
+            documentState.statusSnapshot = captureStatusSnapshot();
             hidePeopleResultsLoading();
             loadMoreBtn.disabled = false;
           },
@@ -2551,7 +2620,12 @@
         activeSearchTab = "document";
         syncTabUiOnly("document");
         if (documentInputEl) documentInputEl.value = norm;
-        await runDocumentSearch({ syncUrl: false, preferredPhoto: photoFromQuery, documentPrefix: norm });
+        await runDocumentSearch({
+          syncUrl: false,
+          preferredPhoto: photoFromQuery,
+          documentPrefix: norm,
+          apiPhoto: photoFromQuery || undefined,
+        });
         syncDocumentQueryToUrl(norm);
         if (photoFromQuery) syncPhotoQueryToUrl(photoFromQuery);
         persistTabState("document");
@@ -2599,7 +2673,11 @@
       });
       renderSelected();
       if (selected.length) {
-        await runPeopleSearch({ syncUrl: false, preferredPhoto: photoFromQuery });
+        await runPeopleSearch({
+          syncUrl: false,
+          preferredPhoto: photoFromQuery,
+          apiPhoto: photoFromQuery || undefined,
+        });
       }
       syncPeopleQueryToUrl();
       if (photoFromQuery) syncPhotoQueryToUrl(photoFromQuery);
