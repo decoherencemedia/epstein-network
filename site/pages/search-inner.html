@@ -456,13 +456,15 @@
    */
   const LABEL_STACK_RETRY_SCORE = 60;
   const LABEL_STACK_RETRY_SCORE_NARROW = 36;
-  /** Wider than the main CSS mobile breakpoint so flagship phones (e.g. landscape) still use the narrow threshold. */
+  /** Wide viewports above this use desktop stacking threshold; at or below use narrow + lightbox pinch-zoom. */
   const LABEL_STACK_RETRY_MAX_WIDTH_PX = 1280;
-
-  /** Pinch-zoom in lightbox: same breakpoint as narrow label stacking (large phones). */
-  const LIGHTBOX_PINCH_MAX_WIDTH_PX = 1280;
   const LIGHTBOX_ZOOM_MIN = 1;
   const LIGHTBOX_ZOOM_MAX = 4;
+  /**
+   * Pinch pan: inset per axis = this × img client width/height. 0.5 keeps the img center inside the
+   * scaled bitmap (half the viewport per axis), so the photo cannot be panned completely off-screen.
+   */
+  const LIGHTBOX_PAN_CLAMP_INSET_FRACTION = 0.5;
 
   function getLabelStackRetryScoreThreshold() {
     if (typeof window === "undefined" || !window.matchMedia) return LABEL_STACK_RETRY_SCORE;
@@ -878,7 +880,7 @@
     const pos = parseObjectPositionFractions(getComputedStyle(img).objectPosition);
     const ox = pos.px * (cw - dw);
     const oy = pos.py * (ch - dh);
-    return { ox, oy, dw, dh };
+    return { ox, oy, dw, dh, cw, ch };
   }
 
   /** Visible bitmap with object-fit: cover; ox/oy respect object-position (focal-point thumbs). */
@@ -1105,7 +1107,8 @@
   function renderLightboxFaceBoxes() {
     lightboxBboxesEl.innerHTML = "";
     if (!lightboxPhotos.length || lightboxIndex < 0) return;
-    if (!lightboxPinchZoomEnabled()) {
+    const pinchZoom = lightboxPinchZoomEnabled();
+    if (!pinchZoom) {
       lightboxZoomScale = 1;
       lightboxZoomPanX = 0;
       lightboxZoomPanY = 0;
@@ -1123,18 +1126,20 @@
     const oy = rect.oy;
     const dw = rect.dw;
     const dh = rect.dh;
-    applyLightboxZoomStyle(ox, oy, dw, dh);
-    const zMap = lightboxPinchZoomEnabled() ? lightboxZoomScale : 1;
+    const cw = rect.cw;
+    const ch = rect.ch;
+    applyLightboxZoomStyle(ox, oy, dw, dh, cw, ch);
+    const zMap = pinchZoom ? lightboxZoomScale : 1;
     const colorMap = buildFaceColorMap(faces);
     const entries = sortFaceEntries(normalizeFaceEntries(faces));
     // Two-phase render: boxes first, then labels. This lets labels avoid both boxes and earlier labels.
     const labelQueue = [];
     const occupiedRects = [];
     const bounds = {
-      left: mapLightboxZoomCoordX(ox, ox, oy, dw, dh),
-      top: mapLightboxZoomCoordY(oy, ox, oy, dw, dh),
-      right: mapLightboxZoomCoordX(ox + dw, ox, oy, dw, dh),
-      bottom: mapLightboxZoomCoordY(oy + dh, ox, oy, dw, dh),
+      left: mapLightboxZoomCoordX(ox, ox, oy, dw, dh, pinchZoom),
+      top: mapLightboxZoomCoordY(oy, ox, oy, dw, dh, pinchZoom),
+      right: mapLightboxZoomCoordX(ox + dw, ox, oy, dw, dh, pinchZoom),
+      bottom: mapLightboxZoomCoordY(oy + dh, ox, oy, dw, dh, pinchZoom),
     };
     entries.forEach(function (entry) {
       const pid = entry.personId;
@@ -1143,10 +1148,12 @@
       const top0 = oy + boxData.top * dh;
       const bw0 = boxData.w * dw;
       const bh0 = boxData.h * dh;
+      const boxLeft = mapLightboxZoomCoordX(left0, ox, oy, dw, dh, pinchZoom);
+      const boxTop = mapLightboxZoomCoordY(top0, ox, oy, dw, dh, pinchZoom);
       const box = document.createElement("div");
       box.className = "people-face-box";
-      box.style.left = mapLightboxZoomCoordX(left0, ox, oy, dw, dh) + "px";
-      box.style.top = mapLightboxZoomCoordY(top0, ox, oy, dw, dh) + "px";
+      box.style.left = boxLeft + "px";
+      box.style.top = boxTop + "px";
       box.style.width = bw0 * zMap + "px";
       box.style.height = bh0 * zMap + "px";
       const color = colorMap[pid] || "#888";
@@ -1154,8 +1161,6 @@
       const openTitle = "Open " + displayNameForPersonId(pid);
       attachOpenPersonPageHandler(box, pid, openTitle);
       lightboxBboxesEl.appendChild(box);
-      const boxLeft = mapLightboxZoomCoordX(left0, ox, oy, dw, dh);
-      const boxTop = mapLightboxZoomCoordY(top0, ox, oy, dw, dh);
       occupiedRects.push({
         left: boxLeft,
         top: boxTop,
@@ -1169,27 +1174,26 @@
       label.style.background = rgbaWithAlpha(color, 0.9);
       attachOpenPersonPageHandler(label, pid, openTitle);
       lightboxBboxesEl.appendChild(label);
-      const ax0 = ox + boxData.left * dw;
       const ar0 = ox + (boxData.left + boxData.w) * dw;
       const at0 = oy + boxData.top * dh;
       const ab0 = oy + (boxData.top + boxData.h) * dh;
       labelQueue.push({
         el: label,
         personId: pid,
-        left: mapLightboxZoomCoordX(ax0, ox, oy, dw, dh),
-        topBottom: mapLightboxZoomCoordY(oy + (boxData.top + boxData.h) * dh, ox, oy, dw, dh),
-        topAbove: mapLightboxZoomCoordY(oy + boxData.top * dh, ox, oy, dw, dh),
-        anchorLeft: mapLightboxZoomCoordX(ax0, ox, oy, dw, dh),
-        anchorRight: mapLightboxZoomCoordX(ar0, ox, oy, dw, dh),
-        anchorTop: mapLightboxZoomCoordY(at0, ox, oy, dw, dh),
-        anchorBottom: mapLightboxZoomCoordY(ab0, ox, oy, dw, dh),
+        left: boxLeft,
+        topBottom: mapLightboxZoomCoordY(top0 + bh0, ox, oy, dw, dh, pinchZoom),
+        topAbove: mapLightboxZoomCoordY(top0, ox, oy, dw, dh, pinchZoom),
+        anchorLeft: boxLeft,
+        anchorRight: mapLightboxZoomCoordX(ar0, ox, oy, dw, dh, pinchZoom),
+        anchorTop: mapLightboxZoomCoordY(at0, ox, oy, dw, dh, pinchZoom),
+        anchorBottom: mapLightboxZoomCoordY(ab0, ox, oy, dw, dh, pinchZoom),
       });
     });
 
     const labelStackScoreThreshold = getLabelStackRetryScoreThreshold();
 
     const useFrozenLabels =
-      lightboxPinchZoomEnabled() &&
+      pinchZoom &&
       lightboxOverlayGestureActive &&
       lightboxLabelFrozenBase &&
       lightboxLabelFrozenBase.length === entries.length;
@@ -1216,8 +1220,8 @@
         const bl0 = ox + bd.left * dw;
         const bt0 = oy + bd.top * dh;
         const bh0 = bd.h * dh;
-        const bL = mapLightboxZoomCoordX(bl0, ox, oy, dw, dh);
-        const bT = mapLightboxZoomCoordY(bt0, ox, oy, dw, dh);
+        const bL = mapLightboxZoomCoordX(bl0, ox, oy, dw, dh, pinchZoom);
+        const bT = mapLightboxZoomCoordY(bt0, ox, oy, dw, dh, pinchZoom);
         const bH = bh0 * zMap;
         const lh = labelEl.offsetHeight;
         let lTop;
@@ -2052,7 +2056,7 @@
     return (
       typeof window !== "undefined" &&
       window.matchMedia &&
-      window.matchMedia("(max-width: " + LIGHTBOX_PINCH_MAX_WIDTH_PX + "px)").matches
+      window.matchMedia("(max-width: " + LABEL_STACK_RETRY_MAX_WIDTH_PX + "px)").matches
     );
   }
 
@@ -2077,16 +2081,21 @@
   }
 
   /**
-   * Map a coordinate from pre-zoom image space (same origin as getContainedImageRect) to overlay space.
+   * Map pre-zoom overlay coords (same origin as getContainedImageRect) to screen — matches CSS on #people-lightbox-zoom.
+   * Pass pinchActive from renderLightboxFaceBoxes to avoid repeated matchMedia.
    */
-  function mapLightboxZoomCoordX(x, ox, oy, dw, dh) {
-    if (!lightboxPinchZoomEnabled()) return x;
+  function mapLightboxZoomCoordX(x, ox, oy, dw, dh, pinchActive) {
+    const use =
+      arguments.length > 5 ? pinchActive : lightboxPinchZoomEnabled();
+    if (!use) return x;
     const cx = ox + dw / 2;
     return lightboxZoomPanX + cx + lightboxZoomScale * (x - cx);
   }
 
-  function mapLightboxZoomCoordY(y, ox, oy, dw, dh) {
-    if (!lightboxPinchZoomEnabled()) return y;
+  function mapLightboxZoomCoordY(y, ox, oy, dw, dh, pinchActive) {
+    const use =
+      arguments.length > 5 ? pinchActive : lightboxPinchZoomEnabled();
+    if (!use) return y;
     const cy = oy + dh / 2;
     return lightboxZoomPanY + cy + lightboxZoomScale * (y - cy);
   }
@@ -2149,13 +2158,39 @@
     if (!lightboxEl.hidden) renderLightboxFaceBoxes();
   }
 
-  function applyLightboxZoomStyle(ox, oy, dw, dh) {
+  /**
+   * Keep the scaled bitmap overlapping the img box (same coord system as getContainedImageRect).
+   * Uses cw/ch so bounds match mapLightboxZoomCoord* / overlays. Strength: LIGHTBOX_PAN_CLAMP_INSET_FRACTION only.
+   */
+  function clampLightboxZoomPanToImage(ox, oy, dw, dh, cw, ch) {
+    if (!(cw > 0 && ch > 0 && dw > 0 && dh > 0)) return;
+    const s = lightboxZoomScale;
+    const cx = ox + dw / 2;
+    const cy = oy + dh / 2;
+    const leftK = cx + s * (ox - cx);
+    const rightK = cx + s * (ox + dw - cx);
+    const topK = cy + s * (oy - cy);
+    const botK = cy + s * (oy + dh - cy);
+    function clampPanAxis(pan, dim, span, edgeLo, edgeHi) {
+      let inset = dim * LIGHTBOX_PAN_CLAMP_INSET_FRACTION;
+      const maxInset = (dim + span) / 2 - 0.5;
+      if (inset > maxInset) {
+        inset = Math.max(0, maxInset);
+      }
+      return Math.min(dim - inset - edgeLo, Math.max(inset - edgeHi, pan));
+    }
+    lightboxZoomPanX = clampPanAxis(lightboxZoomPanX, cw, s * dw, leftK, rightK);
+    lightboxZoomPanY = clampPanAxis(lightboxZoomPanY, ch, s * dh, topK, botK);
+  }
+
+  function applyLightboxZoomStyle(ox, oy, dw, dh, cw, ch) {
     if (!lightboxZoomEl) return;
     if (!lightboxPinchZoomEnabled()) {
       lightboxZoomEl.style.transform = "";
       lightboxZoomEl.style.transformOrigin = "";
       return;
     }
+    clampLightboxZoomPanToImage(ox, oy, dw, dh, cw, ch);
     const cx = ox + dw / 2;
     const cy = oy + dh / 2;
     lightboxZoomEl.style.transformOrigin = cx + "px " + cy + "px";
