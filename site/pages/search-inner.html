@@ -82,7 +82,9 @@
         </svg>
       </button>
       <div class="people-lightbox-stage" id="people-lightbox-stage">
-        <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+        <div class="people-lightbox-zoom" id="people-lightbox-zoom">
+          <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+        </div>
         <div id="people-lightbox-bboxes" class="people-lightbox-bboxes" aria-hidden="true"></div>
       </div>
       <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">
@@ -135,6 +137,15 @@
   display: inline-block;
   max-width: 100%;
   max-height: calc(100% - 8px);
+}
+.people-lightbox-zoom {
+  display: inline-block;
+  line-height: 0;
+  vertical-align: top;
+  transform-origin: center center;
+}
+.people-lightbox-stage.people-lightbox-stage--pinch-zoom {
+  touch-action: none;
 }
 .people-lightbox-image {
   display: block;
@@ -206,6 +217,15 @@
   }
   .people-face-label.people-face-label--stacked {
     max-width: 130px;
+  }
+}
+/* Lightbox pinch-zoom: keep label typography in screen px (same as unzoomed mobile/desktop). */
+.people-lightbox--zoomed .people-lightbox-bboxes .people-face-label {
+  font-size: 12px;
+}
+@media (max-width: 800px) {
+  .people-lightbox--zoomed .people-lightbox-bboxes .people-face-label {
+    font-size: 10px;
   }
 }
 .people-lightbox-close,
@@ -409,6 +429,7 @@
   const loadingEl = document.getElementById("people-results-loading");
   const lightboxEl = document.getElementById("people-lightbox");
   const lightboxStageEl = document.getElementById("people-lightbox-stage");
+  const lightboxZoomEl = document.getElementById("people-lightbox-zoom");
   const lightboxImgEl = document.getElementById("people-lightbox-image");
   const lightboxBboxesEl = document.getElementById("people-lightbox-bboxes");
   const lightboxCountEl = document.getElementById("people-lightbox-count");
@@ -437,6 +458,11 @@
   const LABEL_STACK_RETRY_SCORE_NARROW = 36;
   /** Wider than the main CSS mobile breakpoint so flagship phones (e.g. landscape) still use the narrow threshold. */
   const LABEL_STACK_RETRY_MAX_WIDTH_PX = 1280;
+
+  /** Pinch-zoom in lightbox: same breakpoint as narrow label stacking (large phones). */
+  const LIGHTBOX_PINCH_MAX_WIDTH_PX = 1280;
+  const LIGHTBOX_ZOOM_MIN = 1;
+  const LIGHTBOX_ZOOM_MAX = 4;
 
   function getLabelStackRetryScoreThreshold() {
     if (typeof window === "undefined" || !window.matchMedia) return LABEL_STACK_RETRY_SCORE;
@@ -1079,6 +1105,15 @@
   function renderLightboxFaceBoxes() {
     lightboxBboxesEl.innerHTML = "";
     if (!lightboxPhotos.length || lightboxIndex < 0) return;
+    if (!lightboxPinchZoomEnabled()) {
+      lightboxZoomScale = 1;
+      lightboxZoomPanX = 0;
+      lightboxZoomPanY = 0;
+      lightboxPinchStartDistance = null;
+      lightboxPanPointerActive = false;
+      lightboxOverlayGestureActive = false;
+      lightboxLabelFrozenBase = null;
+    }
     const item = lightboxPhotos[lightboxIndex];
     const faces = item.faces;
     if (!faces || typeof faces !== "object") return;
@@ -1088,52 +1123,117 @@
     const oy = rect.oy;
     const dw = rect.dw;
     const dh = rect.dh;
+    applyLightboxZoomStyle(ox, oy, dw, dh);
+    const zMap = lightboxPinchZoomEnabled() ? lightboxZoomScale : 1;
     const colorMap = buildFaceColorMap(faces);
     const entries = sortFaceEntries(normalizeFaceEntries(faces));
     // Two-phase render: boxes first, then labels. This lets labels avoid both boxes and earlier labels.
     const labelQueue = [];
     const occupiedRects = [];
-    const bounds = { left: ox, top: oy, right: ox + dw, bottom: oy + dh };
+    const bounds = {
+      left: mapLightboxZoomCoordX(ox, ox, oy, dw, dh),
+      top: mapLightboxZoomCoordY(oy, ox, oy, dw, dh),
+      right: mapLightboxZoomCoordX(ox + dw, ox, oy, dw, dh),
+      bottom: mapLightboxZoomCoordY(oy + dh, ox, oy, dw, dh),
+    };
     entries.forEach(function (entry) {
       const pid = entry.personId;
       const boxData = entry.box;
+      const left0 = ox + boxData.left * dw;
+      const top0 = oy + boxData.top * dh;
+      const bw0 = boxData.w * dw;
+      const bh0 = boxData.h * dh;
       const box = document.createElement("div");
       box.className = "people-face-box";
-      box.style.left = ox + boxData.left * dw + "px";
-      box.style.top = oy + boxData.top * dh + "px";
-      box.style.width = boxData.w * dw + "px";
-      box.style.height = boxData.h * dh + "px";
+      box.style.left = mapLightboxZoomCoordX(left0, ox, oy, dw, dh) + "px";
+      box.style.top = mapLightboxZoomCoordY(top0, ox, oy, dw, dh) + "px";
+      box.style.width = bw0 * zMap + "px";
+      box.style.height = bh0 * zMap + "px";
       const color = colorMap[pid] || "#888";
       box.style.borderColor = color;
       const openTitle = "Open " + displayNameForPersonId(pid);
       attachOpenPersonPageHandler(box, pid, openTitle);
       lightboxBboxesEl.appendChild(box);
+      const boxLeft = mapLightboxZoomCoordX(left0, ox, oy, dw, dh);
+      const boxTop = mapLightboxZoomCoordY(top0, ox, oy, dw, dh);
       occupiedRects.push({
-        left: ox + boxData.left * dw,
-        top: oy + boxData.top * dh,
-        right: ox + (boxData.left + boxData.w) * dw,
-        bottom: oy + (boxData.top + boxData.h) * dh,
+        left: boxLeft,
+        top: boxTop,
+        right: boxLeft + bw0 * zMap,
+        bottom: boxTop + bh0 * zMap,
       });
 
       const label = document.createElement("div");
       label.className = "people-face-label";
+      label.setAttribute("data-person-id", pid);
       label.style.background = rgbaWithAlpha(color, 0.9);
       attachOpenPersonPageHandler(label, pid, openTitle);
       lightboxBboxesEl.appendChild(label);
+      const ax0 = ox + boxData.left * dw;
+      const ar0 = ox + (boxData.left + boxData.w) * dw;
+      const at0 = oy + boxData.top * dh;
+      const ab0 = oy + (boxData.top + boxData.h) * dh;
       labelQueue.push({
         el: label,
         personId: pid,
-        left: ox + boxData.left * dw,
-        topBottom: oy + (boxData.top + boxData.h) * dh,
-        topAbove: oy + boxData.top * dh,
-        anchorLeft: ox + boxData.left * dw,
-        anchorRight: ox + (boxData.left + boxData.w) * dw,
-        anchorTop: oy + boxData.top * dh,
-        anchorBottom: oy + (boxData.top + boxData.h) * dh,
+        left: mapLightboxZoomCoordX(ax0, ox, oy, dw, dh),
+        topBottom: mapLightboxZoomCoordY(oy + (boxData.top + boxData.h) * dh, ox, oy, dw, dh),
+        topAbove: mapLightboxZoomCoordY(oy + boxData.top * dh, ox, oy, dw, dh),
+        anchorLeft: mapLightboxZoomCoordX(ax0, ox, oy, dw, dh),
+        anchorRight: mapLightboxZoomCoordX(ar0, ox, oy, dw, dh),
+        anchorTop: mapLightboxZoomCoordY(at0, ox, oy, dw, dh),
+        anchorBottom: mapLightboxZoomCoordY(ab0, ox, oy, dw, dh),
       });
     });
 
     const labelStackScoreThreshold = getLabelStackRetryScoreThreshold();
+
+    const useFrozenLabels =
+      lightboxPinchZoomEnabled() &&
+      lightboxOverlayGestureActive &&
+      lightboxLabelFrozenBase &&
+      lightboxLabelFrozenBase.length === entries.length;
+
+    if (useFrozenLabels) {
+      labelQueue.forEach(function (entry, faceIndex) {
+        const fr = lightboxLabelFrozenBase[faceIndex];
+        const labelEl = entry.el;
+        const displayName = fr.displayName;
+        if (fr.stacked) {
+          const stackParts = splitDisplayNameForStackedLabel(displayName);
+          if (stackParts) {
+            applyStackedLabelContent(labelEl, stackParts);
+            labelEl.classList.add("people-face-label--stacked");
+          } else {
+            labelEl.textContent = displayName;
+            labelEl.classList.remove("people-face-label--stacked");
+          }
+        } else {
+          labelEl.textContent = displayName;
+          labelEl.classList.remove("people-face-label--stacked");
+        }
+        const bd = entries[faceIndex].box;
+        const bl0 = ox + bd.left * dw;
+        const bt0 = oy + bd.top * dh;
+        const bh0 = bd.h * dh;
+        const bL = mapLightboxZoomCoordX(bl0, ox, oy, dw, dh);
+        const bT = mapLightboxZoomCoordY(bt0, ox, oy, dw, dh);
+        const bH = bh0 * zMap;
+        const lh = labelEl.offsetHeight;
+        let lTop;
+        if (fr.verticalMode === "above") {
+          lTop = bT - fr.gapScreen - lh;
+        } else {
+          lTop = bT + bH + fr.gapScreen;
+        }
+        // Horizontal: same pattern as vertical — mapped box edge + constant screen px offset
+        // (``hOffsetScreen`` = labelLeft − boxLeft at capture), not image-plane invert/map.
+        const lLeft = bL + fr.hOffsetScreen;
+        labelEl.style.left = lLeft + "px";
+        labelEl.style.top = lTop + "px";
+      });
+      return;
+    }
 
     labelQueue.forEach(function (entry, faceIndex) {
       const displayName = displayNameForPersonId(entry.personId);
@@ -1933,6 +2033,144 @@
   let lightboxTouchStartY = null;
   /** Element that had focus before the lightbox opened; restored on close so aria-hidden is not applied while focus remains inside. */
   let lightboxPreviousFocus = null;
+  let lightboxZoomScale = 1;
+  let lightboxZoomPanX = 0;
+  let lightboxZoomPanY = 0;
+  let lightboxPinchStartDistance = null;
+  let lightboxPinchStartScale = 1;
+  let lightboxPanPointerActive = false;
+  let lightboxPanLastClientX = 0;
+  let lightboxPanLastClientY = 0;
+  /** True during pinch / pan; label positions follow affine map from frozen base coords (no placement re-solve). */
+  let lightboxOverlayGestureActive = false;
+  /**
+   * @type {null | { verticalMode: string, gapScreen: number, hOffsetScreen: number, stacked: boolean, displayName: string }[]}
+   */
+  let lightboxLabelFrozenBase = null;
+
+  function lightboxPinchZoomEnabled() {
+    return (
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(max-width: " + LIGHTBOX_PINCH_MAX_WIDTH_PX + "px)").matches
+    );
+  }
+
+  function resetLightboxZoom() {
+    lightboxZoomScale = 1;
+    lightboxZoomPanX = 0;
+    lightboxZoomPanY = 0;
+    lightboxPinchStartDistance = null;
+    lightboxPanPointerActive = false;
+    lightboxOverlayGestureActive = false;
+    lightboxLabelFrozenBase = null;
+    if (lightboxZoomEl) {
+      lightboxZoomEl.style.transform = "";
+      lightboxZoomEl.style.transformOrigin = "";
+    }
+    if (lightboxEl) {
+      lightboxEl.classList.remove("people-lightbox--zoomed");
+    }
+    if (lightboxStageEl) {
+      lightboxStageEl.classList.remove("people-lightbox-stage--pinch-zoom");
+    }
+  }
+
+  /**
+   * Map a coordinate from pre-zoom image space (same origin as getContainedImageRect) to overlay space.
+   */
+  function mapLightboxZoomCoordX(x, ox, oy, dw, dh) {
+    if (!lightboxPinchZoomEnabled()) return x;
+    const cx = ox + dw / 2;
+    return lightboxZoomPanX + cx + lightboxZoomScale * (x - cx);
+  }
+
+  function mapLightboxZoomCoordY(y, ox, oy, dw, dh) {
+    if (!lightboxPinchZoomEnabled()) return y;
+    const cy = oy + dh / 2;
+    return lightboxZoomPanY + cy + lightboxZoomScale * (y - cy);
+  }
+
+  /**
+   * Snapshot label placement. Vertical: ``gapScreen`` = screen px between box edge and label edge.
+   * Horizontal: ``hOffsetScreen`` = ``labelLeft − boxLeft`` in screen px (parallel to vertical).
+   * Each frame we recompute mapped ``bL`` / ``bT`` / ``bH`` then apply those offsets (no invert/map).
+   */
+  function captureLightboxLabelFreezeFromDom() {
+    if (!lightboxPinchZoomEnabled() || !lightboxBboxesEl) return;
+    const boxes = lightboxBboxesEl.querySelectorAll(".people-face-box");
+    const labels = lightboxBboxesEl.querySelectorAll(".people-face-label");
+    if (!labels.length || boxes.length !== labels.length) {
+      lightboxLabelFrozenBase = null;
+      return;
+    }
+    const out = [];
+    for (let i = 0; i < labels.length; i++) {
+      const boxEl = boxes[i];
+      const labelEl = labels[i];
+      const bL = parseFloat(boxEl.style.left) || 0;
+      const bT = parseFloat(boxEl.style.top) || 0;
+      const bW = parseFloat(boxEl.style.width) || 0;
+      const bH = parseFloat(boxEl.style.height) || 0;
+      const lL = parseFloat(labelEl.style.left) || 0;
+      const lT = parseFloat(labelEl.style.top) || 0;
+      const lH = labelEl.offsetHeight;
+      const hOffsetScreen = lL - bL;
+      const boxBottom = bT + bH;
+      const labelBottom = lT + lH;
+      const boxMidY = bT + bH / 2;
+      const labelMidY = lT + lH / 2;
+      let verticalMode;
+      let gapScreen;
+      if (labelMidY < boxMidY) {
+        verticalMode = "above";
+        gapScreen = bT - labelBottom;
+      } else {
+        verticalMode = "below";
+        gapScreen = lT - boxBottom;
+      }
+      const pid = String(labelEl.getAttribute("data-person-id") || "");
+      const displayName = displayNameForPersonId(pid);
+      const stacked = labelEl.classList.contains("people-face-label--stacked");
+      out.push({
+        verticalMode: verticalMode,
+        gapScreen: gapScreen,
+        hOffsetScreen: hOffsetScreen,
+        stacked: stacked,
+        displayName: displayName,
+      });
+    }
+    lightboxLabelFrozenBase = out;
+  }
+
+  function clearLightboxGestureFreezeAndRelayout() {
+    lightboxOverlayGestureActive = false;
+    lightboxLabelFrozenBase = null;
+    if (!lightboxEl.hidden) renderLightboxFaceBoxes();
+  }
+
+  function applyLightboxZoomStyle(ox, oy, dw, dh) {
+    if (!lightboxZoomEl) return;
+    if (!lightboxPinchZoomEnabled()) {
+      lightboxZoomEl.style.transform = "";
+      lightboxZoomEl.style.transformOrigin = "";
+      return;
+    }
+    const cx = ox + dw / 2;
+    const cy = oy + dh / 2;
+    lightboxZoomEl.style.transformOrigin = cx + "px " + cy + "px";
+    lightboxZoomEl.style.transform =
+      "translate(" + lightboxZoomPanX + "px," + lightboxZoomPanY + "px) scale(" + lightboxZoomScale + ")";
+    const zoomed = lightboxZoomScale > 1.001;
+    lightboxEl.classList.toggle("people-lightbox--zoomed", zoomed);
+    lightboxStageEl.classList.toggle("people-lightbox-stage--pinch-zoom", zoomed);
+  }
+
+  function lightboxTouchDistance(a, b) {
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 
   function updateLightboxMeta(item, totalCount) {
     lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + totalCount;
@@ -1951,6 +2189,7 @@
 
   function renderLightboxImage() {
     if (!lightboxPhotos.length || lightboxIndex < 0) return;
+    resetLightboxZoom();
     const item = lightboxPhotos[lightboxIndex];
     updateLightboxMeta(item, lightboxPhotos.length);
     syncPhotoQueryToUrl(item.image || null);
@@ -1989,7 +2228,11 @@
     document.body.style.overflow = "hidden";
     if (typeof ResizeObserver !== "undefined" && lightboxStageEl) {
       lightboxResizeObserver = new ResizeObserver(function () {
-        if (!lightboxEl.hidden) renderLightboxFaceBoxes();
+        if (!lightboxEl.hidden) {
+          lightboxOverlayGestureActive = false;
+          lightboxLabelFrozenBase = null;
+          renderLightboxFaceBoxes();
+        }
       });
       lightboxResizeObserver.observe(lightboxStageEl);
     }
@@ -2018,6 +2261,7 @@
     lightboxImgEl.src = "";
     lightboxImgEl.onload = null;
     lightboxBboxesEl.innerHTML = "";
+    resetLightboxZoom();
     resetLightboxMeta();
     lightboxPhotos = [];
     lightboxIndex = -1;
@@ -2055,6 +2299,26 @@
 
   function onLightboxTouchStart(e) {
     if (lightboxEl.hidden) return;
+    if (lightboxPinchZoomEnabled() && e.touches && e.touches.length === 2) {
+      lightboxPinchStartDistance = lightboxTouchDistance(e.touches[0], e.touches[1]);
+      lightboxPinchStartScale = lightboxZoomScale;
+      lightboxPanPointerActive = false;
+      lightboxTouchStartX = null;
+      lightboxTouchStartY = null;
+      lightboxOverlayGestureActive = true;
+      captureLightboxLabelFreezeFromDom();
+      return;
+    }
+    if (lightboxPinchZoomEnabled() && lightboxZoomScale > 1.01 && e.touches && e.touches.length === 1) {
+      lightboxPanPointerActive = true;
+      lightboxPanLastClientX = e.touches[0].clientX;
+      lightboxPanLastClientY = e.touches[0].clientY;
+      lightboxTouchStartX = null;
+      lightboxTouchStartY = null;
+      lightboxOverlayGestureActive = true;
+      captureLightboxLabelFreezeFromDom();
+      return;
+    }
     if (!e.touches || e.touches.length !== 1) {
       lightboxTouchStartX = null;
       lightboxTouchStartY = null;
@@ -2064,8 +2328,49 @@
     lightboxTouchStartY = e.touches[0].clientY;
   }
 
-  function onLightboxTouchEnd(e) {
+  function onLightboxTouchMove(e) {
     if (lightboxEl.hidden) return;
+    if (!lightboxPinchZoomEnabled()) return;
+    if (lightboxPinchStartDistance != null && e.touches && e.touches.length >= 2) {
+      const d = lightboxTouchDistance(e.touches[0], e.touches[1]);
+      if (d > 0 && lightboxPinchStartDistance > 0) {
+        const next = lightboxPinchStartScale * (d / lightboxPinchStartDistance);
+        lightboxZoomScale = Math.max(LIGHTBOX_ZOOM_MIN, Math.min(LIGHTBOX_ZOOM_MAX, next));
+        renderLightboxFaceBoxes();
+      }
+      e.preventDefault();
+      return;
+    }
+    if (lightboxPanPointerActive && e.touches && e.touches.length === 1) {
+      const x = e.touches[0].clientX;
+      const y = e.touches[0].clientY;
+      lightboxZoomPanX += x - lightboxPanLastClientX;
+      lightboxZoomPanY += y - lightboxPanLastClientY;
+      lightboxPanLastClientX = x;
+      lightboxPanLastClientY = y;
+      renderLightboxFaceBoxes();
+      e.preventDefault();
+    }
+  }
+
+  function onLightboxTouchEnd(e) {
+    if (lightboxPinchZoomEnabled()) {
+      if (!e.touches || e.touches.length < 2) {
+        lightboxPinchStartDistance = null;
+      }
+      if (!e.touches || e.touches.length === 0) {
+        lightboxPanPointerActive = false;
+        if (lightboxOverlayGestureActive) {
+          clearLightboxGestureFreezeAndRelayout();
+        }
+      }
+    }
+    if (lightboxEl.hidden) return;
+    if (lightboxPinchZoomEnabled() && lightboxZoomScale > 1.01) {
+      lightboxTouchStartX = null;
+      lightboxTouchStartY = null;
+      return;
+    }
     if (lightboxTouchStartX == null || lightboxTouchStartY == null) return;
     if (!e.changedTouches || !e.changedTouches.length) return;
     const endX = e.changedTouches[0].clientX;
@@ -2484,10 +2789,16 @@
   lightboxPrevBtn.addEventListener("click", () => navigateLightbox("prev"));
   lightboxNextBtn.addEventListener("click", () => navigateLightbox("next"));
   lightboxStageEl.addEventListener("touchstart", onLightboxTouchStart, { passive: true });
+  lightboxStageEl.addEventListener("touchmove", onLightboxTouchMove, { passive: false });
   lightboxStageEl.addEventListener("touchend", onLightboxTouchEnd, { passive: true });
   lightboxStageEl.addEventListener("touchcancel", function () {
     lightboxTouchStartX = null;
     lightboxTouchStartY = null;
+    lightboxPinchStartDistance = null;
+    lightboxPanPointerActive = false;
+    if (lightboxPinchZoomEnabled() && lightboxOverlayGestureActive) {
+      clearLightboxGestureFreezeAndRelayout();
+    }
   }, { passive: true });
   lightboxEl.addEventListener("click", (e) => {
     if (e.target === lightboxEl) navigateLightbox("close");
@@ -2508,6 +2819,8 @@
 
   window.addEventListener("resize", function () {
     if (!lightboxEl.hidden) {
+      lightboxOverlayGestureActive = false;
+      lightboxLabelFrozenBase = null;
       renderLightboxFaceBoxes();
     }
     if (!justifiedState) return;
