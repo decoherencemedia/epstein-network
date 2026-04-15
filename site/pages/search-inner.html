@@ -494,7 +494,43 @@
     return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.2)";
   }
 
-  function displayNameForPersonId(personId) {
+  /** Matches API ``ignored`` (people on Ignored sheet: ``include_in_network === -1``). */
+  const IGNORED_FACE_BOX_COLOR = "#888888";
+  /** Ignored faces for a person_id in the current people search (``selected``): lighter so they read as “in query”. */
+  const IGNORED_IN_SELECTION_FACE_BOX_COLOR = "#c4c4c4";
+
+  /**
+   * @param {unknown} faces
+   * @returns {Set<string>}
+   */
+  function ignoredPersonIdSetFromFaces(faces) {
+    const s = new Set();
+    if (!Array.isArray(faces)) return s;
+    for (let i = 0; i < faces.length; i++) {
+      const e = faces[i];
+      if (!e || typeof e !== "object" || e.ignored !== true) continue;
+      const pid = String(e.person_id || e.personId || "").trim();
+      if (pid) s.add(pid);
+    }
+    return s;
+  }
+
+  /**
+   * @param {string} personId
+   * @param {unknown} [facesForContext] — current photo faces (API array); used to detect Ignored-sheet people.
+   * @param {Set<string>|null} [precomputedIgnoredSet] — if provided, avoids rescanning ``facesForContext``.
+   */
+  function displayNameForPersonId(personId, facesForContext, precomputedIgnoredSet) {
+    const pid = String(personId || "").trim();
+    let ign = null;
+    if (precomputedIgnoredSet != null) {
+      ign = precomputedIgnoredSet;
+    } else if (facesForContext) {
+      ign = ignoredPersonIdSetFromFaces(facesForContext);
+    }
+    if (ign && ign.has(pid)) {
+      return "Ignored";
+    }
     const selectedMatch = selected.find(function (p) {
       return p.person_id === personId;
     });
@@ -506,6 +542,33 @@
       return String(raw).trim();
     }
     return SiteShared.personStubNumber(personId) != null ? "Unidentified" : String(personId);
+  }
+
+  /**
+   * Tooltip for face box / label click (opens people tab for this person_id).
+   * Unidentified stubs use raw ``person_id`` in the title so hover is not generic "Unidentified".
+   * @param {Set<string>|null|undefined} ignoredSet
+   */
+  function allPhotosFromPersonTitle(personId, ignoredSet) {
+    const pid = String(personId || "").trim();
+    if (!pid) return "";
+    if (ignoredSet && ignoredSet.has(pid)) {
+      return "All photos from " + pid + " (Ignored)";
+    }
+    const selectedMatch = selected.find(function (p) {
+      return p.person_id === personId;
+    });
+    if (selectedMatch && selectedMatch.name && String(selectedMatch.name).trim()) {
+      return "All photos from " + String(selectedMatch.name).trim();
+    }
+    const raw = namesById[personId];
+    if (raw != null && String(raw).trim()) {
+      return "All photos from " + String(raw).trim();
+    }
+    if (SiteShared.personStubNumber(personId) != null) {
+      return "All photos from " + pid;
+    }
+    return "All photos from " + pid;
   }
 
   const DEFAULT_RESULTS_HEADING = "Photos";
@@ -616,12 +679,19 @@
    * Everyone else in `faces` cycles through palette entries not used by any specified person,
    * in stable order (sorted person_id), so an unspecified face never shares a color with a
    * specified person. If no palette slots remain, uses extra hues not in the specified set.
+   * Ignored-sheet people (API ``ignored: true``): dark gray; if their ``person_id`` is in
+   * ``selected``, light gray so searched-for ignored faces read differently from other ignored.
    * @param {unknown} faces — legacy object keyed by person_id, or array of face rows (see normalizeFaceEntries).
    * @returns {Record<string, string>}
    */
   function buildFaceColorMap(faces) {
     const map = Object.create(null);
     if (!faces || typeof faces !== "object") return map;
+
+    const ignoredFromFaces = ignoredPersonIdSetFromFaces(faces);
+    const selectedPersonIds = new Set(selected.map(function (p) {
+      return p.person_id;
+    }));
 
     const n = PERSON_COLOR_PALETTE.length;
     const specifiedColors = selected.map(function (_, i) {
@@ -634,6 +704,7 @@
     });
 
     const unspecifiedIds = uniquePersonIdsInFaces(faces).filter(function (pid) {
+      if (ignoredFromFaces.has(pid)) return false;
       return selected.every(function (p) {
         return p.person_id !== pid;
       });
@@ -672,6 +743,11 @@
       map[pid] = "hsl(" + hue + ", 42%, 44%)";
     });
 
+    ignoredFromFaces.forEach(function (pid) {
+      map[pid] = selectedPersonIds.has(pid)
+        ? IGNORED_IN_SELECTION_FACE_BOX_COLOR
+        : IGNORED_FACE_BOX_COLOR;
+    });
     return map;
   }
 
@@ -735,9 +811,9 @@
   /**
    * One entry per face appearance. Legacy API: `faces` is { person_id: bbox } (one bbox per id).
    * For multiple appearances of the same person, API must use an array:
-   *   [{ "person_id": "...", "face_id": "...", "left", "top", "width", "height" }, ...]
+   *   [{ "person_id": "...", "face_id": "...", "left", "top", "width", "height", "ignored"?: bool }, ...]
    * @param {unknown} faces
-   * @returns {{ personId: string, key: string, box: {left:number,top:number,w:number,h:number} }[]}
+   * @returns {{ personId: string, key: string, ignored: boolean, box: {left:number,top:number,w:number,h:number} }[]}
    */
   function normalizeFaceEntries(faces) {
     if (!faces) return [];
@@ -752,7 +828,8 @@
         if (!box) continue;
         let key = e.face_id || e.faceId;
         if (key == null || key === "") key = "i_" + i;
-        out.push({ personId: personId, key: String(key), box: box });
+        const ignored = e.ignored === true;
+        out.push({ personId: personId, key: String(key), ignored: ignored, box: box });
       }
       return out;
     }
@@ -763,7 +840,7 @@
         const pid = keys[i];
         const box = parseBoxObject(faces[pid]);
         if (!box) continue;
-        out.push({ personId: pid, key: pid, box: box });
+        out.push({ personId: pid, key: pid, ignored: false, box: box });
       }
       return out;
     }
@@ -1126,6 +1203,7 @@
     applyLightboxZoomStyle(ox, oy, dw, dh, cw, ch);
     const zMap = pinchZoom ? lightboxZoomScale : 1;
     const colorMap = buildFaceColorMap(faces);
+    const ignoredSet = ignoredPersonIdSetFromFaces(faces);
     const entries = sortFaceEntries(normalizeFaceEntries(faces));
     // Two-phase render: boxes first, then labels. This lets labels avoid both boxes and earlier labels.
     const labelQueue = [];
@@ -1153,7 +1231,7 @@
       box.style.height = bh0 * zMap + "px";
       const color = colorMap[pid] || "#888";
       box.style.borderColor = color;
-      const openTitle = "Open " + displayNameForPersonId(pid);
+      const openTitle = allPhotosFromPersonTitle(pid, ignoredSet);
       attachOpenPersonPageHandler(box, pid, openTitle);
       lightboxBboxesEl.appendChild(box);
       occupiedRects.push({
@@ -1244,7 +1322,7 @@
     }
 
     labelQueue.forEach(function (entry, faceIndex) {
-      const displayName = displayNameForPersonId(entry.personId);
+      const displayName = displayNameForPersonId(entry.personId, null, ignoredSet);
       const labelEl = entry.el;
       labelEl.textContent = displayName;
       labelEl.classList.remove("people-face-label--stacked");
@@ -2173,7 +2251,11 @@
         gapScreen = lT - boxBottom;
       }
       const pid = String(labelEl.getAttribute("data-person-id") || "");
-      const displayName = displayNameForPersonId(pid);
+      const facesCtx =
+        lightboxPhotos[lightboxIndex] && lightboxPhotos[lightboxIndex].faces
+          ? lightboxPhotos[lightboxIndex].faces
+          : null;
+      const displayName = displayNameForPersonId(pid, facesCtx);
       const stacked = labelEl.classList.contains("people-face-label--stacked");
       out.push({
         verticalMode: verticalMode,
