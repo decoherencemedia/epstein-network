@@ -2285,6 +2285,30 @@
     e.preventDefault();
   }
 
+  /**
+   * Keep the layout point under (clientX, clientY) fixed when scale changes from ``s0`` to ``s1``.
+   * Coordinates match ``mapLightboxZoomCoord*`` / ``getContainedImageRect`` (stage-local px, origin top-left of stage).
+   */
+  function adjustLightboxPanForWheelZoomTowardPoint(clientX, clientY, s0, s1) {
+    if (!lightboxStageEl || !lightboxImgEl || !(s0 > 1e-9) || Math.abs(s1 - s0) < 1e-9) {
+      return;
+    }
+    const imgRect = getContainedImageRect(lightboxImgEl);
+    if (!imgRect) return;
+    const ox = imgRect.ox;
+    const oy = imgRect.oy;
+    const dw = imgRect.dw;
+    const dh = imgRect.dh;
+    const cx = ox + dw / 2;
+    const cy = oy + dh / 2;
+    const sr = lightboxStageEl.getBoundingClientRect();
+    const px = clientX - sr.left;
+    const py = clientY - sr.top;
+    const ratio = s1 / s0;
+    lightboxZoomPanX = px - cx - ratio * (px - lightboxZoomPanX - cx);
+    lightboxZoomPanY = py - cy - ratio * (py - lightboxZoomPanY - cy);
+  }
+
   function onLightboxWheel(e) {
     if (lightboxEl.hidden) return;
     if (!lightboxZoomInteractionsEnabled()) return;
@@ -2300,6 +2324,8 @@
     if (!lightboxLabelFrozenBase) {
       captureLightboxLabelFreezeFromDom();
     }
+    const s0 = lightboxZoomScale;
+    adjustLightboxPanForWheelZoomTowardPoint(e.clientX, e.clientY, s0, next);
     lightboxZoomScale = next;
     renderLightboxFaceBoxes();
     scheduleLightboxWheelRelayout();
@@ -2902,6 +2928,15 @@
   inputEl.addEventListener("keydown", (e) => {
     const opts = listboxEl.querySelectorAll(".people-search-option");
     const hasTypedQuery = String(inputEl.value || "").trim().length > 0;
+    if (e.key === "Enter" && activeSearchTab === "people" && selected.length > 0 && !searchBtn.disabled) {
+      const pickingFromOpenList =
+        !listboxEl.hidden && opts.length > 0 && hasTypedQuery;
+      if (!pickingFromOpenList) {
+        e.preventDefault();
+        runSearch({ syncUrl: true });
+        return;
+      }
+    }
     if (!opts.length) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
