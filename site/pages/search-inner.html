@@ -83,7 +83,7 @@
       </button>
       <div class="people-lightbox-stage" id="people-lightbox-stage">
         <div class="people-lightbox-zoom" id="people-lightbox-zoom">
-          <img id="people-lightbox-image" class="people-lightbox-image" alt="" />
+          <img id="people-lightbox-image" class="people-lightbox-image" alt="" draggable="false" />
         </div>
         <div id="people-lightbox-bboxes" class="people-lightbox-bboxes" aria-hidden="true"></div>
       </div>
@@ -146,6 +146,10 @@
 }
 .people-lightbox-stage.people-lightbox-stage--pinch-zoom {
   touch-action: none;
+  cursor: grab;
+}
+.people-lightbox-stage.people-lightbox-stage--pinch-zoom.people-lightbox-stage--grabbing {
+  cursor: grabbing;
 }
 .people-lightbox-image {
   display: block;
@@ -456,7 +460,7 @@
    */
   const LABEL_STACK_RETRY_SCORE = 60;
   const LABEL_STACK_RETRY_SCORE_NARROW = 36;
-  /** Wide viewports above this use desktop stacking threshold; at or below use narrow + lightbox pinch-zoom. */
+  /** Wide viewports above this use desktop stacking threshold; at or below use narrow stacking. */
   const LABEL_STACK_RETRY_MAX_WIDTH_PX = 1280;
   const LIGHTBOX_ZOOM_MIN = 1;
   const LIGHTBOX_ZOOM_MAX = 4;
@@ -1107,16 +1111,7 @@
   function renderLightboxFaceBoxes() {
     lightboxBboxesEl.innerHTML = "";
     if (!lightboxPhotos.length || lightboxIndex < 0) return;
-    const pinchZoom = lightboxPinchZoomEnabled();
-    if (!pinchZoom) {
-      lightboxZoomScale = 1;
-      lightboxZoomPanX = 0;
-      lightboxZoomPanY = 0;
-      lightboxPinchStartDistance = null;
-      lightboxPanPointerActive = false;
-      lightboxOverlayGestureActive = false;
-      lightboxLabelFrozenBase = null;
-    }
+    const pinchZoom = lightboxZoomInteractionsEnabled();
     const item = lightboxPhotos[lightboxIndex];
     const faces = item.faces;
     if (!faces || typeof faces !== "object") return;
@@ -1229,6 +1224,15 @@
           lTop = bT - fr.gapScreen - lh;
         } else {
           lTop = bT + bH + fr.gapScreen;
+        }
+        /** While frozen, ``verticalMode`` is fixed from capture; pan can push the preferred side past the image bounds. Nudge to the other side only when clipped (avoids overlap with the box edge without a full re-solve). */
+        let lBottom = lTop + lh;
+        if (lTop < bounds.top) {
+          lTop = bT + bH + fr.gapScreen;
+          lBottom = lTop + lh;
+        }
+        if (lBottom > bounds.bottom) {
+          lTop = bT - fr.gapScreen - lh;
         }
         // Horizontal: same pattern as vertical — mapped box edge + constant screen px offset
         // (``hOffsetScreen`` = labelLeft − boxLeft at capture), not image-plane invert/map.
@@ -2051,16 +2055,46 @@
    * @type {null | { verticalMode: string, gapScreen: number, hOffsetScreen: number, stacked: boolean, displayName: string }[]}
    */
   let lightboxLabelFrozenBase = null;
+  /** Desktop / all viewports: drag to pan when zoomed (touch uses separate pointer flags). */
+  let lightboxPanMouseActive = false;
+  /** After wheel zoom, debounce relayout so labels re-solve once scrolling stops. */
+  let lightboxWheelRelayoutTimer = null;
 
-  function lightboxPinchZoomEnabled() {
-    return (
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(max-width: " + LABEL_STACK_RETRY_MAX_WIDTH_PX + "px)").matches
-    );
+  const LIGHTBOX_WHEEL_ZOOM_SENSITIVITY = 0.002;
+
+  /**
+   * Lightbox zoom + pan (pinch / wheel / drag) — same coordinate mapping on all viewports.
+   * Previously gated to narrow viewports only; desktop now uses wheel to zoom and drag to pan.
+   */
+  function lightboxZoomInteractionsEnabled() {
+    return true;
+  }
+
+  function cancelLightboxWheelRelayout() {
+    if (lightboxWheelRelayoutTimer != null) {
+      clearTimeout(lightboxWheelRelayoutTimer);
+      lightboxWheelRelayoutTimer = null;
+    }
+  }
+
+  function scheduleLightboxWheelRelayout() {
+    cancelLightboxWheelRelayout();
+    lightboxWheelRelayoutTimer = setTimeout(function () {
+      lightboxWheelRelayoutTimer = null;
+      clearLightboxGestureFreezeAndRelayout();
+    }, 200);
   }
 
   function resetLightboxZoom() {
+    cancelLightboxWheelRelayout();
+    if (lightboxPanMouseActive) {
+      lightboxPanMouseActive = false;
+      document.removeEventListener("mousemove", onLightboxDocMouseMove);
+      document.removeEventListener("mouseup", onLightboxDocMouseUp);
+    }
+    if (lightboxStageEl) {
+      lightboxStageEl.classList.remove("people-lightbox-stage--grabbing");
+    }
     lightboxZoomScale = 1;
     lightboxZoomPanX = 0;
     lightboxZoomPanY = 0;
@@ -2086,7 +2120,7 @@
    */
   function mapLightboxZoomCoordX(x, ox, oy, dw, dh, pinchActive) {
     const use =
-      arguments.length > 5 ? pinchActive : lightboxPinchZoomEnabled();
+      arguments.length > 5 ? pinchActive : lightboxZoomInteractionsEnabled();
     if (!use) return x;
     const cx = ox + dw / 2;
     return lightboxZoomPanX + cx + lightboxZoomScale * (x - cx);
@@ -2094,7 +2128,7 @@
 
   function mapLightboxZoomCoordY(y, ox, oy, dw, dh, pinchActive) {
     const use =
-      arguments.length > 5 ? pinchActive : lightboxPinchZoomEnabled();
+      arguments.length > 5 ? pinchActive : lightboxZoomInteractionsEnabled();
     if (!use) return y;
     const cy = oy + dh / 2;
     return lightboxZoomPanY + cy + lightboxZoomScale * (y - cy);
@@ -2106,7 +2140,7 @@
    * Each frame we recompute mapped ``bL`` / ``bT`` / ``bH`` then apply those offsets (no invert/map).
    */
   function captureLightboxLabelFreezeFromDom() {
-    if (!lightboxPinchZoomEnabled() || !lightboxBboxesEl) return;
+    if (!lightboxZoomInteractionsEnabled() || !lightboxBboxesEl) return;
     const boxes = lightboxBboxesEl.querySelectorAll(".people-face-box");
     const labels = lightboxBboxesEl.querySelectorAll(".people-face-label");
     if (!labels.length || boxes.length !== labels.length) {
@@ -2185,12 +2219,16 @@
 
   function applyLightboxZoomStyle(ox, oy, dw, dh, cw, ch) {
     if (!lightboxZoomEl) return;
-    if (!lightboxPinchZoomEnabled()) {
-      lightboxZoomEl.style.transform = "";
-      lightboxZoomEl.style.transformOrigin = "";
-      return;
-    }
     clampLightboxZoomPanToImage(ox, oy, dw, dh, cw, ch);
+    /** Match ``zoomed`` toggle: at (or effectively) full zoom, pan has no benefit — snap to default framing. */
+    if (lightboxZoomScale <= 1.001) {
+      lightboxZoomScale = 1;
+      lightboxZoomPanX = 0;
+      lightboxZoomPanY = 0;
+      cancelLightboxWheelRelayout();
+      lightboxOverlayGestureActive = false;
+      lightboxLabelFrozenBase = null;
+    }
     const cx = ox + dw / 2;
     const cy = oy + dh / 2;
     lightboxZoomEl.style.transformOrigin = cx + "px " + cy + "px";
@@ -2199,6 +2237,72 @@
     const zoomed = lightboxZoomScale > 1.001;
     lightboxEl.classList.toggle("people-lightbox--zoomed", zoomed);
     lightboxStageEl.classList.toggle("people-lightbox-stage--pinch-zoom", zoomed);
+  }
+
+  function isLightboxFaceInteractiveTarget(t) {
+    if (!t || !t.closest) return false;
+    return !!(t.closest(".people-face-box") || t.closest(".people-face-label"));
+  }
+
+  function onLightboxDocMouseMove(e) {
+    if (!lightboxPanMouseActive) return;
+    lightboxZoomPanX += e.clientX - lightboxPanLastClientX;
+    lightboxZoomPanY += e.clientY - lightboxPanLastClientY;
+    lightboxPanLastClientX = e.clientX;
+    lightboxPanLastClientY = e.clientY;
+    renderLightboxFaceBoxes();
+  }
+
+  function onLightboxDocMouseUp() {
+    if (!lightboxPanMouseActive) return;
+    lightboxPanMouseActive = false;
+    document.removeEventListener("mousemove", onLightboxDocMouseMove);
+    document.removeEventListener("mouseup", onLightboxDocMouseUp);
+    if (lightboxStageEl) {
+      lightboxStageEl.classList.remove("people-lightbox-stage--grabbing");
+    }
+    cancelLightboxWheelRelayout();
+    if (lightboxOverlayGestureActive) {
+      clearLightboxGestureFreezeAndRelayout();
+    }
+  }
+
+  function onLightboxStageMouseDown(e) {
+    if (lightboxEl.hidden || e.button !== 0) return;
+    if (!lightboxZoomInteractionsEnabled() || lightboxZoomScale <= 1.01) return;
+    if (isLightboxFaceInteractiveTarget(e.target)) return;
+    cancelLightboxWheelRelayout();
+    lightboxPanMouseActive = true;
+    lightboxPanLastClientX = e.clientX;
+    lightboxPanLastClientY = e.clientY;
+    lightboxOverlayGestureActive = true;
+    captureLightboxLabelFreezeFromDom();
+    if (lightboxStageEl) {
+      lightboxStageEl.classList.add("people-lightbox-stage--grabbing");
+    }
+    document.addEventListener("mousemove", onLightboxDocMouseMove);
+    document.addEventListener("mouseup", onLightboxDocMouseUp);
+    e.preventDefault();
+  }
+
+  function onLightboxWheel(e) {
+    if (lightboxEl.hidden) return;
+    if (!lightboxZoomInteractionsEnabled()) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * LIGHTBOX_WHEEL_ZOOM_SENSITIVITY);
+    const next = Math.max(
+      LIGHTBOX_ZOOM_MIN,
+      Math.min(LIGHTBOX_ZOOM_MAX, lightboxZoomScale * factor)
+    );
+    if (Math.abs(next - lightboxZoomScale) < 1e-6) return;
+    cancelLightboxWheelRelayout();
+    lightboxOverlayGestureActive = true;
+    if (!lightboxLabelFrozenBase) {
+      captureLightboxLabelFreezeFromDom();
+    }
+    lightboxZoomScale = next;
+    renderLightboxFaceBoxes();
+    scheduleLightboxWheelRelayout();
   }
 
   function lightboxTouchDistance(a, b) {
@@ -2263,11 +2367,15 @@
     document.body.style.overflow = "hidden";
     if (typeof ResizeObserver !== "undefined" && lightboxStageEl) {
       lightboxResizeObserver = new ResizeObserver(function () {
-        if (!lightboxEl.hidden) {
-          lightboxOverlayGestureActive = false;
-          lightboxLabelFrozenBase = null;
+        if (lightboxEl.hidden) return;
+        /** Recompute box geometry; only drop the gesture freeze when not mid–pinch/wheel/pan zoom (dropping it re-runs overlap placement and labels can jump above ↔ below). */
+        if (lightboxOverlayGestureActive && lightboxZoomScale > 1.001) {
           renderLightboxFaceBoxes();
+          return;
         }
+        lightboxOverlayGestureActive = false;
+        lightboxLabelFrozenBase = null;
+        renderLightboxFaceBoxes();
       });
       lightboxResizeObserver.observe(lightboxStageEl);
     }
@@ -2334,7 +2442,8 @@
 
   function onLightboxTouchStart(e) {
     if (lightboxEl.hidden) return;
-    if (lightboxPinchZoomEnabled() && e.touches && e.touches.length === 2) {
+    cancelLightboxWheelRelayout();
+    if (lightboxZoomInteractionsEnabled() && e.touches && e.touches.length === 2) {
       lightboxPinchStartDistance = lightboxTouchDistance(e.touches[0], e.touches[1]);
       lightboxPinchStartScale = lightboxZoomScale;
       lightboxPanPointerActive = false;
@@ -2344,7 +2453,7 @@
       captureLightboxLabelFreezeFromDom();
       return;
     }
-    if (lightboxPinchZoomEnabled() && lightboxZoomScale > 1.01 && e.touches && e.touches.length === 1) {
+    if (lightboxZoomInteractionsEnabled() && lightboxZoomScale > 1.01 && e.touches && e.touches.length === 1) {
       lightboxPanPointerActive = true;
       lightboxPanLastClientX = e.touches[0].clientX;
       lightboxPanLastClientY = e.touches[0].clientY;
@@ -2365,7 +2474,7 @@
 
   function onLightboxTouchMove(e) {
     if (lightboxEl.hidden) return;
-    if (!lightboxPinchZoomEnabled()) return;
+    if (!lightboxZoomInteractionsEnabled()) return;
     if (lightboxPinchStartDistance != null && e.touches && e.touches.length >= 2) {
       const d = lightboxTouchDistance(e.touches[0], e.touches[1]);
       if (d > 0 && lightboxPinchStartDistance > 0) {
@@ -2389,19 +2498,20 @@
   }
 
   function onLightboxTouchEnd(e) {
-    if (lightboxPinchZoomEnabled()) {
+    if (lightboxZoomInteractionsEnabled()) {
       if (!e.touches || e.touches.length < 2) {
         lightboxPinchStartDistance = null;
       }
       if (!e.touches || e.touches.length === 0) {
         lightboxPanPointerActive = false;
         if (lightboxOverlayGestureActive) {
+          cancelLightboxWheelRelayout();
           clearLightboxGestureFreezeAndRelayout();
         }
       }
     }
     if (lightboxEl.hidden) return;
-    if (lightboxPinchZoomEnabled() && lightboxZoomScale > 1.01) {
+    if (lightboxZoomInteractionsEnabled() && lightboxZoomScale > 1.01) {
       lightboxTouchStartX = null;
       lightboxTouchStartY = null;
       return;
@@ -2826,12 +2936,15 @@
   lightboxStageEl.addEventListener("touchstart", onLightboxTouchStart, { passive: true });
   lightboxStageEl.addEventListener("touchmove", onLightboxTouchMove, { passive: false });
   lightboxStageEl.addEventListener("touchend", onLightboxTouchEnd, { passive: true });
+  lightboxStageEl.addEventListener("wheel", onLightboxWheel, { passive: false });
+  lightboxStageEl.addEventListener("mousedown", onLightboxStageMouseDown);
   lightboxStageEl.addEventListener("touchcancel", function () {
     lightboxTouchStartX = null;
     lightboxTouchStartY = null;
     lightboxPinchStartDistance = null;
     lightboxPanPointerActive = false;
-    if (lightboxPinchZoomEnabled() && lightboxOverlayGestureActive) {
+    cancelLightboxWheelRelayout();
+    if (lightboxZoomInteractionsEnabled() && lightboxOverlayGestureActive) {
       clearLightboxGestureFreezeAndRelayout();
     }
   }, { passive: true });
@@ -2854,9 +2967,13 @@
 
   window.addEventListener("resize", function () {
     if (!lightboxEl.hidden) {
-      lightboxOverlayGestureActive = false;
-      lightboxLabelFrozenBase = null;
-      renderLightboxFaceBoxes();
+      if (lightboxOverlayGestureActive && lightboxZoomScale > 1.001) {
+        renderLightboxFaceBoxes();
+      } else {
+        lightboxOverlayGestureActive = false;
+        lightboxLabelFrozenBase = null;
+        renderLightboxFaceBoxes();
+      }
     }
     if (!justifiedState) return;
     clearTimeout(masonryResizeTimer);
