@@ -1,5 +1,5 @@
 <main class="site-page people-page" id="main">
-  <h1 class="site-page-title">Search</h1>
+  <h1 class="site-page-title" id="people-page-title">Search</h1>
   <p class="site-page-lead">Search photos by people&rsquo;s names or by document number</p>
 
   <section class="people-toolbar-shell" aria-label="Find photos">
@@ -57,10 +57,13 @@
     </div>
   </section>
 
+  <section class="people-person-metadata" id="people-person-metadata" hidden aria-live="polite">
+    <div class="people-person-metadata-links" id="people-person-metadata-links"></div>
+  </section>
+
   <p class="people-status" id="people-status" role="status" aria-live="polite"></p>
 
   <section class="people-results-wrap" id="people-results-wrap" hidden>
-    <h2 class="people-results-heading" id="people-results-heading">Photos</h2>
     <div id="people-results-loading" class="people-results-loading" hidden aria-hidden="true">Loading photos…</div>
     <div class="people-justified" id="people-masonry"></div>
     <div class="people-results-more" id="people-results-more" hidden>
@@ -103,6 +106,35 @@
 
 <style>
 .people-lightbox[hidden] { display: none; }
+.people-person-metadata[hidden] { display: none; }
+.people-person-metadata {
+  margin: 14px 0 4px;
+  padding: 0;
+}
+.people-person-metadata-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.people-person-metadata-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  text-decoration: none;
+  color: #1f5fbf;
+  font: 500 13px/1.25 system-ui, sans-serif;
+}
+.people-person-metadata-link-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  object-fit: contain;
+  flex: 0 0 20px;
+}
+.people-person-metadata-link:hover,
+.people-person-metadata-link:focus-visible {
+  text-decoration: underline;
+}
 .people-lightbox {
   position: fixed;
   inset: 0;
@@ -396,6 +428,9 @@
   const selectedEl = document.getElementById("people-selected");
   const searchBtn = document.getElementById("people-run-search");
   const openGraphBtn = document.getElementById("people-open-graph");
+  const pageTitleEl = document.getElementById("people-page-title");
+  const personMetadataWrapEl = document.getElementById("people-person-metadata");
+  const personMetadataLinksEl = document.getElementById("people-person-metadata-links");
   /** @type {"people" | "document"} */
   let activeSearchTab = "people";
 
@@ -412,6 +447,7 @@
      */
     photoListStartOffset: /** @type {number | null} */ (null),
     statusSnapshot: /** @type {{ text: string, html: string, isError: boolean } | null} */ (null),
+    personMetadata: /** @type {{ person_id: string, name: string | null, link: string | null, jmail_link: string | null, reference_image_url: string | null } | null} */ (null),
   };
   const documentState = {
     input: "",
@@ -426,7 +462,6 @@
 
   const statusEl = document.getElementById("people-status");
   const resultsWrap = document.getElementById("people-results-wrap");
-  const resultsHeadingEl = document.getElementById("people-results-heading");
   const masonryEl = document.getElementById("people-masonry");
   const loadMoreWrap = document.getElementById("people-results-more");
   const loadMoreBtn = document.getElementById("people-load-more");
@@ -572,9 +607,16 @@
   }
 
   const DEFAULT_RESULTS_HEADING = "Photos";
+  const DEFAULT_PAGE_HEADING = "Search";
+
+  function setPageHeadingFromResultsHeading(nextHeadingText) {
+    if (!pageTitleEl) return;
+    const next = String(nextHeadingText || "").trim();
+    pageTitleEl.textContent = next || DEFAULT_PAGE_HEADING;
+  }
 
   function resetResultsHeading() {
-    if (resultsHeadingEl) resultsHeadingEl.textContent = DEFAULT_RESULTS_HEADING;
+    setPageHeadingFromResultsHeading(DEFAULT_PAGE_HEADING);
   }
 
   /** Display name for a selected person: trimmed name, or person_id (matches chips). */
@@ -597,16 +639,14 @@
   }
 
   function setResultsHeadingForPeopleSelection() {
-    if (!resultsHeadingEl) return;
     const labels = selected.map(chipLabelForSelected);
-    resultsHeadingEl.textContent = formatPhotosOfPeopleHeading(labels);
+    setPageHeadingFromResultsHeading(formatPhotosOfPeopleHeading(labels));
   }
 
   /**
    * @param {string} prefix Document search stem (typically normalized uppercase).
    */
   function setResultsHeadingForDocumentPrefix(prefix) {
-    if (!resultsHeadingEl) return;
     const raw = String(prefix || "").trim();
     const norm = normalizeDocumentPrefixForApi(raw);
     const display = norm || raw.toUpperCase();
@@ -614,8 +654,99 @@
       resetResultsHeading();
       return;
     }
-    resultsHeadingEl.textContent =
-      'Photos from documents matching "' + display + '"';
+    setPageHeadingFromResultsHeading('Photos from documents matching "' + display + '"');
+  }
+
+  /**
+   * @param {unknown} raw
+   * @returns {{ person_id: string, name: string | null, link: string | null, jmail_link: string | null, reference_image_url: string | null } | null}
+   */
+  function normalizePersonMetadata(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const personId = String(raw.person_id || "").trim();
+    if (!personId) return null;
+    const clean = function (value) {
+      if (value == null) return null;
+      const s = String(value).trim();
+      return s || null;
+    };
+    return {
+      person_id: personId,
+      name: clean(raw.name),
+      link: clean(raw.link),
+      jmail_link: clean(raw.jmail_link),
+      reference_image_url: clean(raw.reference_image_url),
+    };
+  }
+
+  /**
+   * @param {{ person_id: string, name: string | null, link: string | null, jmail_link: string | null, reference_image_url: string | null } | null | undefined} metadata
+   */
+  function renderPersonMetadata(metadata) {
+    if (!personMetadataWrapEl || !personMetadataLinksEl) return;
+    const m = metadata || null;
+    const iconSrcByKind = {
+      info: "../images/icons/more-info-icon.svg",
+      jmail: "../images/icons/jmail-icon.png",
+      reference: "../images/icons/camera-icon.svg",
+    };
+    if (!m) {
+      personMetadataWrapEl.hidden = true;
+      personMetadataLinksEl.innerHTML = "";
+      return;
+    }
+    const displayName = m.name && m.name.trim() ? m.name.trim() : m.person_id;
+    personMetadataLinksEl.innerHTML = "";
+    const links = [];
+    if (m.link) {
+      links.push({
+        kind: "info",
+        href: m.link,
+        text: "More information about " + displayName,
+      });
+    }
+    if (m.jmail_link) {
+      links.push({
+        kind: "jmail",
+        href: m.jmail_link,
+        text: "View " + displayName + " on Jmail.World",
+      });
+    }
+    if (m.reference_image_url) {
+      links.push({
+        kind: "reference",
+        href: m.reference_image_url,
+        text: "View reference photo for " + displayName,
+      });
+    }
+    if (!links.length) {
+      personMetadataWrapEl.hidden = true;
+      return;
+    }
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      const a = document.createElement("a");
+      a.className = "people-person-metadata-link";
+      a.href = link.href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      const icon = document.createElement("img");
+      icon.className = "people-person-metadata-link-icon";
+      icon.src = iconSrcByKind[link.kind] || iconSrcByKind.info;
+      icon.alt = "";
+      if (link.kind === "reference") {
+        icon.onerror = function () {
+          icon.onerror = null;
+          icon.src = iconSrcByKind.info;
+        };
+      }
+      const textNode = document.createElement("span");
+      textNode.textContent = link.text;
+      a.appendChild(icon);
+      a.appendChild(textNode);
+      personMetadataLinksEl.appendChild(a);
+    }
+    personMetadataWrapEl.hidden = false;
   }
 
   function openPersonPage(personId) {
@@ -1772,6 +1903,7 @@
     resetResultsHeading();
     setStatus("");
     if (loadMoreWrap) loadMoreWrap.hidden = true;
+    renderPersonMetadata(null);
   }
 
   function clearSearchResults() {
@@ -1781,6 +1913,7 @@
       peopleState.photoItems = null;
       peopleState.photoTotal = null;
       peopleState.photoListStartOffset = null;
+      peopleState.personMetadata = null;
       peopleState.statusSnapshot = null;
     } else {
       lastDocumentPhotoItems = null;
@@ -1823,6 +1956,7 @@
         peopleState.statusSnapshot,
         peopleState.photoTotal
       );
+      renderPersonMetadata(peopleState.personMetadata);
     } else {
       selected = [];
       if (documentInputEl) documentInputEl.value = documentState.input;
@@ -1838,6 +1972,7 @@
         documentState.statusSnapshot,
         documentState.photoTotal
       );
+      renderPersonMetadata(null);
     }
     updateSearchButton();
   }
@@ -1893,7 +2028,7 @@
   /**
    * @param {number} [offset]
    * @param {string | null | undefined} [apiPhoto] — if set (URL bootstrap only), sent as ``photo=`` for offset 0 so the API returns the page containing that image.
-   * @returns {Promise<{ items: unknown[], total: number, limit: number, offset: number }>}
+   * @returns {Promise<{ items: unknown[], total: number, limit: number, offset: number, personMetadata: { person_id: string, name: string | null, link: string | null, jmail_link: string | null, reference_image_url: string | null } | null }>}
    */
   async function fetchPhotoItemsForSelection(offset, apiPhoto) {
     const params = new URLSearchParams();
@@ -1924,6 +2059,7 @@
     const total = typeof json.total === "number" ? json.total : raw.length;
     const limit = typeof json.limit === "number" ? json.limit : PHOTO_PAGE_SIZE;
     const offOut = typeof json.offset === "number" ? json.offset : off;
+    const personMetadata = normalizePersonMetadata(json.person_metadata);
     const items = raw
       .map(function (x) {
         return normalizePhotoRow(x);
@@ -1931,7 +2067,7 @@
       .filter(function (p) {
         return p.image && String(p.image).trim();
       });
-    return { items: items, total: total, limit: limit, offset: offOut };
+    return { items: items, total: total, limit: limit, offset: offOut, personMetadata: personMetadata };
   }
 
   /**
@@ -3117,7 +3253,7 @@
     setStatus("Searching…");
     prepareResultsSearchUi();
     try {
-      const { items: photoItems, total, offset: pageOffset } =
+      const { items: photoItems, total, offset: pageOffset, personMetadata } =
         await fetchPhotoItemsForSelection(0, apiPhoto);
       if (!photoItems.length) {
         setNoImagesContentPolicyStatus();
@@ -3125,8 +3261,10 @@
         peopleState.photoItems = null;
         peopleState.photoTotal = typeof total === "number" ? total : 0;
         peopleState.photoListStartOffset = null;
+        peopleState.personMetadata = personMetadata;
         peopleState.statusSnapshot = captureStatusSnapshot();
         updateLoadMoreButton(peopleState.photoTotal, 0);
+        renderPersonMetadata(personMetadata);
         return;
       }
       lastPeoplePhotoItems = photoItems.slice();
@@ -3134,12 +3272,14 @@
       peopleState.photoTotal = total;
       peopleState.photoListStartOffset =
         typeof pageOffset === "number" && pageOffset >= 0 ? pageOffset : 0;
+      peopleState.personMetadata = personMetadata;
       const lightboxPayload = renderPhotoResults(photoItems, {
         onReady: function () {
           updateLoadMoreButton(total, lastPeoplePhotoItems.length);
         },
       });
       setResultsHeadingForPeopleSelection();
+      renderPersonMetadata(personMetadata);
       openLightboxIfPreferred(lightboxPayload, preferredPhoto);
       setStatusPhotoRange(
         total,
@@ -3150,6 +3290,7 @@
     } catch (e) {
       resetResultsHeading();
       setStatusError(e);
+      renderPersonMetadata(null);
     }
   }
 
@@ -3205,6 +3346,7 @@
         documentState.input = normalized;
         documentState.statusSnapshot = captureStatusSnapshot();
         updateLoadMoreButton(documentState.photoTotal, 0);
+        renderPersonMetadata(null);
         return;
       }
       lastDocumentPhotoItems = photoItems.slice();
@@ -3219,6 +3361,7 @@
         },
       });
       setResultsHeadingForDocumentPrefix(normalized);
+      renderPersonMetadata(null);
       openLightboxIfPreferred(lightboxPayload, preferredPhoto);
       setStatusPhotoRange(
         total,
@@ -3229,6 +3372,7 @@
     } catch (e) {
       resetResultsHeading();
       setStatusError(e);
+      renderPersonMetadata(null);
     }
   }
 
