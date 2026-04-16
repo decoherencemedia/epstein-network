@@ -28,5 +28,4 @@ GitHub Actions (if configured) runs `./site/build.sh` and deploys **`dist/`** to
 
 ## TODO
 - add fuzzy search to People page (with filters for category?)
-- fix bug where, if an image lightbox isn't in the first 1k images, it's not displayed (https://epstein.photos/search/?tab=people&person_ids=person_2&photo=EFTA00251174-00001.webp)
 - fix original PDF link for non-EFTA

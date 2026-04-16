@@ -53,6 +53,11 @@ curl -fsSL "$IMAGELOADED_URL" -o "$IMAGELOADED_OUT"
 
 cp -r "$SITE/js" "$DIST/"
 
+# Copy static site images (icons, etc.) into dist/images.
+if [[ -d "$SITE/images" ]]; then
+  cp -r "$SITE/images" "$DIST/"
+fi
+
 # Local dev: atlas from pipeline output (``network/images/``, see FACES_IMAGE_DIR), else in-repo copy.
 ATLAS_PIPELINE="$ROOT/../images/atlas.webp"
 if [[ -f "$ATLAS_PIPELINE" ]]; then

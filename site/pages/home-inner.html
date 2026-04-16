@@ -38,6 +38,7 @@
       </span>
     </a>
     <div id="thumb-empty" style="display:none"><a href="/about#content" target="_blank" rel="noopener noreferrer">No images can be displayed</a></div>
+    <div id="thumb-node-links" style="display:none"></div>
     <div id="thumb-top-neighbors" style="display:none"></div>
     <div id="thumb-default" style="display:none">
       <div class="thumb-default-body">
@@ -217,6 +218,7 @@
       const previewImgLinkEl = document.getElementById("thumb-img-link");
       const previewImgEl = document.getElementById("thumb-img");
       const previewEmptyEl = document.getElementById("thumb-empty");
+      const previewNodeLinksEl = document.getElementById("thumb-node-links");
       const previewTitleEl = document.getElementById("thumb-title");
       const thumbHeaderEl = document.querySelector("#thumb-preview .thumb-header");
       const previewMetaEl = document.getElementById("thumb-meta");
@@ -433,6 +435,7 @@
       }
 
       if (!previewNeighborsEl) throw new Error("Missing #thumb-top-neighbors");
+      if (!previewNodeLinksEl) throw new Error("Missing #thumb-node-links");
       if (!previewDefaultEl) throw new Error("Missing #thumb-default");
       if (!previewLegendEl) throw new Error("Missing #thumb-legend");
 
@@ -449,6 +452,8 @@
         previewImgEl.alt = "";
         previewImgEl.style.removeProperty("object-position");
         previewEmptyEl.style.display = "none";
+        previewNodeLinksEl.style.display = "none";
+        previewNodeLinksEl.innerHTML = "";
         previewNeighborsEl.style.display = "none";
         previewNeighborsEl.innerHTML = "";
         currentBboxes = [];
@@ -626,6 +631,7 @@
         categoryLabel,
         categoryColor,
         totalPhotos,
+        nodeLinkMeta,
         topNeighbors,
         onSelectNeighbor,
         topNeighborsTitle,
@@ -692,6 +698,76 @@
           previewImgEl.alt = "";
           previewImgEl.style.removeProperty("object-position");
           previewEmptyEl.style.display = "block";
+        }
+        previewNodeLinksEl.style.display = "none";
+        previewNodeLinksEl.innerHTML = "";
+        if (nodeLinkMeta && typeof nodeLinkMeta === "object") {
+          const infoLink =
+            nodeLinkMeta.link != null && String(nodeLinkMeta.link).trim()
+              ? String(nodeLinkMeta.link).trim()
+              : null;
+          const jmailLink =
+            nodeLinkMeta.jmail_link != null && String(nodeLinkMeta.jmail_link).trim()
+              ? String(nodeLinkMeta.jmail_link).trim()
+              : null;
+          const referenceImageUrl =
+            nodeLinkMeta.reference_image_url != null && String(nodeLinkMeta.reference_image_url).trim()
+              ? String(nodeLinkMeta.reference_image_url).trim()
+              : null;
+          const linksOut = [];
+          if (infoLink) {
+            linksOut.push({ href: infoLink, text: "More information" });
+          }
+          if (jmailLink) {
+            linksOut.push({ href: jmailLink, text: "View in Jmail.World" });
+          }
+          if (referenceImageUrl) {
+            linksOut.push({ href: referenceImageUrl, text: "View reference photo" });
+          }
+          if (linksOut.length) {
+            const wrap = document.createElement("div");
+            wrap.className = "neighbors-list";
+            linksOut.forEach(function (entry) {
+              const a = document.createElement("a");
+              const kindClass =
+                entry.text === "View in Jmail.World"
+                  ? "thumb-node-link--jmail"
+                  : "thumb-node-link--info";
+              a.className = "neighbor-row thumb-node-link " + kindClass;
+              a.href = entry.href;
+              a.target = "_blank";
+              a.rel = "noopener noreferrer";
+              const icon = document.createElement("span");
+              icon.className = "thumb-node-link-icon";
+              icon.setAttribute("aria-hidden", "true");
+              const iconImg = document.createElement("img");
+              iconImg.className = "thumb-node-link-icon-img";
+              iconImg.alt = "";
+              iconImg.decoding = "async";
+              iconImg.loading = "lazy";
+              iconImg.src =
+                entry.text === "View in Jmail.World"
+                  ? "images/icons/jmail-icon.png"
+                  : entry.text === "View reference photo"
+                    ? "images/icons/camera-icon.svg"
+                    : "images/icons/more-info-icon.svg";
+              if (entry.text === "View reference photo") {
+                iconImg.onerror = function () {
+                  iconImg.onerror = null;
+                  iconImg.src = "images/icons/more-info-icon.svg";
+                };
+              }
+              icon.appendChild(iconImg);
+              const label = document.createElement("span");
+              label.className = "thumb-node-link-text";
+              label.textContent = entry.text;
+              a.appendChild(icon);
+              a.appendChild(label);
+              wrap.appendChild(a);
+            });
+            previewNodeLinksEl.appendChild(wrap);
+            previewNodeLinksEl.style.display = "block";
+          }
         }
         setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle, onNavigateToNeighbor);
         applyPreviewVisibility();
@@ -1027,9 +1103,15 @@
 
       function getNodePreviewEntry(nodeObj) {
         const nodeEntry = imageData && imageData.nodes ? imageData.nodes[nodeObj.label] : null;
+        const pid = personIdForNode(nodeObj);
+        const nodeMeta =
+          pid && imageData && imageData.node_metadata && imageData.node_metadata[pid]
+            ? imageData.node_metadata[pid]
+            : null;
         return {
           filename: Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null),
           bbox: Array.isArray(nodeEntry) ? nodeEntry[1] : null,
+          nodeMeta,
         };
       }
 
@@ -1088,6 +1170,7 @@
           category,
           color,
           total,
+          entry.nodeMeta,
           neighbors,
           (neighbor) => {
             if (!state.lock.active || state.lock.kind !== "node" || state.lock.item !== targetNode) return;
@@ -1365,6 +1448,7 @@
           null,
           null,
           total,
+          null,
           endpoints,
           (n) => {
             const target = resolveNeighborNode(n);
