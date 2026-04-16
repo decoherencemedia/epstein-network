@@ -992,7 +992,9 @@
 
   /**
    * object-fit: cover + object-position aligns that point in the image with the positioning area
-   * (same normalized space as bboxes). Uses top-most / then left-most face to match overlay order.
+   * (same normalized space as bboxes). Prefer averaging centers of faces for currently selected
+   * people (query target); if no selected face is present in this photo, fallback to top-most /
+   * left-most face to keep deterministic framing.
    * @param {HTMLImageElement} img
    * @param {unknown} faces
    */
@@ -1002,9 +1004,43 @@
       img.style.removeProperty("object-position");
       return;
     }
-    const b = entries[0].box;
-    const cx = b.left + b.w / 2;
-    const cy = b.top + b.h / 2;
+    const selectedIds = new Set(
+      selected
+        .map(function (p) { return String(p && p.person_id ? p.person_id : "").trim(); })
+        .filter(Boolean)
+    );
+    const selectedEntries = selectedIds.size
+      ? entries.filter(function (e) {
+          return selectedIds.has(String(e.personId || "").trim());
+        })
+      : [];
+
+    let cx;
+    let cy;
+    if (selectedEntries.length) {
+      let sumCx = 0;
+      let sumCy = 0;
+      let count = 0;
+      for (let i = 0; i < selectedEntries.length; i++) {
+        const b = selectedEntries[i].box;
+        const faceCx = b.left + b.w / 2;
+        const faceCy = b.top + b.h / 2;
+        if (!Number.isFinite(faceCx) || !Number.isFinite(faceCy)) continue;
+        sumCx += faceCx;
+        sumCy += faceCy;
+        count += 1;
+      }
+      if (count > 0) {
+        cx = sumCx / count;
+        cy = sumCy / count;
+      }
+    }
+
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+      const b = entries[0].box;
+      cx = b.left + b.w / 2;
+      cy = b.top + b.h / 2;
+    }
     if (![cx, cy].every(function (x) { return Number.isFinite(x); })) {
       img.style.removeProperty("object-position");
       return;
