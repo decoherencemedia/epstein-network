@@ -15,6 +15,12 @@ Database: same env convention as ``epstein-api/run.sh`` — ``EPSTEIN_SQLITE_PAT
 ``DB_URL`` (optional; if set, ``curl`` downloads into that path first). If ``EPSTEIN_SQLITE_PATH``
 is unset, uses the local default ``network/faces_prod.db`` (API slice next to the pipeline DB).
 
+Open Graph images use ``EPSTEIN_SPACES_CDN_BASE`` (default matches ``site/js/shared.js``): for a single
+person, the same best-face WebP as ``GET /faces``; for multiple people, the first intersecting
+document image (``ORDER BY image_name``), matching the first /photos result.
+
+Optional: ``EPSTEIN_OG_SITE_NAME`` (default ``Epstein Network``), ``EPSTEIN_OG_LOCALE`` (default ``en_US``).
+
 When not ``DRY_RUN``, run ``site/build.sh`` first so ``DIST_DIR`` contains ``js/``, ``styles.css``, …
 Re-running ``build.sh`` preserves ``search/people/``, ``sitemap.xml``, and ``search-people-pages.json``
 from a prior generator run.
@@ -34,6 +40,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
@@ -78,6 +85,14 @@ DIST_DIR = EPSTEIN_WEB_ROOT / "dist"
 MAX_K = 3
 SITE_ORIGIN = "https://epstein.photos"
 DRY_RUN = False
+
+OG_SITE_NAME = (os.environ.get("EPSTEIN_OG_SITE_NAME", "Epstein Network") or "Epstein Network").strip()
+OG_LOCALE = (os.environ.get("EPSTEIN_OG_LOCALE", "en_US") or "en_US").strip()
+
+# Same origin as ``site/js/shared.js`` ``SPACES_CDN_BASE`` (full image / faces assets).
+SPACES_CDN_BASE = os.environ.get(
+    "EPSTEIN_SPACES_CDN_BASE", "https://epstein.sfo3.cdn.digitaloceanspaces.com"
+).rstrip("/")
 
 PEI_TABLE = "person_eligible_images"
 
@@ -174,16 +189,107 @@ def slug_for_person_ids(sorted_ids: list[str]) -> str:
     return "-".join(sorted_ids)
 
 
+def _sanitize_label_for_filename(label: str) -> str:
+    """Match ``epstein-api`` ``_sanitize_label_for_filename`` / ``12__export_node_faces`` stems."""
+    s = "".join(c if c.isalnum() or c in "._- " else "" for c in label)
+    return s.strip().replace(" ", "_").replace("/", "_") or "node"
+
+
+def best_face_cdn_url(conn: sqlite3.Connection, person_id: str) -> str | None:
+    """
+    Same asset as ``GET /faces`` ``image`` for this person: ``…/faces/<label>_<best_face_id>.webp``.
+    """
+    row = conn.execute(
+        "SELECT name, best_face_id FROM people WHERE person_id = ?",
+        (person_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    bf = row["best_face_id"]
+    if bf is None or not str(bf).strip():
+        return None
+    name = row["name"]
+    label = (name or "").strip() or person_id
+    safe = _sanitize_label_for_filename(label)
+    rel = f"faces/{safe}_{str(bf).strip()}.webp"
+    return f"{SPACES_CDN_BASE}/{rel}"
+
+
+def first_pei_image_name(
+    conn: sqlite3.Connection, sorted_ids: tuple[str, ...]
+) -> str | None:
+    """First ``image_name`` for the people search (same ordering as ``/photos``: ``ORDER BY image_name``)."""
+    n = len(sorted_ids)
+    if n == 0:
+        return None
+    pei = PEI_TABLE
+    branch = f"SELECT image_name FROM {pei} WHERE person_id = ?"
+    if n == 1:
+        row = conn.execute(
+            f"SELECT image_name FROM {pei} WHERE person_id = ? ORDER BY image_name LIMIT 1",
+            (sorted_ids[0],),
+        ).fetchone()
+    else:
+        intersect_body = " INTERSECT ".join([branch] * n)
+        row = conn.execute(
+            f"WITH q AS ({intersect_body}) SELECT image_name FROM q ORDER BY image_name LIMIT 1",
+            sorted_ids,
+        ).fetchone()
+    if row is None:
+        return None
+    raw = row["image_name"]
+    return str(raw).strip() if raw is not None else None
+
+
+def cdn_images_url_absolute(image_name: str) -> str:
+    """Full CDN URL for a document image (``site/js/shared.js`` ``cdnImagesUrl``)."""
+    base = image_name.split("/")[-1]
+    enc = urllib.parse.quote(base, safe="")
+    return f"{SPACES_CDN_BASE}/images/{enc}"
+
+
+def og_image_url_for_page(
+    conn: sqlite3.Connection, sorted_ids: list[str]
+) -> str | None:
+    """
+    Open Graph image: for one person, the /faces best-face crop; if unset, first search image.
+    For several people, the first intersecting search result image (document photo).
+    """
+    if len(sorted_ids) == 1:
+        pid = sorted_ids[0]
+        u = best_face_cdn_url(conn, pid)
+        if u:
+            return u
+        first = first_pei_image_name(conn, (pid,))
+        return cdn_images_url_absolute(first) if first else None
+    first = first_pei_image_name(conn, tuple(sorted_ids))
+    return cdn_images_url_absolute(first) if first else None
+
+
 def render_head(
     *,
     title: str,
     meta_description_text: str,
     canonical_url: str,
+    og_image_url: str | None = None,
 ) -> str:
     """Root-relative assets (same as ``site/partials/head-search.html`` + search-inner scripts)."""
     t = html.escape(title, quote=True)
     d = html.escape(meta_description_text, quote=True)
     c = html.escape(canonical_url, quote=True)
+    sn = html.escape(OG_SITE_NAME, quote=True)
+    loc = html.escape(OG_LOCALE, quote=True)
+    og_block = ""
+    if og_image_url:
+        ogi = html.escape(og_image_url, quote=True)
+        og_block = (
+            f'  <meta property="og:image" content="{ogi}" />\n'
+            f'  <meta property="og:image:secure_url" content="{ogi}" />\n'
+            '  <meta name="twitter:card" content="summary_large_image" />\n'
+            f'  <meta name="twitter:image" content="{ogi}" />\n'
+        )
+    else:
+        og_block = '  <meta name="twitter:card" content="summary" />\n'
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -195,7 +301,12 @@ def render_head(
   <meta property="og:title" content="{t}" />
   <meta property="og:description" content="{d}" />
   <meta property="og:url" content="{c}" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:site_name" content="{sn}" />
+  <meta property="og:locale" content="{loc}" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:title" content="{t}" />
+  <meta name="twitter:description" content="{d}" />
+{og_block}  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
   <script src="/js/nav.js" defer></script>
 </head>
@@ -266,6 +377,7 @@ def build_page_html(
     page_title: str,
     meta_desc: str,
     canonical_url: str,
+    og_image_url: str | None,
 ) -> str:
     bootstrap = {
         "person_ids": person_ids,
@@ -277,6 +389,7 @@ def build_page_html(
         title=page_title,
         meta_description_text=meta_desc,
         canonical_url=canonical_url,
+        og_image_url=og_image_url,
     )
     nav = render_nav_search_static()
     bootstrap_script = (
@@ -360,12 +473,14 @@ def main() -> None:
                 meta = meta_description(heading, total)
                 canonical_url = f"{site_origin}/search/people/{slug}/"
                 canonical_urls.append(canonical_url)
+                og_img = og_image_url_for_page(conn, sorted_ids)
                 manifest_pages.append(
                     {
                         "path": f"/search/people/{slug}/",
                         "canonical_url": canonical_url,
                         "person_ids": sorted_ids,
                         "image_total": total,
+                        "og_image_url": og_img,
                     }
                 )
                 html_out = build_page_html(
@@ -375,6 +490,7 @@ def main() -> None:
                     page_title=page_title,
                     meta_desc=meta,
                     canonical_url=canonical_url,
+                    og_image_url=og_img,
                 )
                 out_dir = out_root / slug
                 out_file = out_dir / "index.html"
