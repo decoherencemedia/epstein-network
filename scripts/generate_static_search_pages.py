@@ -30,6 +30,8 @@ every generated ``/search/people/…/`` URL) and ``search-people-pages.json`` (m
 pages only). Submit ``/sitemap.xml`` in Search Console.
 
 Not wired into ``build.sh`` yet.
+
+Faster variant (loads PEI once, in-memory set intersections): ``generate_static_search_pages_mem.py``.
 """
 
 from __future__ import annotations
@@ -242,8 +244,14 @@ def first_pei_image_name(
 
 
 def cdn_images_url_absolute(image_name: str) -> str:
-    """Full CDN URL for a document image (``site/js/shared.js`` ``cdnImagesUrl``)."""
-    base = image_name.split("/")[-1]
+    """
+    Full CDN URL for a document image (``site/js/shared.js`` ``cdnImagesUrl``).
+
+    SQLite stores ``image_name`` as ``*.jpg``; Spaces serves ``images/*.webp`` — same rule as
+    ``epstein-api`` ``_aggregate_faces_ordered`` (``.jpg`` → ``.webp``).
+    """
+    base = image_name.split("/")[-1].strip()
+    base = base.replace(".jpg", ".webp")
     enc = urllib.parse.quote(base, safe="")
     return f"{SPACES_CDN_BASE}/images/{enc}"
 
