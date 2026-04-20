@@ -806,9 +806,8 @@
         }
         const ids = Array.isArray(personIds) ? personIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
         if (!ids.length) return null;
-        const params = new URLSearchParams();
-        params.set("person_ids", ids.join(","));
-        return `/search/?${params.toString()}`;
+        const sorted = ids.slice().sort();
+        return `/search/people/${sorted.join("-")}/`;
       }
 
       function peopleUrlForPersonIdsWithPhoto(personIds, photoFilename) {

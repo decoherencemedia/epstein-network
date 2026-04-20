@@ -5,6 +5,18 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$ROOT/site"
 DIST="$ROOT/dist"
 
+# Preserve outputs from epstein-web/scripts/generate_static_search_pages.py across full dist/ resets.
+STASH=""
+if [[ -d "$DIST" ]]; then
+  STASH="$(mktemp -d "${TMPDIR:-/tmp}/epstein-web-build-stash.XXXXXX")"
+  if [[ -d "$DIST/search/people" ]]; then
+    mkdir -p "$STASH/search/people"
+    cp -a "$DIST/search/people/." "$STASH/search/people/"
+  fi
+  [[ -f "$DIST/sitemap.xml" ]] && cp -a "$DIST/sitemap.xml" "$STASH/"
+  [[ -f "$DIST/search-people-pages.json" ]] && cp -a "$DIST/search-people-pages.json" "$STASH/"
+fi
+
 rm -rf "$DIST"
 mkdir -p "$DIST/people" "$DIST/search" "$DIST/about"
 
@@ -66,6 +78,16 @@ if [[ -f "$ATLAS_PIPELINE" ]]; then
 elif [[ -f "$ROOT/images/atlas.webp" ]]; then
   mkdir -p "$DIST/images"
   cp "$ROOT/images/atlas.webp" "$DIST/images/"
+fi
+
+if [[ -n "$STASH" ]]; then
+  if [[ -d "$STASH/search/people" ]]; then
+    mkdir -p "$DIST/search/people"
+    cp -a "$STASH/search/people/." "$DIST/search/people/"
+  fi
+  [[ -f "$STASH/sitemap.xml" ]] && cp -a "$STASH/sitemap.xml" "$DIST/"
+  [[ -f "$STASH/search-people-pages.json" ]] && cp -a "$STASH/search-people-pages.json" "$DIST/"
+  rm -rf "$STASH"
 fi
 
 echo "Built static site → $DIST"

@@ -397,8 +397,8 @@
 }
 </style>
 
-<script src="../js/shared.js"></script>
-<script src="../js/imagesloaded.pkgd.min.js"></script>
+<script src="/js/shared.js"></script>
+<script src="/js/imagesloaded.pkgd.min.js"></script>
 <script>
 (function () {
   async function fetchPeopleNamesJson() {
@@ -639,6 +639,7 @@
   }
 
   function setResultsHeadingForPeopleSelection() {
+    sortSelectedByPersonIdInPlace();
     const labels = selected.map(chipLabelForSelected);
     setPageHeadingFromResultsHeading(formatPhotosOfPeopleHeading(labels));
   }
@@ -686,9 +687,9 @@
     if (!personMetadataWrapEl || !personMetadataLinksEl) return;
     const m = metadata || null;
     const iconSrcByKind = {
-      info: "../images/icons/more-info-icon.svg",
-      jmail: "../images/icons/jmail-icon.png",
-      reference: "../images/icons/camera-icon.svg",
+      info: "/images/icons/more-info-icon.svg",
+      jmail: "/images/icons/jmail-icon.png",
+      reference: "/images/icons/camera-icon.svg",
     };
     if (!m) {
       personMetadataWrapEl.hidden = true;
@@ -759,10 +760,7 @@
       helper.openInNewTab(url);
       return;
     }
-    const params = new URLSearchParams();
-    params.set("tab", "people");
-    params.set("person_ids", pid);
-    window.open("/search/?" + params.toString(), "_blank", "noopener,noreferrer");
+    window.open("/search/people/" + pid + "/", "_blank", "noopener,noreferrer");
   }
 
   function attachOpenPersonPageHandler(el, personId, titleText) {
@@ -806,7 +804,8 @@
   }
 
   /**
-   * Specified people (in `selected`) use the same colors as their chips (palette by index).
+   * Specified people (in `selected`, **sorted by** ``person_id`` like the URL slug) use the same
+   * colors as their chips (palette by index).
    * Everyone else in `faces` cycles through palette entries not used by any specified person,
    * in stable order (sorted person_id), so an unspecified face never shares a color with a
    * specified person. If no palette slots remain, uses extra hues not in the specified set.
@@ -2030,14 +2029,8 @@
     const params = new URLSearchParams(window.location.search);
     params.delete("photo");
     if (activeSearchTab === "people") {
-      params.set("tab", "people");
-      params.delete("document");
-      const ids = getSelectedPersonIds();
-      if (ids.length) {
-        params.set("person_ids", ids.join(","));
-      } else {
-        params.delete("person_ids");
-      }
+      syncPeopleQueryToUrl();
+      return;
     } else {
       params.set("tab", "document");
       params.delete("person_ids");
@@ -2054,10 +2047,11 @@
       }
     }
     const qs = params.toString();
-    const nextUrl =
-      window.location.pathname +
-      (qs ? "?" + qs : "") +
-      window.location.hash;
+    let path = window.location.pathname;
+    if (activeSearchTab === "document" && /\/search\/people\//.test(path)) {
+      path = "/search/";
+    }
+    const nextUrl = path + (qs ? "?" + qs : "") + window.location.hash;
     window.history.replaceState(null, "", nextUrl);
   }
 
@@ -2921,6 +2915,7 @@
   }
 
   function renderSelected() {
+    sortSelectedByPersonIdInPlace();
     selectedEl.innerHTML = "";
     selected.forEach((p, i) => {
       const card = document.createElement("div");
@@ -3095,22 +3090,116 @@
     return selected.map((p) => p.person_id);
   }
 
+  /**
+   * Same order as ``/search/people/<id>-…/`` slugs and ``generate_static_search_pages`` headings
+   * (string order on ``person_id``).
+   */
+  function sortSelectedByPersonIdInPlace() {
+    selected.sort(function (a, b) {
+      return String(a.person_id).localeCompare(String(b.person_id));
+    });
+  }
+
+  /**
+   * Parse sorted ``person_<digits>`` ids from the last path segment (slug uses hyphens between ids).
+   * Returns ``null`` when not on a ``/search/people/…`` URL or when no ids match.
+   */
+  function parsePersonIdsFromPeoplePath() {
+    const path = window.location.pathname || "";
+    const m = path.match(
+      /\/search\/people\/([^/]+)(?:\/index\.html)?\/?$/i
+    );
+    if (!m) return null;
+    let slug = m[1];
+    try {
+      slug = decodeURIComponent(slug);
+    } catch (_) {}
+    const found = slug.match(/person_\d+/g);
+    if (!found || !found.length) return null;
+    return found.slice();
+  }
+
   function syncPeopleQueryToUrl() {
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", "people");
-    params.delete("document");
-    const ids = getSelectedPersonIds();
-    if (ids.length) {
-      params.set("person_ids", ids.join(","));
-    } else {
-      params.delete("person_ids");
+    const ids = getSelectedPersonIds()
+      .slice()
+      .sort();
+    if (!ids.length) {
+      window.history.replaceState(null, "", "/search/" + window.location.hash);
+      return;
     }
-    const qs = params.toString();
-    const nextUrl =
-      window.location.pathname +
-      (qs ? "?" + qs : "") +
-      window.location.hash;
-    window.history.replaceState(null, "", nextUrl);
+    const slug = ids.join("-");
+    const path = window.location.pathname || "";
+    const m = path.match(
+      /^(.*\/search\/people\/)([^/]+)(\/index\.html)?\/?$/i
+    );
+    if (m && m[2] === slug) {
+      const tail = m[3] ? m[3] : "/";
+      window.history.replaceState(
+        null,
+        "",
+        m[1] + slug + tail + window.location.hash
+      );
+      return;
+    }
+    window.history.replaceState(
+      null,
+      "",
+      "/search/people/" + slug + "/" + window.location.hash
+    );
+  }
+
+  /**
+   * Static HTML may set ``window.__EPSTEIN_STATIC_SEARCH__``; dynamic loads can use the path segment.
+   * @param {URLSearchParams} params
+   */
+  async function initFromPeoplePathOrStatic(params) {
+    const photoFromQuery = String(params.get("photo") || "").trim();
+    const boot = window.__EPSTEIN_STATIC_SEARCH__;
+    let rawIds = null;
+    if (boot && Array.isArray(boot.person_ids) && boot.person_ids.length) {
+      rawIds = boot.person_ids.map(function (x) {
+        return String(x || "").trim();
+      }).filter(Boolean);
+    } else {
+      rawIds = parsePersonIdsFromPeoplePath();
+    }
+    if (!rawIds || !rawIds.length) return false;
+
+    const seen = new Set();
+    const dedupedIds = [];
+    for (let i = 0; i < rawIds.length; i++) {
+      const id = rawIds[i];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      dedupedIds.push(id);
+    }
+    dedupedIds.sort();
+
+    try {
+      await loadNames();
+    } catch (e) {
+      setStatusError(e);
+    }
+    activeSearchTab = "people";
+    syncTabUiOnly("people");
+    selected = dedupedIds.map(function (person_id) {
+      const raw = namesById[person_id];
+      const name =
+        raw != null && String(raw).trim() ? String(raw).trim() : null;
+      return { person_id: person_id, name: name };
+    });
+    renderSelected();
+    if (selected.length) {
+      await runPeopleSearch({
+        syncUrl: false,
+        preferredPhoto: photoFromQuery,
+        apiPhoto: photoFromQuery || undefined,
+      });
+    }
+    syncPeopleQueryToUrl();
+    if (photoFromQuery) syncPhotoQueryToUrl(photoFromQuery);
+    persistTabState("people");
+    return true;
   }
 
   function syncDocumentQueryToUrl(prefix) {
@@ -3124,27 +3213,47 @@
       params.delete("document");
     }
     const qs = params.toString();
-    const nextUrl =
-      window.location.pathname +
-      (qs ? "?" + qs : "") +
-      window.location.hash;
+    let path = window.location.pathname || "";
+    if (/\/search\/people\//.test(path)) {
+      path = "/search/";
+    }
+    const nextUrl = path + (qs ? "?" + qs : "") + window.location.hash;
     window.history.replaceState(null, "", nextUrl);
   }
 
   function syncPhotoQueryToUrl(photoFilename) {
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", activeSearchTab === "document" ? "document" : "people");
     const photo = String(photoFilename || "").trim();
+    let path = window.location.pathname || "";
+    if (
+      /\/search\/people\//.test(path) &&
+      activeSearchTab !== "document"
+    ) {
+      const params = new URLSearchParams();
+      if (photo) {
+        params.set("photo", photo);
+      }
+      const qs = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        path + (qs ? "?" + qs : "") + window.location.hash
+      );
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    params.delete("person_ids");
+    params.set("tab", activeSearchTab === "document" ? "document" : "people");
     if (photo) {
       params.set("photo", photo);
     } else {
       params.delete("photo");
     }
     const qs = params.toString();
-    const nextUrl =
-      window.location.pathname +
-      (qs ? "?" + qs : "") +
-      window.location.hash;
+    path = window.location.pathname || "";
+    if (activeSearchTab === "document" && /\/search\/people\//.test(path)) {
+      path = "/search/";
+    }
+    const nextUrl = path + (qs ? "?" + qs : "") + window.location.hash;
     window.history.replaceState(null, "", nextUrl);
   }
 
@@ -3280,6 +3389,7 @@
         ? String(opts.apiPhoto).trim()
         : null;
     if (!selected.length) return;
+    sortSelectedByPersonIdInPlace();
     if (shouldSyncUrl) {
       syncPeopleQueryToUrl();
     }
@@ -3594,6 +3704,10 @@
       setStatus(DOCUMENT_ID_FORMAT_MESSAGE, true);
       applyUrlForCurrentTab();
       persistTabState("document");
+      return;
+    }
+
+    if (await initFromPeoplePathOrStatic(params)) {
       return;
     }
 

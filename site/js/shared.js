@@ -45,15 +45,17 @@
     window.open(s, "_blank", "noopener,noreferrer");
   }
 
+  /**
+   * Canonical people search URL: ``/search/people/<sorted-person_id>-…/`` (matches static generator).
+   */
   function peopleUrlForPersonIds(personIds) {
     const ids = Array.isArray(personIds)
       ? personIds.map(function (x) { return String(x || "").trim(); }).filter(Boolean)
       : [];
     if (!ids.length) return null;
-    const params = new URLSearchParams();
-    params.set("tab", "people");
-    params.set("person_ids", ids.join(","));
-    return "/search/?" + params.toString();
+    const sorted = ids.slice().sort();
+    const slug = sorted.join("-");
+    return "/search/people/" + slug + "/";
   }
 
   /** Same order as Search page chips: first selected = index 0, … */

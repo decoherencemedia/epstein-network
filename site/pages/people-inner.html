@@ -11,7 +11,7 @@
   <div class="browse-grid" id="browse-grid" hidden></div>
 </main>
 
-<script src="../js/shared.js"></script>
+<script src="/js/shared.js"></script>
 <script>
 (function () {
   function displayName(row) {
@@ -58,10 +58,8 @@
 
         const link = document.createElement("a");
         link.className = "browse-tile-link";
-        const searchQs = new URLSearchParams();
-        searchQs.set("tab", "people");
-        searchQs.set("person_ids", String(row.person_id || ""));
-        link.href = "../search/?" + searchQs.toString();
+        const pid = String(row.person_id || "").trim();
+        link.href = SiteShared.peopleUrlForPersonIds([pid]) || "#";
         link.target = "_blank";
         link.rel = "noopener noreferrer";
         link.title = name + " — open in Search";

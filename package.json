@@ -2,6 +2,6 @@
   "name": "epstein-network",
   "private": true,
   "scripts": {
-    "build": "bash ./site/build.sh"
+    "build": "bash ./site/build.sh && python3 scripts/generate_static_search_pages.py"
   }
 }
