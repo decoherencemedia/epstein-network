@@ -995,10 +995,13 @@ body.page-home #name-search {
   z-index: 2;
   border-bottom: 1px solid var(--people-panel-border);
 }
+/* Tabs: intrinsic width; min-width avoids divider jump on hover weight change */
 .people-tab {
   position: relative;
+  flex: 0 0 auto;
+  box-sizing: border-box;
   font: 14px/1.2 system-ui, sans-serif;
-  font-weight: 600;
+  font-weight: 500;
   padding: 10px 20px;
   margin: 0 0 -1px -1px;
   border: 1px solid var(--people-panel-border);
@@ -1008,6 +1011,12 @@ body.page-home #name-search {
   appearance: none;
   -webkit-appearance: none;
 }
+#people-tab-people {
+  min-width: 9ch;
+}
+#people-tab-document {
+  min-width: 12ch;
+}
 .people-tab:first-child {
   margin-left: 0;
   border-top-left-radius: var(--radius-8);
@@ -1015,15 +1024,15 @@ body.page-home #name-search {
 .people-tab:last-child {
   border-top-right-radius: var(--radius-8);
 }
-/* Inactive tab: clearly quieter than the selected tab */
+/* Inactive tab — muted vs selected */
 .people-tab[aria-selected="false"] {
   background: rgba(218, 224, 232, 0.55);
-  color: #97a0ab;
+  color: #6b6b6b;
   font-weight: 500;
 }
 .people-tab[aria-selected="false"]:hover {
   background: rgba(228, 233, 240, 0.85);
-  color: #6d7682;
+  color: #5a6575;
   font-weight: 600;
 }
 .people-tab[aria-selected="true"] {
@@ -1446,14 +1455,6 @@ body.page-home #name-search {
   }
   .people-chip {
     font-size: 14px;
-  }
-  .people-search-btn {
-    font-size: 16px;
-    padding: 12px 20px;
-  }
-  .people-graph-btn {
-    font-size: 16px;
-    padding: 12px 14px;
   }
   .people-status {
     font-size: 15px;
