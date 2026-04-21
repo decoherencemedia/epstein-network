@@ -397,6 +397,7 @@
 }
 </style>
 
+<script src="/js/latinize.js"></script>
 <script src="/js/shared.js"></script>
 <script src="/js/imagesloaded.pkgd.min.js"></script>
 <script>
@@ -3007,11 +3008,12 @@
   }
 
   function filterMatches(q) {
-    const query = (q || "").trim().toLowerCase();
+    const query = SiteShared.normalizePersonSearchKey(q);
     if (!query) return [];
     return nameIndex.filter(
       (row) =>
-        row.label.toLowerCase().includes(query) || row.person_id.toLowerCase().includes(query)
+        SiteShared.normalizePersonSearchKey(row.label).includes(query) ||
+        SiteShared.normalizePersonSearchKey(row.person_id).includes(query)
     ).slice(0, 40);
   }
 

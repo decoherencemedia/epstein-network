@@ -7,6 +7,8 @@ person_to_files/
 dist/
 # Fetched by site/build.sh (pinned unpkg URL)
 site/js/imagesloaded.pkgd.min.js
+site/js/latinize.js
+
 .cursor/
 node_faces/
 node_faces_top5/

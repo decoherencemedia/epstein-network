@@ -166,6 +166,22 @@
     return m ? Number(m[1]) : null;
   }
 
+  /**
+   * Lowercase + latinize for people-name search (accent-insensitive, ASCII-ish keys).
+   * Normalize curly apostrophes to ASCII first. Load ``js/latinize.js`` before this file
+   * (see ``site/build.sh``); if ``latinize`` is missing, falls back to lowercase only.
+   */
+  function normalizePersonSearchKey(s) {
+    var t = String(s || "").trim();
+    if (!t) return "";
+    t = t.replace(/\u2019/g, "'").replace(/\u2018/g, "'");
+    t = t.toLowerCase();
+    if (typeof window !== "undefined" && typeof window.latinize === "function") {
+      t = window.latinize(t);
+    }
+    return t;
+  }
+
   window.SiteShared = Object.freeze({
     openInNewTab: openInNewTab,
     peopleUrlForPersonIds: peopleUrlForPersonIds,
@@ -185,5 +201,6 @@
     cdnImagesUrl: cdnImagesUrl,
     cdnAtlasWebpUrl: cdnAtlasWebpUrl,
     personStubNumber: personStubNumber,
+    normalizePersonSearchKey: normalizePersonSearchKey,
   });
 })();

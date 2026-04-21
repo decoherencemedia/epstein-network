@@ -75,6 +75,7 @@
 </main>
 </div>
 
+  <script src="js/latinize.js"></script>
   <script src="js/shared.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
@@ -1225,15 +1226,14 @@
           .map((n) => ({
             node: n,
             label: String(n.label),
-            tokens: String(n.label)
-              .toLowerCase()
+            tokens: SiteShared.normalizePersonSearchKey(String(n.label))
               .split(/\s+/)
               .filter(Boolean),
           }));
       }
 
       function getNameSearchMatches(index, queryText) {
-        const query = String(queryText || "").trim().toLowerCase();
+        const query = SiteShared.normalizePersonSearchKey(queryText);
         if (!query) return [];
         const out = [];
         for (const item of index) {

@@ -25,6 +25,7 @@
   <div class="browse-grid" id="browse-grid" hidden></div>
 </main>
 
+<script src="/js/latinize.js"></script>
 <script src="/js/shared.js"></script>
 <script>
 (function () {
@@ -126,16 +127,14 @@
   }
 
   function applyFilter() {
-    const q = String(filterInputEl ? filterInputEl.value : "")
-      .trim()
-      .toLowerCase();
+    const q = SiteShared.normalizePersonSearchKey(filterInputEl ? filterInputEl.value : "");
     if (!allRows.length) {
       return;
     }
     let filtered = allRows;
     if (q) {
       filtered = allRows.filter(function (row) {
-        const name = displayName(row).toLowerCase();
+        const name = SiteShared.normalizePersonSearchKey(displayName(row));
         return name.indexOf(q) !== -1;
       });
     }
