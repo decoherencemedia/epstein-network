@@ -1,0 +1,15 @@
+# Deploy: npx wrangler deploy
+# Route: Worker runs only for people-search HTML (requires epstein.photos zone in this CF account).
+
+name = "epstein-og-photo-inject"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+# Match dashboard when workers.dev subdomain is disabled (avoids Wrangler fallback warning).
+workers_dev = false
+
+[[routes]]
+pattern = "epstein.photos/search/people/*"
+zone_name = "epstein.photos"
+
+[vars]
+SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com"
