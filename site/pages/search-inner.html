@@ -38,7 +38,7 @@
             id="people-document-input"
             type="text"
             class="people-search-input"
-            placeholder="EFTA00249282 or HOUSE_OVERSIGHT…"
+            placeholder="EFTA00249282, EFTA….pdf, or HOUSE_OVERSIGHT…"
             maxlength="80"
             aria-label="Document ID"
             aria-describedby="people-document-hint"
@@ -47,7 +47,7 @@
           />
         </div>
         <p id="people-document-validation" class="people-document-validation" role="alert" aria-live="polite" hidden></p>
-        <p id="people-document-hint" class="people-document-hint">Search by document name, allows partial matches</p>
+        <p id="people-document-hint" class="people-document-hint">Search by document id; you can paste a file name (extensions and hyphens are ignored for matching)</p>
       </div>
 
       <div class="people-actions">
@@ -483,7 +483,7 @@
   const rgbaWithAlpha = SiteShared.rgbaWithAlpha;
 
   const DOCUMENT_ID_FORMAT_MESSAGE =
-    "Use prefix EFTA, BIRTHDAY_BOOK_, or HOUSE_OVERSIGHT_ (case-insensitive), then digits — e.g. efta001, HOUSE_OVERSIGHT_12.";
+    "Use prefix EFTA or HOUSE_OVERSIGHT_ (case-insensitive), then digits — e.g. efta001, HOUSE_OVERSIGHT_000";
 
   const CONTENT_POLICY_NO_IMAGES_HTML =
     'No images can be displayed. <a href="/about#content" target="_blank" rel="noopener noreferrer">Read this site\'s content policy</a>.';
@@ -514,13 +514,15 @@
 
   /**
    * @param {string} raw
-   * @returns {string | null} Uppercase prefix for API, or null if invalid.
+   * @returns {string | null} Uppercase stem for API (extensions / hyphens / periods stripped), or null if invalid.
    */
   function normalizeDocumentPrefixForApi(raw) {
     const s = String(raw || "").trim();
     if (!s) return null;
-    if (!SiteShared.isValidPartialDocumentQuery(s)) return null;
-    return s.toUpperCase();
+    const norm = SiteShared.stripDocumentSearchTerm(s);
+    if (!norm) return null;
+    if (!SiteShared.isValidPartialDocumentQueryNormalized(norm)) return null;
+    return norm;
   }
 
   function chipBackgroundTint(hex) {

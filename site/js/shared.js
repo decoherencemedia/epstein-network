@@ -14,17 +14,59 @@
    */
   var DOCUMENT_ID_PREFIXES = Object.freeze([
     "EFTA",
-    "BIRTHDAY_BOOK_",
     "HOUSE_OVERSIGHT_",
   ]);
 
   /**
+   * Uppercase query with file extensions and punctuation removed for search/API:
+   * strips trailing ``.pdf`` / ``.webp`` / ``.jpg`` / ``.jpeg`` (any case), optional
+   * ``.`` + letters while typing an extension, hyphens between image indices, and stray hyphens/periods.
+   */
+  function stripDocumentSearchTerm(s) {
+    var t = String(s || "").trim();
+    if (!t) return "";
+    var u = t.toUpperCase();
+    var i;
+    for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
+      var P = DOCUMENT_ID_PREFIXES[i];
+      if (u.startsWith(P)) {
+        var rest = u.slice(P.length);
+        rest = rest.replace(/\.[A-Z]*$/i, "");
+        rest = rest.replace(/[-.]/g, "");
+        return P + rest;
+      }
+    }
+    u = u.replace(/\.(PDF|WEBP|JPEG|JPG)$/i, "");
+    u = u.replace(/[-.]/g, "");
+    return u;
+  }
+
+  function isValidPartialDocumentQueryNormalized(u) {
+    var U = String(u || "").trim();
+    if (!U) return true;
+    var i;
+    for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
+      var P = DOCUMENT_ID_PREFIXES[i];
+      if (P.startsWith(U)) return true;
+      if (U.startsWith(P)) {
+        var rest = U.slice(P.length);
+        if (/^\d*$/.test(rest)) return true;
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
    * True if the trimmed query is empty, or could still become a valid id
-   * `PREFIX` + digits for one of DOCUMENT_ID_PREFIXES (case-insensitive).
+   * ``PREFIX`` + digits for one of DOCUMENT_ID_PREFIXES (case-insensitive).
+   * Allows pasted filenames (``EFTA….pdf``, ``….webp``) and image indices with hyphens before stripping.
    */
   function isValidPartialDocumentQuery(s) {
     var t = String(s || "").trim();
     if (!t) return true;
+    var stripped = stripDocumentSearchTerm(t);
+    if (isValidPartialDocumentQueryNormalized(stripped)) return true;
     var u = t.toUpperCase();
     var i;
     for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
@@ -33,6 +75,7 @@
       if (u.startsWith(P)) {
         var rest = u.slice(P.length);
         if (/^\d*$/.test(rest)) return true;
+        if (/^(\d+)(-\d+)*(\.[A-Z]{0,4})?$/.test(rest)) return true;
         return false;
       }
     }
@@ -132,6 +175,8 @@
     SPACES_CDN_BASE: SPACES_CDN_BASE,
     API_BASE: API_BASE,
     DOCUMENT_ID_PREFIXES: DOCUMENT_ID_PREFIXES,
+    stripDocumentSearchTerm: stripDocumentSearchTerm,
+    isValidPartialDocumentQueryNormalized: isValidPartialDocumentQueryNormalized,
     isValidPartialDocumentQuery: isValidPartialDocumentQuery,
     lastPathSegment: lastPathSegment,
     cdnAssetUrl: cdnAssetUrl,
