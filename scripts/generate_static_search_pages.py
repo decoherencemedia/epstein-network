@@ -47,6 +47,8 @@ from pathlib import Path
 from typing import NamedTuple
 from xml.sax.saxutils import escape as xml_escape
 
+import boto3
+from botocore.exceptions import ClientError
 # --- run configuration (edit as needed) ---
 
 EPSTEIN_WEB_ROOT = Path(__file__).resolve().parent.parent
@@ -259,13 +261,6 @@ def resolve_spaces_sitemap_state_target() -> SpacesSitemapStateTarget:
 
 def _spaces_s3_client():
     """Boto3 S3 client; env contract matches ``epstein_photos.spaces.get_spaces_client``."""
-    try:
-        import boto3
-    except ImportError as e:
-        raise RuntimeError(
-            "Spaces sitemap state sync requires boto3 "
-            "(e.g. ~/.venv/epstein/bin/pip install boto3, or install epstein-photos[pipeline])."
-        ) from e
     region = _spaces_env("EPSTEIN_SPACES_REGION")
     endpoint = _spaces_env("EPSTEIN_SPACES_ENDPOINT")
     access_key = _spaces_env("EPSTEIN_SPACES_KEY")
@@ -283,7 +278,6 @@ def fetch_sitemap_lastmod_state_from_spaces(
     target: SpacesSitemapStateTarget, dest: Path
 ) -> None:
     """Download state JSON into ``dest``. The object must exist; missing object is a hard error."""
-    from botocore.exceptions import ClientError
 
     client = _spaces_s3_client()
     try:
