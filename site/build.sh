@@ -49,6 +49,7 @@ cat "$SITE/partials/head-about.html" \
 
 cp "$ROOT/styles.css" "$DIST/"
 cp "$ROOT/favicon.svg" "$DIST/"
+cp "$ROOT/robots.txt" "$DIST/"
 
 # Pipeline writes JSON under epstein-web/viz_data/ (see epstein_photos.config.VIZ_DATA_DIR).
 if [[ -d "$ROOT/viz_data" ]]; then
