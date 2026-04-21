@@ -485,7 +485,9 @@ body.page-home #name-search {
   box-shadow: none;
   outline: none;
 }
-#name-search-input::-webkit-search-cancel-button {
+/* Native search clear — same larger control + hitbox on graph name search and /people filter */
+#name-search-input::-webkit-search-cancel-button,
+.browse-filter-wrap .browse-filter-input::-webkit-search-cancel-button {
   cursor: pointer;
   transform: scale(1.35);
   transform-origin: center;
@@ -1470,21 +1472,84 @@ body.page-browse .site-page.browse-page {
   box-sizing: border-box;
 }
 
-.browse-header {
+/* Heading + filter: stacked on small screens; side-by-side on desktop with a fixed gap so the count can wrap */
+.browse-top {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
   margin: 0 0 16px;
+}
+.browse-heading {
+  margin: 0;
+  width: 100%;
+  min-width: 0;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+.browse-heading .browse-title {
+  margin: 0;
+}
+.browse-filter-wrap {
+  width: 100%;
+  max-width: min(28rem, 100%);
+  align-self: flex-start;
+}
+@media (min-width: 769px) {
+  .browse-top {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 20px 28px;
+  }
+  /*
+   * Title column sizes to content (not a huge fixed ch width); max-width caps long count lines
+   * and keeps the field from being pushed off narrow rows. Subtitle edits may nudge width slightly.
+   */
+  .browse-heading {
+    flex: 0 1 auto;
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: min(36ch, calc(100% - 288px));
+    width: min(max-content, min(36ch, calc(100% - 288px)));
+    padding-right: 0;
+  }
+  .browse-filter-wrap {
+    flex: 0 0 260px;
+    width: 260px;
+    min-width: 260px;
+    max-width: 260px;
+    align-self: flex-start;
+  }
+}
+.browse-filter-wrap .browse-filter-input {
+  width: 100%;
+  margin: 0;
+  border-width: 2px;
+  border-color: var(--border-panel-strong);
+}
+.browse-filter-wrap .browse-filter-input:focus {
+  outline: none;
+  border-color: var(--people-focus);
+  box-shadow: 0 0 0 4px rgba(90, 121, 184, 0.32);
+  background: #fff;
 }
 
 .browse-title {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: 6px 12px;
   margin: 0;
   font: 700 1.75rem/1.2 system-ui, -apple-system, Segoe UI, sans-serif;
   color: #111;
 }
 
 .browse-title-count {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   font-weight: 400;
   font-size: 1rem;
   color: #666;
