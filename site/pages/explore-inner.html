@@ -1,0 +1,1049 @@
+<main class="page-explore-main" id="main-content">
+  <style>
+    /*
+     * Explore page — interactive UMAP scatter of photos. Styles scoped to this page only.
+     * The sidebar deliberately mirrors the home-inner panel (#thumb-preview / #thumb-default):
+     * we reuse the same class / id names so .thumb-default-body, .thumb-legend, .legend-colors,
+     * .thumb-meta*, .thumb-img-wrapper, #thumb-img inherit their global styles from styles.css.
+     * Only the container layout (grid column instead of position: fixed) and the .thumb-title
+     * rule (which is scoped to #thumb-preview in styles.css) are duplicated here.
+     */
+    .page-explore-main {
+      /* Narrower than home's --sidebar-width so the 128px thumbnail isn't blown up to the
+       * point where its low resolution becomes visible. Local override; doesn't touch home. */
+      --explore-sidebar-width: 300px;
+      display: grid;
+      grid-template-columns: var(--explore-sidebar-width) 1fr;
+      /* `100vh` includes the area under the mobile browser's URL bar (it tracks the
+       * *largest* viewport). On real phones that leaves #canvas-wrap a hundred-ish pixels
+       * taller than what the user can actually see, so the cluster's vertical center
+       * sits below the fold. `100dvh` tracks the current visible area and updates as
+       * the URL bar hides/shows. Chrome 108+ / Safari 15.4+ — falls back to vh for older. */
+      height: calc(100vh - var(--site-header-height));
+      height: calc(100dvh - var(--site-header-height));
+      background: #f6f7f9;
+      color: #1a1a1a;
+      overflow: hidden;
+    }
+    .page-explore-main #canvas-wrap {
+      position: relative;
+    }
+    .page-explore-main #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    .page-explore-main #canvas:active {
+      cursor: grabbing;
+    }
+    .page-explore-main #sidebar {
+      background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+      border-right: 1px solid var(--border-panel);
+      padding: 14px 14px 16px;
+      overflow-y: auto;
+      box-shadow: 10px 24px 24px -16px rgba(0, 0, 0, 0.22);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    /* Default styling is the page title ("Epstein Photo Atlas") — bold, prominent — mirroring
+     * the home-inner panel header. `.is-filename` is added by JS while a dot is pinned/hovered
+     * so the long, lowercase image filenames don't dominate the sidebar. */
+    .page-explore-main .thumb-title {
+      font: 700 17px/1.2 sans-serif;
+      color: #222;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .page-explore-main .thumb-title.is-filename {
+      font: 600 15px/1.25 sans-serif;
+      color: #444;
+    }
+    /* Each panel gets its own header so the grid-overlay below can factor the title into
+     * both panels' natural heights. Small bottom gap so the title doesn't crowd the body. */
+    .page-explore-main #sidebar-top .thumb-header {
+      margin: 0 0 10px;
+    }
+    /*
+     * Both the default (description) and active (preview) panels share a single grid cell
+     * in #sidebar-top, so the cell's intrinsic height is max(description, preview) and the
+     * legend below never shifts as the user hovers in/out of points. We toggle visibility
+     * with the `hidden` attribute, overriding its UA `display: none` so the inactive panel
+     * still contributes to the cell's layout.
+     */
+    .page-explore-main #sidebar-top {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .page-explore-main #sidebar-top > * {
+      grid-column: 1;
+      grid-row: 1;
+      min-width: 0;
+    }
+    .page-explore-main #thumb-default[hidden],
+    .page-explore-main #thumb-preview-active[hidden] {
+      display: block;
+      visibility: hidden;
+    }
+    /* Reset the home-inner #thumb-default { margin-top: 10px } since we render it as the
+     * first thing inside #sidebar (no "above" content to separate from). */
+    .page-explore-main #thumb-default {
+      margin-top: 0;
+    }
+    /* Preview panel: title → image → top-people. `gap` provides consistent spacing without
+     * relying on each child's default margins. Header & neighbors both get their margins
+     * zeroed so the flex gap alone drives spacing — otherwise they stack on top. */
+    .page-explore-main #thumb-preview-active {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .page-explore-main #thumb-preview-active .thumb-header,
+    .page-explore-main #thumb-preview-active #thumb-top-neighbors {
+      margin: 0;
+    }
+    /* The global #thumb-default .thumb-default-body > div rule only zeros <div> margins;
+     * the <ul> still carries ~16px of browser default margin which stacks on top of the
+     * container's flex `gap: 10px`, producing a visibly large gap above/below the list. */
+    .page-explore-main #thumb-default .thumb-default-body ul {
+      margin: 0;
+      padding-left: 1.25em;
+    }
+    /* Compact stats line tucked under the description prose. */
+    .page-explore-main .sidebar-stats {
+      font: 12px sans-serif;
+      color: #666;
+      font-variant-numeric: tabular-nums;
+    }
+    /*
+     * Legend lives outside #thumb-default so it stays visible when a point is hovered, which
+     * means the global "#thumb-default .legend-*" rules don't apply — restate them here as a
+     * single column (better readability + no wrap issues at our narrower width than home's).
+     */
+    .page-explore-main #explore-legend-section {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-panel-strong);
+      flex: 0 0 auto;
+    }
+    .page-explore-main .legend-section-title {
+      font: 700 13px/1.2 sans-serif;
+      color: #333;
+      margin: 0 0 8px;
+    }
+    .page-explore-main #legend {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .page-explore-main .legend-color-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font: 12.5px/1.25 sans-serif;
+      color: #222;
+      min-width: 0;
+    }
+    .page-explore-main .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border-subtle);
+      flex: 0 0 auto;
+    }
+    .page-explore-main .legend-color-label {
+      flex: 1 1 auto;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* <a class="neighbor-row"> needs the anchor defaults stripped; the global button-shaped
+     * rule leaves text-decoration/color alone because it targets .neighbor-row without an
+     * element selector. */
+    .page-explore-main #thumb-top-neighbors .neighbor-row {
+      text-decoration: none;
+      color: #222;
+    }
+    .page-explore-main #error {
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 235, 235, 0.95);
+      color: #a00000;
+      padding: 24px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+      display: none;
+      overflow: auto;
+      z-index: 10;
+    }
+
+    /*
+     * Desktop-only defaults for the collapse UI — hidden until the mobile media query
+     * flips them on. Keeping them out of the default DOM flow means desktop layout
+     * doesn't shift when the elements exist in the HTML.
+     */
+    #thumb-collapse-btn,
+    #thumb-collapsed-bar {
+      display: none;
+    }
+    #thumb-collapse-btn[hidden],
+    #thumb-collapsed-bar[hidden] {
+      display: none !important;
+    }
+
+    /*
+     * Mobile / coarse-pointer layout — mirrors home-inner's bottom-sheet pattern:
+     *   - Sidebar is a floating bottom sheet, visible by default (shows description).
+     *   - Tapping a dot pins its preview; tapping empty canvas restores the description.
+     *   - A chevron-down button in the sheet collapses it to a thin #thumb-collapsed-bar
+     *     at the bottom; chevron-up on that bar re-expands the sheet.
+     *   - The sheet is a fixed 40vh; the legend lives below the description/preview and
+     *     becomes scroll content when the combined height exceeds 40vh.
+     */
+    @media (pointer: coarse), (max-width: 768px) {
+      .page-explore-main {
+        grid-template-columns: 1fr;
+        position: relative;
+      }
+      .page-explore-main #sidebar {
+        /* `fixed` (not `absolute`) so the sheet anchors to the visual viewport, not to
+         * .page-explore-main — whose height is `calc(100vh - header)` and extends under
+         * the mobile URL bar on real iOS/Android. With overflow:hidden on main, an
+         * absolutely-positioned sheet at bottom: 10px renders *below* the fold and is
+         * unreachable on actual devices (the emulator doesn't reproduce this quirk). */
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        top: auto;
+        /* Fixed (not max-) height: keeps the sheet a consistent 40vh across interactions
+         * so the map above doesn't reflow when switching between dots whose "People in
+         * this photo" lists have different lengths. Extra rows simply become scroll
+         * content — the sheet itself never grows or shrinks. */
+        height: 40vh;
+        padding: 12px 12px 14px;
+        border: 1px solid var(--border-panel);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        z-index: 100;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* JS toggles `.is-collapsed` on the sidebar when the user clicks the collapse
+       * button — only respected on mobile so a stale class from a resized-down session
+       * can't leave the desktop sidebar invisible. */
+      .page-explore-main #sidebar.is-collapsed {
+        display: none;
+      }
+      /* Disable the desktop grid-overlay trick that lets both panels reserve the same
+       * cell: on mobile only the active panel should contribute height, otherwise the
+       * shorter preview sits "below" an invisible-but-still-occupying description and
+       * appears as empty space at the top of the sheet. */
+      .page-explore-main #sidebar-top {
+        display: block;
+      }
+      .page-explore-main #thumb-default[hidden],
+      .page-explore-main #thumb-preview-active[hidden] {
+        display: none;
+        visibility: visible;
+      }
+      /* Fixed-size square thumbnail, centered; at 300px wide viewport the sheet is ~276px
+       * internal → image 220px square keeps ~56px of breathing room for title + list. */
+      .page-explore-main .thumb-img-wrapper {
+        width: min(50vw, 220px);
+        height: auto;
+        aspect-ratio: 1 / 1;
+        margin: 0 auto;
+      }
+      /* Collapse button: floats in the top-right corner of the sheet, overlaying the
+       * scrolling content. Matches the styling of home-inner's version (defined in the
+       * global styles) for visual consistency. */
+      .page-explore-main #thumb-collapse-btn {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--border-neutral);
+        background: #fff;
+        color: #222;
+        border-radius: 4px;
+        cursor: pointer;
+        z-index: 1;
+      }
+      .page-explore-main #thumb-collapse-btn svg {
+        width: 16px;
+        height: 16px;
+        display: block;
+      }
+      .page-explore-main #thumb-collapse-btn svg path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2.25;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      /* Ensure each panel's title doesn't slide under the absolutely-positioned collapse
+       * button (mobile only; button is display:none on desktop). */
+      .page-explore-main #sidebar-top .thumb-header {
+        padding-right: 36px;
+      }
+      /* Collapsed bar: thin, fixed to the visual viewport bottom (see #sidebar rule
+       * above for why `fixed` beats `absolute` on real mobile). */
+      .page-explore-main #thumb-collapsed-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        z-index: 100;
+        padding: 8px 10px;
+        border: 1px solid var(--border-panel);
+        border-radius: 8px;
+        background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+        box-sizing: border-box;
+      }
+      .page-explore-main #thumb-collapsed-title {
+        flex: 1 1 auto;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font: 600 15px/1.2 sans-serif;
+        color: #222;
+      }
+      .page-explore-main #thumb-open-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 1px solid var(--border-neutral);
+        background: #fff;
+        color: #222;
+        border-radius: 4px;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+      .page-explore-main #thumb-open-btn svg {
+        width: 16px;
+        height: 16px;
+        display: block;
+      }
+      .page-explore-main #thumb-open-btn svg path {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2.25;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+    }
+  </style>
+
+  <aside id="sidebar">
+    <!-- Mobile-only collapse button; mirrors #thumb-collapse-btn in home-inner.
+         Positioned absolutely so it overlays the scrolling content without disturbing
+         the desktop layout (where CSS keeps it display:none). -->
+    <button id="thumb-collapse-btn" type="button" aria-label="Hide info panel" title="Hide info panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 9l6 6 6-6"></path>
+      </svg>
+    </button>
+    <div id="sidebar-top">
+      <div id="thumb-default">
+        <!-- Default-panel title — lives inside the panel so it contributes to the
+             grid-overlay height calculation below, keeping the legend's vertical position
+             rock-stable as the user hovers in/out of dots (see #sidebar-top notes). -->
+        <div class="thumb-header">
+          <div class="thumb-title">Epstein Photo Atlas</div>
+        </div>
+        <div class="thumb-default-body">
+          <div>
+            This is a visualization of images in the
+            <a href="https://www.justice.gov/epstein" target="_blank" rel="noopener noreferrer">Epstein Library</a>. Each circle represents an image and similar images are placed near each other, so clusters usually share a setting, subject, or semantic meaning.
+            Only images containing at least one <a href="/people" target="_blank">person</a> we've identified in the network are included.
+          </div>
+          <div>
+            Circles are colored by the most common category of in-network people appearing in the photo.
+          </div>
+          <ul>
+            <li>Hover over a dot (or drag your finger across the map) to preview a photo</li>
+            <li>Click or tap to pin; double-click or tap the thumbnail to open the image in a new tab</li>
+            <li>Scroll or pinch to zoom; drag with one finger on desktop, two fingers on touch devices to pan</li>
+          </ul>
+          <div>
+            Image embeddings were computed using the
+            <a href="https://github.com/facebookresearch/dinov2" target="_blank" rel="noopener noreferrer">DINOv2</a> image model,
+            projected to 2D with the
+            <a href="https://umap-learn.readthedocs.io" target="_blank" rel="noopener noreferrer">UMAP</a> algorithm,
+            and rendered with
+            <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
+            The scripts are available on
+            <a href="https://github.com/decoherencemedia/epstein-network" target="_blank" rel="noopener noreferrer">GitHub</a>.
+          </div>
+          <div id="sidebar-stats" class="sidebar-stats">loading…</div>
+        </div>
+      </div>
+
+      <div id="thumb-preview-active" hidden>
+        <!-- Preview-panel title (filename). The `.is-filename` class is hardcoded rather
+             than toggled in JS because this element is always a filename in this panel. -->
+        <div class="thumb-header">
+          <div class="thumb-title is-filename" id="preview-title"></div>
+        </div>
+        <!--
+          Anchor + external-icon overlay matches home-inner's #thumb-img-link so we inherit
+          its styling from styles.css (block, focus outline, 5px-inset icon). JS fills in
+          the href to the same /search/people/<pid>/?photo=... URL that double-clicking the
+          dot on the canvas opens.
+        -->
+        <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer">
+          <span class="thumb-img-wrapper">
+            <img id="thumb-img" alt="" />
+            <span class="thumb-img-external-icon" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </span>
+          </span>
+        </a>
+        <!--
+          Inherits styling from styles.css via the #thumb-top-neighbors selector
+          (same block home-inner uses for its "Top connections" list). The title text
+          is filled in from JS to keep all copy in one place.
+        -->
+        <section id="thumb-top-neighbors" hidden>
+          <div class="neighbors-title" id="top-people-title"></div>
+          <div class="neighbors-list" id="top-people-list"></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="explore-legend-section">
+      <div class="legend-section-title">Category</div>
+      <div id="legend"></div>
+    </div>
+  </aside>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+    <div id="error"></div>
+  </div>
+
+  <!-- Mobile-only compact bar shown when the user collapses the sheet; hidden by
+       default on desktop (CSS) and via the `hidden` attribute until the user clicks
+       the collapse button. Mirrors home-inner's #thumb-collapsed-bar. -->
+  <div id="thumb-collapsed-bar" hidden aria-hidden="true">
+    <div id="thumb-collapsed-title">Epstein Photo Atlas</div>
+    <button id="thumb-open-btn" type="button" aria-label="Show info panel" title="Show info panel">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 15l6-6 6 6"></path>
+      </svg>
+    </button>
+  </div>
+</main>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+  "use strict";
+
+  // All UMAP artifacts (umap_viz.json, thumbs/) live under /viz_data/umap/.
+  const UMAP_BASE = "../viz_data/umap/";
+
+  // Matches EPSTEIN_PERSON_ID in scripts/umap_viz/03__export_viz_data.py. The click
+  // handler skips him when another in-network pid is available so Explore traffic spreads
+  // across the network rather than funneling to his (already saturated) person page.
+  const EPSTEIN_PID = "person_2";
+
+  // Shown in the sidebar header and collapsed mobile bar whenever no dot is pinned or hovered.
+  // Also used as the fallback text so the mobile bar never flashes empty between selections.
+  // Keep in sync with the default value in the #preview-title element above.
+  const DEFAULT_SIDEBAR_TITLE = "Epstein Photo Atlas";
+
+  // Canonical category colors — kept in sync with
+  // epstein-pipeline/scripts/pipeline/14__visualize_graph.py. "Other" (images with no
+  // in-network faces) reuses the same grey as "Unknown".
+  const CATEGORY_COLORS = {
+    "Inner Circle":          "#d60000",
+    "Academia & Science":    "#8c3bff",
+    "Politics & Government": "#00acc6",
+    "Entertainment & Media": "#e6a500",
+    "Nobility & Old Money":  "#0000dd",
+    "Finance & Business":    "#018700",
+    "Fashion & Modeling":    "#ff7ed1",
+    "Miscellaneous":         "#573b00",
+    "Victim":                "#97ff00",
+    "Staff & Professionals": "#bcb6ff",
+    "Tech":                  "#005659",
+    "Unknown":               "#999999",
+    "Other":                 "#999999",
+  };
+  const FALLBACK_COLOR = "#72747a";
+
+  // Point size at zoom k=1 (CSS px), scaled by k^POINT_ZOOM_EXP as the user zooms — matching
+  // home-inner's nodeZoomScaleExp so points grow sublinearly with zoom instead of tracking the
+  // transform directly. Fill uses POINT_ALPHA; hovered point gets a dark ring.
+  const BASE_RADIUS = 2.5;
+  const POINT_ZOOM_EXP = 0.6;
+  const POINT_ALPHA = 0.85;
+  const HOVER_TOLERANCE_PX = 6;
+  // Fingertips are an order of magnitude larger than a mouse cursor — nudge the hit
+  // radius up on touch so drag-to-browse doesn't require pixel-perfect tracking.
+  const TOUCH_HOVER_TOLERANCE_PX = 18;
+  const FIT_PADDING = 2;  // fraction of min(W, H) used as the fit-diameter
+  const ZOOM_EXTENT = [0.25, 60];
+
+  // On mobile the bottom sheet / collapsed bar eats the lower slice of the canvas, and
+  // the UMAP centroid has a "droopy" y (outliers stretch the bbox downward), which together
+  // make the cluster sit well below the visible midpoint. Pinning the centroid at 35%
+  // from the top (≈65% up the canvas) biases it above the sheet so the dense blob lands
+  // roughly where a phone user's thumb sits.
+  const MOBILE_CENTROID_Y_FRAC = 0.35;
+  const DESKTOP_CENTROID_Y_FRAC = 0.5;
+
+  function required(id) {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`Missing #${id}`);
+    return el;
+  }
+
+  function showError(msg) {
+    const box = required("error");
+    box.style.display = "block";
+    box.textContent = msg;
+  }
+
+  window.addEventListener("error", (e) => showError(`Error: ${e.message}\n${e.error && e.error.stack || ""}`));
+  window.addEventListener("unhandledrejection", (e) => showError(`Unhandled rejection: ${e.reason && (e.reason.stack || e.reason.message) || e.reason}`));
+
+  function paletteForCategories(categories) {
+    const unknownNames = [];
+    const palette = categories.map((name) => {
+      const hex = CATEGORY_COLORS[name];
+      if (!hex) {
+        unknownNames.push(name);
+        return FALLBACK_COLOR;
+      }
+      return hex;
+    });
+    if (unknownNames.length > 0) {
+      console.warn("No color mapping for category(ies):", unknownNames);
+    }
+    return palette;
+  }
+
+  // Build the legend using the same markup/classes as home-inner's #thumb-default .legend-colors
+  // so it picks up the grid + swatch styles from styles.css.
+  function buildLegend(categories, palette, counts) {
+    const legend = required("legend");
+    legend.innerHTML = "";
+    for (let i = 0; i < categories.length; i++) {
+      const row = document.createElement("div");
+      row.className = "legend-color-row";
+      const sw = document.createElement("span");
+      sw.className = "legend-swatch";
+      sw.style.background = palette[i];
+      const label = document.createElement("span");
+      label.className = "legend-color-label";
+      label.textContent = `${categories[i]} (${counts[i].toLocaleString()})`;
+      row.append(sw, label);
+      legend.appendChild(row);
+    }
+  }
+
+  async function main() {
+    const canvas = required("canvas");
+    const wrap = canvas.parentElement;
+    const sidebar = required("sidebar");
+    const thumbDefault = required("thumb-default");
+    const thumbActive = required("thumb-preview-active");
+    const previewTitle = required("preview-title");
+    const previewImg = required("thumb-img");
+    const previewImgLink = required("thumb-img-link");
+    const statsEl = required("sidebar-stats");
+    const topPeopleSection = required("thumb-top-neighbors");
+    const topPeopleTitle = required("top-people-title");
+    const topPeopleList = required("top-people-list");
+    const collapseBtn = required("thumb-collapse-btn");
+    const collapsedBar = required("thumb-collapsed-bar");
+    const collapsedTitle = required("thumb-collapsed-title");
+    const openBtn = required("thumb-open-btn");
+
+    // Mirrors home-inner's previewCollapsedByUser: once the user hits the chevron-down
+    // button on mobile, the bottom sheet stays collapsed (showing only #thumb-collapsed-bar)
+    // across hover/click changes until they hit the chevron-up to re-expand. Only relevant
+    // on mobile; desktop keeps both buttons permanently hidden via CSS.
+    let previewCollapsedByUser = false;
+    function applyPreviewVisibility() {
+      const collapsed = previewCollapsedByUser;
+      // Move focus out of whichever element is about to receive aria-hidden, otherwise
+      // browsers log an "aria-hidden on focused descendant" warning (most often triggered
+      // by the user clicking the collapse/open buttons — they still have focus when the
+      // wrapper gets hidden). `inert` belt-and-suspenders also prevents programmatic
+      // focus landing on hidden controls.
+      const active = document.activeElement;
+      if (collapsed && active && sidebar.contains(active) && typeof active.blur === "function") {
+        active.blur();
+      }
+      if (!collapsed && active && collapsedBar.contains(active) && typeof active.blur === "function") {
+        active.blur();
+      }
+      // Using a class (not the `hidden` attribute) so the rule is gated by the mobile
+      // media query — a user who resizes back to desktop can't end up with an invisible
+      // sidebar from a mobile-only collapse action.
+      sidebar.classList.toggle("is-collapsed", collapsed);
+      sidebar.setAttribute("aria-hidden", collapsed ? "true" : "false");
+      if ("inert" in sidebar) sidebar.inert = collapsed;
+      collapsedBar.hidden = !collapsed;
+      collapsedBar.setAttribute("aria-hidden", collapsed ? "false" : "true");
+      if ("inert" in collapsedBar) collapsedBar.inert = !collapsed;
+    }
+    function getCollapsedBarTitle() {
+      // Match the active dot the sidebar would show:
+      //   - During a 1-finger drag: the hovered dot wins (user is actively pointing at it).
+      //   - Otherwise: pinned > hovered, same priority as `syncSidebarFromState`.
+      // Without the hovered-during-touch branch, the title freezes on the previously-pinned
+      // dot while the user drags across new ones on a collapsed sheet.
+      const idx = touching
+        ? hoveredIdx
+        : (pinnedIdx >= 0 ? pinnedIdx : hoveredIdx);
+      if (idx >= 0 && points[idx]) return points[idx].name;
+      return DEFAULT_SIDEBAR_TITLE;
+    }
+    function refreshCollapsedBarTitle() {
+      collapsedTitle.textContent = getCollapsedBarTitle();
+    }
+    collapseBtn.addEventListener("click", () => {
+      previewCollapsedByUser = true;
+      refreshCollapsedBarTitle();
+      applyPreviewVisibility();
+    });
+    openBtn.addEventListener("click", () => {
+      previewCollapsedByUser = false;
+      applyPreviewVisibility();
+    });
+    applyPreviewVisibility();
+
+    statsEl.textContent = "loading umap_viz.json…";
+    const resp = await fetch(`${UMAP_BASE}umap_viz.json`, { cache: "no-cache" });
+    if (!resp.ok) throw new Error(`Failed to load umap_viz.json: ${resp.status} ${resp.statusText}`);
+    const data = await resp.json();
+    const { points, categories, thumb_dir, thumb_ext, model } = data;
+    // Map of person_id -> { name, n (photo count across the site). Populated by
+    // scripts/umap_viz/03__export_viz_data.py, referenced by the "top connections" list.
+    const people = data.people || {};
+    if (!Array.isArray(points) || !Array.isArray(categories)) {
+      throw new Error("umap_viz.json missing points/categories");
+    }
+    const N = points.length;
+
+    // Normalize UMAP coords to [-1, 1] preserving aspect ratio, then map to canvas pixels on
+    // resize. Storing x/y/c in typed arrays keeps the inner render loop branch-free and fast.
+    //
+    // Center on the *centroid* (mean of point coords), not the bbox midpoint: UMAP layouts
+    // typically have a few far outliers that stretch the bbox well beyond the dense cluster,
+    // so the bbox midpoint sits off in empty space and the interesting blob lands noticeably
+    // off-center (especially visible on narrow mobile canvases). The centroid is weighted by
+    // point density and lines up with what the user actually wants to see first.
+    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+    let xsum = 0, ysum = 0;
+    for (const p of points) {
+      if (p.x < xmin) xmin = p.x; if (p.x > xmax) xmax = p.x;
+      if (p.y < ymin) ymin = p.y; if (p.y > ymax) ymax = p.y;
+      xsum += p.x;
+      ysum += p.y;
+    }
+    const dx = xmax - xmin || 1;
+    const dy = ymax - ymin || 1;
+    const nScale = 2 / Math.max(dx, dy);
+    const cxD = xsum / N;
+    const cyD = ysum / N;
+    const nx = new Float32Array(N);
+    const ny = new Float32Array(N);
+    const nc = new Int16Array(N);
+    for (let i = 0; i < N; i++) {
+      nx[i] = (points[i].x - cxD) * nScale;
+      ny[i] = (points[i].y - cyD) * nScale;
+      nc[i] = points[i].c | 0;
+    }
+
+    const palette = paletteForCategories(categories);
+    const counts = new Array(categories.length).fill(0);
+    for (let i = 0; i < N; i++) counts[nc[i]]++;
+    buildLegend(categories, palette, counts);
+    statsEl.textContent = `${N.toLocaleString()} photos · model: ${model}`;
+
+    // Group indices by category so we can emit one Path2D per color (single fill() call).
+    const idxByCat = Array.from({ length: categories.length }, () => []);
+    for (let i = 0; i < N; i++) idxByCat[nc[i]].push(i);
+
+    // Identity canvas coords (where each point sits at zoom k=1, pan 0). Recomputed on resize.
+    const ix = new Float32Array(N);
+    const iy = new Float32Array(N);
+    let W = 0, H = 0, DPR = 1;
+    let quadtree = null;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable");
+
+    // Re-read the CSS media query on every resize (not once at load) so splitting /
+    // merging a window across screens or rotating a tablet picks up the new layout.
+    const mobileMq = window.matchMedia("(pointer: coarse), (max-width: 768px)");
+
+    function resize() {
+      const rect = wrap.getBoundingClientRect();
+      W = Math.max(1, Math.round(rect.width));
+      H = Math.max(1, Math.round(rect.height));
+      DPR = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(W * DPR);
+      canvas.height = Math.floor(H * DPR);
+      canvas.style.width = W + "px";
+      canvas.style.height = H + "px";
+      const s = Math.min(W, H) * 0.5 * FIT_PADDING;
+      const ox = W / 2;
+      const oy = H * (mobileMq.matches ? MOBILE_CENTROID_Y_FRAC : DESKTOP_CENTROID_Y_FRAC);
+      for (let i = 0; i < N; i++) {
+        ix[i] = ox + nx[i] * s;
+        iy[i] = oy + ny[i] * s;
+      }
+      quadtree = d3.quadtree()
+        .x((i) => ix[i])
+        .y((i) => iy[i])
+        .addAll(d3.range(N));
+    }
+
+    let transform = d3.zoomIdentity;
+    // Two interaction states, mirroring home-inner's graph sidebar:
+    //   hoveredIdx: dot under the cursor right now (ephemeral).
+    //   pinnedIdx : dot "selected" by a single click; survives hover changes until the
+    //               user clicks somewhere else (empty canvas or another dot).
+    // The sidebar preview reflects `pinnedIdx` when set, else `hoveredIdx`.
+    let hoveredIdx = -1;
+    let pinnedIdx = -1;
+    let rafId = 0;
+
+    function scheduleRender() {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        render();
+      });
+    }
+
+    function render() {
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      const k = transform.k;
+      const tx = transform.x;
+      const ty = transform.y;
+      const r = BASE_RADIUS * Math.pow(k, POINT_ZOOM_EXP);
+      const cullPad = r + 2;
+
+      ctx.globalAlpha = POINT_ALPHA;
+      for (let c = 0; c < idxByCat.length; c++) {
+        const group = idxByCat[c];
+        if (group.length === 0) continue;
+        ctx.beginPath();
+        for (let j = 0; j < group.length; j++) {
+          const i = group[j];
+          const sx = ix[i] * k + tx;
+          const sy = iy[i] * k + ty;
+          if (sx < -cullPad || sx > W + cullPad || sy < -cullPad || sy > H + cullPad) continue;
+          // moveTo before arc() avoids a spurious line from the previous sub-path's end.
+          ctx.moveTo(sx + r, sy);
+          ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+        }
+        ctx.fillStyle = palette[c];
+        ctx.fill();
+      }
+
+      // Ring priority: pinned wins over hover so the "selected" dot stays obvious while
+      // the user mouses over others. If pinned and hovered are different, draw both rings
+      // — the pinned one heavier, the hovered one as a lighter preview.
+      const accentIdx = pinnedIdx >= 0 ? pinnedIdx : hoveredIdx;
+      if (accentIdx >= 0) {
+        drawRing(accentIdx, k, tx, ty, r, pinnedIdx >= 0 ? 2 : 1.5);
+      }
+      if (pinnedIdx >= 0 && hoveredIdx >= 0 && hoveredIdx !== pinnedIdx) {
+        drawRing(hoveredIdx, k, tx, ty, r, 1);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawRing(idx, k, tx, ty, r, lineWidth) {
+      const sx = ix[idx] * k + tx;
+      const sy = iy[idx] * k + ty;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r + 3, 0, 2 * Math.PI);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = "#1a1a1a";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, 2 * Math.PI);
+      ctx.fillStyle = palette[nc[idx]];
+      ctx.fill();
+    }
+
+    const zoom = d3.zoom()
+      .scaleExtent(ZOOM_EXTENT)
+      // Reserve 1-finger touch for our own drag-to-browse gesture; pan + pinch-zoom still
+      // work with two or more fingers. Non-touch events (wheel, mouse) keep d3.zoom's
+      // default filter (reject right-click / ctrl+click).
+      .filter((event) => {
+        if (event.type === "touchstart") return event.touches.length >= 2;
+        return (!event.ctrlKey || event.type === "wheel") && !event.button;
+      })
+      .on("zoom", (event) => {
+        transform = event.transform;
+        scheduleRender();
+      });
+    d3.select(canvas).call(zoom).on("dblclick.zoom", null);
+
+    // Render the "Top people" list under the thumbnail. Each row is an anchor to the
+    // person's search page; middle / ctrl-click still works natively, left-click opens in
+    // a new tab (foreground). Only pids present in the `people` map are rendered, so
+    // mismatches between points and people (shouldn't happen) degrade gracefully.
+    function renderTopPeople(pids) {
+      topPeopleList.innerHTML = "";
+      const valid = (Array.isArray(pids) ? pids : []).filter((pid) => people[pid]);
+      if (valid.length === 0) {
+        topPeopleSection.hidden = true;
+        return;
+      }
+      topPeopleSection.hidden = false;
+      topPeopleTitle.textContent = valid.length === 1 ? "Person in this photo" : "People in this photo";
+      for (const pid of valid) {
+        const info = people[pid];
+        const row = document.createElement("a");
+        row.className = "neighbor-row";
+        row.href = `/search/people/${encodeURIComponent(pid)}/`;
+        row.target = "_blank";
+        row.rel = "noopener";
+        const nameEl = document.createElement("div");
+        nameEl.className = "neighbor-name";
+        nameEl.textContent = info.name;
+        row.append(nameEl);
+        topPeopleList.appendChild(row);
+      }
+    }
+
+    function showPreview(idx) {
+      const p = points[idx];
+      const stem = p.name.replace(/\.[^.]+$/, "");
+      previewImg.src = `${UMAP_BASE}${thumb_dir}/${stem}.${thumb_ext}`;
+      previewImg.alt = p.name;
+      previewTitle.textContent = p.name;
+      // Same URL that double-clicking the dot opens; on mobile the external-icon overlay
+      // is the primary way to reach the full image since dblclick is flaky on touch.
+      const url = photoUrlForPoint(p);
+      if (url) {
+        previewImgLink.href = url;
+        previewImgLink.removeAttribute("aria-disabled");
+      } else {
+        previewImgLink.href = "#";
+        previewImgLink.setAttribute("aria-disabled", "true");
+      }
+      renderTopPeople(p.p);
+      thumbDefault.hidden = true;
+      thumbActive.hidden = false;
+      // Snap to top whenever the panel swaps: on mobile the sheet is scrollable and
+      // the description may have been scrolled mid-way. Without this, a user who was
+      // looking at the lower half of the description text lands on blank sheet after
+      // clicking a dot — they'd have to scroll back up to see the preview.
+      sidebar.scrollTop = 0;
+    }
+
+    // Double-click a dot → open /search/people/<pid>/?photo=<name.webp> for the chosen
+    // person. `p.p` is the ordered top-N list emitted by scripts/umap_viz/03__export_viz_data.py;
+    // we pick the first non-Epstein id so the landing page is likely to already surface
+    // this photo. If Epstein is the only id, we fall back to him.
+    function pickClickTargetPid(pids) {
+      if (!Array.isArray(pids) || pids.length === 0) return null;
+      const nonEpstein = pids.find((pid) => pid !== EPSTEIN_PID);
+      return nonEpstein || pids[0];
+    }
+    function photoUrlForPoint(p) {
+      const target = pickClickTargetPid(p && p.p);
+      if (!target) return null;
+      const stem = p.name.replace(/\.[^.]+$/, "");
+      return `/search/people/${encodeURIComponent(target)}/?photo=${encodeURIComponent(`${stem}.webp`)}`;
+    }
+
+    function clearPreview() {
+      thumbActive.hidden = true;
+      thumbDefault.hidden = false;
+      // Release the current thumb so the next hover always triggers a fresh load event.
+      previewImg.removeAttribute("src");
+      sidebar.scrollTop = 0;
+    }
+
+    // Tracks whether the user is currently dragging a finger on the canvas (1-touch hover).
+    // While true, `syncSidebarFromState` lets hover override pin so the preview follows the
+    // finger even over a previously-pinned dot. On touchend we pin the final hovered idx.
+    let touching = false;
+
+    // Single source of truth for which dot's info the sidebar shows:
+    //   - While a finger is dragging on the canvas: hovered (the finger wins, pinned ignored).
+    //   - Otherwise: pinned > hovered.
+    function syncSidebarFromState() {
+      const idx = touching ? hoveredIdx : (pinnedIdx >= 0 ? pinnedIdx : hoveredIdx);
+      if (idx >= 0) showPreview(idx);
+      else clearPreview();
+      // If the user collapsed the sheet, keep the skinny bar's title in sync with the
+      // newly-pinned (or unpinned) dot so it stays useful across interactions.
+      if (previewCollapsedByUser) refreshCollapsedBarTitle();
+    }
+
+    function pickAt(clientX, clientY, tolerancePx) {
+      if (!quadtree) return -1;
+      const rect = canvas.getBoundingClientRect();
+      const mx = clientX - rect.left;
+      const my = clientY - rect.top;
+      const k = transform.k;
+      // Invert screen → identity coords (same space the quadtree was built in).
+      const dxIdent = (mx - transform.x) / k;
+      const dyIdent = (my - transform.y) / k;
+      const pointR = BASE_RADIUS * Math.pow(k, POINT_ZOOM_EXP);  // rendered radius in CSS px
+      const tol = tolerancePx != null ? tolerancePx : HOVER_TOLERANCE_PX;
+      const searchR = (pointR + tol) / k;                        // in identity-space units
+      const found = quadtree.find(dxIdent, dyIdent, searchR);
+      return typeof found === "number" ? found : -1;
+    }
+
+    canvas.addEventListener("mousemove", (e) => {
+      const i = pickAt(e.clientX, e.clientY);
+      // Cursor feedback: pointer when a dot is there, otherwise the pan cursor from CSS.
+      canvas.style.cursor = i >= 0 ? "pointer" : "";
+      if (i === hoveredIdx) return;
+      hoveredIdx = i;
+      // Hover only drives the sidebar when no dot is pinned — pinned view is sticky.
+      if (pinnedIdx < 0) syncSidebarFromState();
+      scheduleRender();
+    });
+    canvas.addEventListener("mouseleave", () => {
+      canvas.style.cursor = "";
+      if (hoveredIdx < 0) return;
+      hoveredIdx = -1;
+      if (pinnedIdx < 0) syncSidebarFromState();
+      scheduleRender();
+    });
+
+    // Click / double-click semantics (mirrors home-inner's graph sidebar):
+    //   single click on a dot       → pin it (sidebar sticks to its preview)
+    //   single click on empty space → unpin (back to hover-driven sidebar)
+    //   double click on a dot       → open /search/people/... in a new tab
+    //
+    // We listen for `click` / `dblclick` directly: the browser natively suppresses `click`
+    // after a pan / pinch gesture and fires it reliably on both mouse and touch, which
+    // matters here because d3.zoom captures pointer events on the canvas. A single-click
+    // action runs immediately; a double-click stacks on top (the dot is already pinned
+    // from the first click, then we open the tab on the dblclick), so there's no need to
+    // debounce and introduce a 250–300ms lag.
+    //
+    // On touch we already pin inside `touchend` (drag-to-browse ends there); the synthetic
+    // click that fires ~300ms later would redundantly re-pin — `recentTouchEndAt` swallows
+    // it so we don't double-trigger (and so `dblclick` doesn't fire after a single tap).
+    let recentTouchEndAt = 0;
+    const TOUCH_CLICK_SUPPRESS_MS = 500;
+    function isPostTouchClick() {
+      return Date.now() - recentTouchEndAt < TOUCH_CLICK_SUPPRESS_MS;
+    }
+
+    canvas.addEventListener("click", (e) => {
+      if (isPostTouchClick()) return;
+      const i = pickAt(e.clientX, e.clientY);
+      if (i >= 0) {
+        if (pinnedIdx !== i) {
+          pinnedIdx = i;
+          syncSidebarFromState();
+          scheduleRender();
+        }
+      } else if (pinnedIdx >= 0) {
+        pinnedIdx = -1;
+        syncSidebarFromState();
+        scheduleRender();
+      }
+    });
+    canvas.addEventListener("dblclick", (e) => {
+      if (isPostTouchClick()) return;
+      const i = pickAt(e.clientX, e.clientY);
+      if (i < 0) return;
+      const url = photoUrlForPoint(points[i]);
+      if (!url) return;
+      // Browser decides fg/bg; a user-initiated dblclick on a dot is an explicit "take me
+      // there" gesture so foreground (the browser default) is fine.
+      window.open(url, "_blank", "noopener");
+    });
+
+    // Touch: drag-to-browse (bird-sounds style). A single finger on the canvas is NOT
+    // forwarded to d3.zoom (see the `filter` above) — instead it updates `hoveredIdx`
+    // live, so the sidebar preview follows the finger across dots. On touchend, the
+    // last-hovered dot is pinned; tap-on-empty-space unpins. Pinch + 2-finger pan go
+    // to d3.zoom as normal.
+    canvas.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1) {
+        // 2+ fingers → pinch/pan gesture; bow out so d3.zoom takes over cleanly.
+        touching = false;
+        return;
+      }
+      touching = true;
+      const t = e.touches[0];
+      hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+      syncSidebarFromState();
+      scheduleRender();
+    }, { passive: true });
+    canvas.addEventListener("touchmove", (e) => {
+      if (!touching || e.touches.length !== 1) return;
+      const t = e.touches[0];
+      hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+      syncSidebarFromState();
+      scheduleRender();
+      // Stop the browser from page-scrolling while the finger sweeps across the canvas —
+      // without this the sheet would jitter under the user's finger on iOS Safari.
+      e.preventDefault();
+    }, { passive: false });
+    function endTouch() {
+      if (!touching) return;
+      touching = false;
+      recentTouchEndAt = Date.now();
+      // Whatever the finger was over when it lifted becomes the pinned selection (or -1
+      // to unpin if the user released over empty canvas). Clearing hoveredIdx avoids a
+      // stale "hover ring" hanging around next to the new pinned ring.
+      pinnedIdx = hoveredIdx;
+      hoveredIdx = -1;
+      syncSidebarFromState();
+      scheduleRender();
+    }
+    canvas.addEventListener("touchend", endTouch);
+    canvas.addEventListener("touchcancel", endTouch);
+
+    // ResizeObserver > window.resize: sidebar flex changes also trigger wrap resize without
+    // firing a window resize event.
+    const ro = new ResizeObserver(() => {
+      resize();
+      scheduleRender();
+    });
+    ro.observe(wrap);
+
+    resize();
+    render();
+  }
+
+  main();
+</script>
