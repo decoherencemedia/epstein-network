@@ -98,7 +98,7 @@
       <div class="people-lightbox-footer">
         <p class="people-lightbox-count" id="people-lightbox-count"></p>
         <p class="people-lightbox-filename" id="people-lightbox-filename"></p>
-        <a class="people-lightbox-pdf-link" id="people-lightbox-pdf-link" href="#" target="_blank" rel="noopener">View original PDF</a>
+        <a class="people-lightbox-pdf-link" id="people-lightbox-pdf-link" href="#" target="_blank" rel="noopener">View original file</a>
       </div>
     </div>
   </div>
@@ -792,7 +792,14 @@
     return null;
   }
 
-  function buildOriginalPdfUrl(imageFile) {
+  function buildOriginalPdfUrl(imageFile, googleDriveKey) {
+    const gk =
+      googleDriveKey != null ? String(googleDriveKey).trim() : "";
+    if (gk) {
+      return (
+        "https://drive.google.com/file/d/" + encodeURIComponent(gk) + "/view"
+      );
+    }
     const image = String(imageFile || "");
     if (!image) return null;
     const fileId = image.split("-")[0];
@@ -890,16 +897,24 @@
    */
   function normalizePhotoRow(row) {
     if (typeof row === "string") {
-      return { image: row, faces: {} };
+      return { image: row, faces: {}, google_drive_key: null };
     }
     if (!row || typeof row !== "object") {
-      return { image: "", faces: {} };
+      return { image: "", faces: {}, google_drive_key: null };
     }
     const image = row.image || row.image_name || row.filename || "";
     const raw = row.faces;
     const faces =
       raw != null && (typeof raw === "object" || Array.isArray(raw)) ? raw : {};
-    return { image: String(image), faces };
+    const gkRaw = row.google_drive_key;
+    const gk =
+      gkRaw == null
+        ? null
+        : (function () {
+            const s = String(gkRaw).trim();
+            return s ? s : null;
+          })();
+    return { image: String(image), faces, google_drive_key: gk };
   }
 
   /**
@@ -1893,6 +1908,8 @@
         url: SiteShared.cdnImagesUrl(p.image),
         image: String(p.image),
         faces: p.faces,
+        google_drive_key:
+          p.google_drive_key == null ? null : p.google_drive_key,
       };
     });
   }
@@ -2187,6 +2204,8 @@
         url: SiteShared.cdnImagesUrl(p.image),
         image: String(p.image),
         faces: p.faces,
+        google_drive_key:
+          p.google_drive_key == null ? null : p.google_drive_key,
       };
     });
 
@@ -2281,7 +2300,7 @@
   let activeIndex = -1;
   /** Index of option under pointer, or null — hides row-0 “Enter default” style when hovering another row. */
   let peopleSearchPointerOptionIndex = null;
-  /** @type {{ url: string, image: string, faces: unknown }[]} */
+  /** @type {{ url: string, image: string, faces: unknown, google_drive_key?: string | null }[]} */
   let lightboxPhotos = [];
   let lightboxIndex = -1;
   let lightboxTouchStartX = null;
@@ -2591,7 +2610,7 @@
   function updateLightboxMeta(item, totalCount) {
     lightboxCountEl.textContent = (lightboxIndex + 1) + " / " + totalCount;
     lightboxFilenameEl.textContent = item.image || "";
-    const pdfUrl = buildOriginalPdfUrl(item.image);
+    const pdfUrl = buildOriginalPdfUrl(item.image, item.google_drive_key);
     lightboxPdfLinkEl.href = pdfUrl || "#";
     lightboxPdfLinkEl.hidden = !pdfUrl;
   }
