@@ -516,6 +516,21 @@
   const MOBILE_CENTROID_Y_FRAC = 0.35;
   const DESKTOP_CENTROID_Y_FRAC = 0.5;
 
+  // Thumbnail prefetching. The browser keeps painting the previously-loaded thumb until
+  // the next `src` finishes fetching, which on cold caches reads as "stale thumbnail
+  // sticks around too long." We warm the HTTP cache proactively so hover swaps land on
+  // already-decoded bytes:
+  //   - On hover change, fetch this dot's K nearest neighbors (mouse motion almost
+  //     always goes dot → neighbor, so the next hover is essentially free).
+  //   - When pan / zoom settle, fetch every dot currently in the viewport, center-first
+  //     and capped so exploring a dense cluster doesn't stall on first hover.
+  // LRU holds decoded HTMLImageElement refs so previously-loaded thumbs stay decoded in
+  // memory even after the browser might evict bytes from its HTTP cache.
+  const PREFETCH_NEIGHBORS_K = 16;
+  const PREFETCH_VIEWPORT_MAX = 400;
+  const PREFETCH_VIEWPORT_DEBOUNCE_MS = 200;
+  const PREFETCH_LRU_MAX = 300;
+
   function required(id) {
     const el = document.getElementById(id);
     if (!el) throw new Error(`Missing #${id}`);
@@ -574,6 +589,12 @@
     const thumbActive = required("thumb-preview-active");
     const previewTitle = required("preview-title");
     const previewImg = required("thumb-img");
+    // The active thumbnail matters much more than prefetched neighbors — bump its
+    // priority so the browser doesn't starve it on a slow connection. `decoding=async`
+    // lets the paint happen off-main-thread once bytes arrive, so the hover swap doesn't
+    // block a scheduled render().
+    previewImg.fetchPriority = "high";
+    previewImg.decoding = "async";
     const previewImgLink = required("thumb-img-link");
     const statsEl = required("sidebar-stats");
     const topPeopleSection = required("thumb-top-neighbors");
@@ -812,6 +833,10 @@
       .on("zoom", (event) => {
         transform = event.transform;
         scheduleRender();
+        // Pan / zoom is in flight; once it stops for PREFETCH_VIEWPORT_DEBOUNCE_MS we
+        // warm every dot in the viewport so the first hover on the newly-framed cluster
+        // doesn't have to round-trip for bytes.
+        schedulePrefetchViewport();
       });
     d3.select(canvas).call(zoom).on("dblclick.zoom", null);
 
@@ -843,10 +868,132 @@
       }
     }
 
+    function thumbUrlForPoint(p) {
+      const stem = p.name.replace(/\.[^.]+$/, "");
+      return `${UMAP_BASE}${thumb_dir}/${stem}.${thumb_ext}`;
+    }
+
+    // Bounded LRU of prefetched HTMLImageElements. A `Map` preserves insertion order so
+    // touching an entry (delete + re-set) bumps it to the most-recent slot; evicting the
+    // oldest is just `keys().next().value`. We hold the `Image` objects (not just URLs)
+    // so the decoded bytes stay alive even if the browser's HTTP cache evicts — the swap
+    // into `previewImg.src` then hits those decoded bytes rather than re-fetching.
+    const prefetched = new Map();
+    function prefetchThumb(p) {
+      if (!p) return;
+      const url = thumbUrlForPoint(p);
+      if (prefetched.has(url)) {
+        // Refresh LRU position so frequently-seen dots don't get evicted while idle.
+        const img = prefetched.get(url);
+        prefetched.delete(url);
+        prefetched.set(url, img);
+        return;
+      }
+      const img = new Image();
+      // Prefetches are background work; let the active preview win network + CPU.
+      img.fetchPriority = "low";
+      img.decoding = "async";
+      img.src = url;
+      prefetched.set(url, img);
+      while (prefetched.size > PREFETCH_LRU_MAX) {
+        prefetched.delete(prefetched.keys().next().value);
+      }
+    }
+
+    // Quadtree-driven k-nearest-neighbors in identity coords. Uses `.visit()` with a
+    // running "worst distance so far" to prune subtrees whose bbox is already farther
+    // than the K-th best candidate — O(K log N) in practice for N = ~8k.
+    function nearestNeighborsOfIdx(idx, k) {
+      if (!quadtree || idx < 0) return [];
+      const tx = ix[idx];
+      const ty = iy[idx];
+      const best = [];                  // parallel arrays: `bestD2` squared-dist, `bestI` index
+      const bestD2 = [];
+      const bestI = [];
+      let worst = Infinity;
+      quadtree.visit((node, x0, y0, x1, y1) => {
+        // Prune: if the closest point of this bbox is already farther than our worst
+        // tracked candidate, no point inside can be among the top K.
+        const cdx = tx < x0 ? x0 - tx : tx > x1 ? tx - x1 : 0;
+        const cdy = ty < y0 ? y0 - ty : ty > y1 ? ty - y1 : 0;
+        if (cdx * cdx + cdy * cdy > worst) return true;
+        if (!node.length) {
+          // Leaf: walk the linked list of points packed in this cell.
+          do {
+            const i = node.data;
+            if (i !== idx) {
+              const dx = ix[i] - tx;
+              const dy = iy[i] - ty;
+              const d2 = dx * dx + dy * dy;
+              if (bestD2.length < k) {
+                bestD2.push(d2);
+                bestI.push(i);
+                if (bestD2.length === k) {
+                  // First fill-up: compute the current worst. Subsequent updates
+                  // maintain it in the `else` branch below.
+                  let w = -Infinity;
+                  for (let j = 0; j < k; j++) if (bestD2[j] > w) w = bestD2[j];
+                  worst = w;
+                }
+              } else if (d2 < worst) {
+                // Replace the current worst candidate with this (smaller) one.
+                let wj = 0;
+                for (let j = 1; j < k; j++) if (bestD2[j] > bestD2[wj]) wj = j;
+                bestD2[wj] = d2;
+                bestI[wj] = i;
+                let w = -Infinity;
+                for (let j = 0; j < k; j++) if (bestD2[j] > w) w = bestD2[j];
+                worst = w;
+              }
+            }
+            node = node.next;
+          } while (node);
+        }
+        return false;
+      });
+      return bestI;
+    }
+
+    function prefetchNeighborsOfIdx(idx) {
+      const neighbors = nearestNeighborsOfIdx(idx, PREFETCH_NEIGHBORS_K);
+      for (const j of neighbors) prefetchThumb(points[j]);
+    }
+
+    // Viewport prefetch: once pan / zoom has settled, pre-warm every dot currently on
+    // screen, in order of distance to the canvas center (so the dots most likely to be
+    // hovered next get bytes first). Capped so a massive zoomed-out view doesn't fire
+    // thousands of requests at once.
+    let viewportPrefetchTimer = 0;
+    function schedulePrefetchViewport() {
+      if (viewportPrefetchTimer) clearTimeout(viewportPrefetchTimer);
+      viewportPrefetchTimer = setTimeout(() => {
+        viewportPrefetchTimer = 0;
+        prefetchViewport();
+      }, PREFETCH_VIEWPORT_DEBOUNCE_MS);
+    }
+    function prefetchViewport() {
+      const k = transform.k;
+      const tx = transform.x;
+      const ty = transform.y;
+      const cx = W / 2;
+      const cy = H / 2;
+      const candidates = [];
+      for (let i = 0; i < N; i++) {
+        const sx = ix[i] * k + tx;
+        const sy = iy[i] * k + ty;
+        if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
+        const dx = sx - cx;
+        const dy = sy - cy;
+        candidates.push([dx * dx + dy * dy, i]);
+      }
+      candidates.sort((a, b) => a[0] - b[0]);
+      const cap = Math.min(candidates.length, PREFETCH_VIEWPORT_MAX);
+      for (let j = 0; j < cap; j++) prefetchThumb(points[candidates[j][1]]);
+    }
+
     function showPreview(idx) {
       const p = points[idx];
-      const stem = p.name.replace(/\.[^.]+$/, "");
-      previewImg.src = `${UMAP_BASE}${thumb_dir}/${stem}.${thumb_ext}`;
+      previewImg.src = thumbUrlForPoint(p);
       previewImg.alt = p.name;
       previewTitle.textContent = p.name;
       // Same URL that double-clicking the dot opens; on mobile the external-icon overlay
@@ -934,6 +1081,9 @@
       hoveredIdx = i;
       // Hover only drives the sidebar when no dot is pinned — pinned view is sticky.
       if (pinnedIdx < 0) syncSidebarFromState();
+      // Warm this dot's quadtree-neighbors: mouse motion almost always moves dot →
+      // neighbor, so the *next* hover's thumb is likely already decoded by then.
+      if (i >= 0) prefetchNeighborsOfIdx(i);
       scheduleRender();
     });
     canvas.addEventListener("mouseleave", () => {
@@ -1005,13 +1155,19 @@
       touching = true;
       const t = e.touches[0];
       hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+      if (hoveredIdx >= 0) prefetchNeighborsOfIdx(hoveredIdx);
       syncSidebarFromState();
       scheduleRender();
     }, { passive: true });
     canvas.addEventListener("touchmove", (e) => {
       if (!touching || e.touches.length !== 1) return;
       const t = e.touches[0];
-      hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+      const i = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+      const changed = i !== hoveredIdx;
+      hoveredIdx = i;
+      // Only fire a neighbor-prefetch when the hovered dot changes — a finger hovering
+      // in place shouldn't keep re-queuing the same set.
+      if (changed && i >= 0) prefetchNeighborsOfIdx(i);
       syncSidebarFromState();
       scheduleRender();
       // Stop the browser from page-scrolling while the finger sweeps across the canvas —
@@ -1043,6 +1199,10 @@
 
     resize();
     render();
+    // Kick off a viewport prefetch after the first paint so the user's very first hover
+    // isn't a cold cache miss. `scheduleX` (not an immediate call) so the debounce
+    // also absorbs any resize-triggered re-entry that might happen right after load.
+    schedulePrefetchViewport();
   }
 
   main();
