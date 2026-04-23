@@ -139,6 +139,11 @@
       flex-direction: column;
       gap: 4px;
     }
+    /* Rows are <div role="button"> rather than real <button>s so they don't pick up
+     * user-agent form-control styling (line-height, letter-spacing) that visibly drifts
+     * from the rest of the sidebar text. Keyboard activation is wired up explicitly in
+     * JS. `cursor: pointer` is the only chrome change; the rest of the rule matches
+     * the original presentation exactly. */
     .page-explore-main .legend-color-row {
       display: flex;
       align-items: center;
@@ -146,13 +151,31 @@
       font: 12.5px/1.25 sans-serif;
       color: #222;
       min-width: 0;
+      cursor: pointer;
+      user-select: none;
     }
+    .page-explore-main .legend-color-row:focus-visible {
+      outline: 2px solid #4a90e2;
+      outline-offset: 1px;
+      border-radius: 3px;
+    }
+    /* The category color is plumbed in via the `--swatch-color` custom property (set
+     * inline in JS) so a single CSS rule can toggle between filled (on) and hollow
+     * stroked (off) without JS having to touch the swatch element on every toggle.
+     * `box-sizing: border-box` keeps the swatch the same 12×12 visual size when the
+     * border thickens from 1px to 2px in the off state. */
     .page-explore-main .legend-swatch {
       width: 12px;
       height: 12px;
       border-radius: 4px;
       border: 1px solid var(--border-subtle);
+      background: var(--swatch-color);
       flex: 0 0 auto;
+      box-sizing: border-box;
+    }
+    .page-explore-main .legend-color-row.is-off .legend-swatch {
+      background: transparent;
+      border: 2px solid var(--swatch-color);
     }
     .page-explore-main .legend-color-label {
       flex: 1 1 auto;
@@ -479,6 +502,11 @@
   // epstein-pipeline/scripts/pipeline/14__visualize_graph.py. "Other" (images with no
   // in-network faces) reuses the same grey as "Unknown".
   const CATEGORY_COLORS = {
+    // Synthetic category emitted by 03__export_viz_data.py for images whose only
+    // in-network face is Jeffrey Epstein. Off-black (rather than pure #000) matches
+    // the site's primary dark and the hover-ring stroke color, so it composes
+    // cleanly with the rest of the UI without "vibrating" against the panel bg.
+    "Jeffrey Epstein":       "#1a1a1a",
     "Inner Circle":          "#d60000",
     "Academia & Science":    "#8c3bff",
     "Politics & Government": "#00acc6",
@@ -563,22 +591,33 @@
   }
 
   // Build the legend using the same markup/classes as home-inner's #thumb-default .legend-colors
-  // so it picks up the grid + swatch styles from styles.css.
+  // so it picks up the grid + swatch styles from styles.css. Rows are <div role="button"> (not
+  // <button>) so user-agent form-control font styling doesn't override our 12.5px sans-serif —
+  // keyboard activation is wired up explicitly in `main()`. The category color goes on the row
+  // as a `--swatch-color` custom property so the same CSS rule renders the on (filled) and off
+  // (hollow stroke) states without JS having to touch the swatch element. Returns the row
+  // elements so the toggle handler can flip aria-pressed / class.
   function buildLegend(categories, palette, counts) {
     const legend = required("legend");
     legend.innerHTML = "";
+    const rows = [];
     for (let i = 0; i < categories.length; i++) {
       const row = document.createElement("div");
       row.className = "legend-color-row";
+      row.setAttribute("role", "button");
+      row.setAttribute("tabindex", "0");
+      row.setAttribute("aria-pressed", "true");
+      row.style.setProperty("--swatch-color", palette[i]);
       const sw = document.createElement("span");
       sw.className = "legend-swatch";
-      sw.style.background = palette[i];
       const label = document.createElement("span");
       label.className = "legend-color-label";
       label.textContent = `${categories[i]} (${counts[i].toLocaleString()})`;
       row.append(sw, label);
       legend.appendChild(row);
+      rows.push(row);
     }
+    return rows;
   }
 
   async function main() {
@@ -706,7 +745,13 @@
     const palette = paletteForCategories(categories);
     const counts = new Array(categories.length).fill(0);
     for (let i = 0; i < N; i++) counts[nc[i]]++;
-    buildLegend(categories, palette, counts);
+    const legendRowEls = buildLegend(categories, palette, counts);
+    // Categories the user has toggled off via the legend. Read by render() to skip
+    // their fill, by pickAt() so hidden dots stop catching hover/click, and by the
+    // prefetchers so we don't waste bandwidth on dots the user isn't browsing.
+    // Click handlers are wired up below, after the interaction state (pinnedIdx /
+    // hoveredIdx) those handlers need to clear has actually been declared.
+    const hiddenCategories = new Set();
     statsEl.textContent = `${N.toLocaleString()} photos · model: ${model}`;
 
     // Group indices by category so we can emit one Path2D per color (single fill() call).
@@ -779,6 +824,7 @@
       for (let c = 0; c < idxByCat.length; c++) {
         const group = idxByCat[c];
         if (group.length === 0) continue;
+        if (hiddenCategories.has(c)) continue;
         ctx.beginPath();
         for (let j = 0; j < group.length; j++) {
           const i = group[j];
@@ -956,7 +1002,10 @@
 
     function prefetchNeighborsOfIdx(idx) {
       const neighbors = nearestNeighborsOfIdx(idx, PREFETCH_NEIGHBORS_K);
-      for (const j of neighbors) prefetchThumb(points[j]);
+      for (const j of neighbors) {
+        if (hiddenCategories.has(nc[j])) continue;
+        prefetchThumb(points[j]);
+      }
     }
 
     // Viewport prefetch: once pan / zoom has settled, pre-warm every dot currently on
@@ -979,6 +1028,7 @@
       const cy = H / 2;
       const candidates = [];
       for (let i = 0; i < N; i++) {
+        if (hiddenCategories.has(nc[i])) continue;
         const sx = ix[i] * k + tx;
         const sy = iy[i] * k + ty;
         if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
@@ -1070,7 +1120,13 @@
       const tol = tolerancePx != null ? tolerancePx : HOVER_TOLERANCE_PX;
       const searchR = (pointR + tol) / k;                        // in identity-space units
       const found = quadtree.find(dxIdent, dyIdent, searchR);
-      return typeof found === "number" ? found : -1;
+      const idx = typeof found === "number" ? found : -1;
+      // Hidden-category points still live in the quadtree (rebuilding it on every
+      // toggle would be wasteful) — filter them out at pick time so toggled-off
+      // dots can't catch hover/click. Acceptable trade-off: the rare overlapping
+      // case where a hidden dot sits in front of a visible one will pick neither.
+      if (idx >= 0 && hiddenCategories.has(nc[idx])) return -1;
+      return idx;
     }
 
     canvas.addEventListener("mousemove", (e) => {
@@ -1188,6 +1244,56 @@
     }
     canvas.addEventListener("touchend", endTouch);
     canvas.addEventListener("touchcancel", endTouch);
+
+    // Legend click → toggle that category's visibility. Hidden categories are filtered
+    // out by render() (paint), pickAt() (hover/click), and the prefetchers (bandwidth);
+    // a pinned or hovered dot in the now-hidden category is dropped so the sidebar
+    // doesn't keep showing a photo whose dot just disappeared from the canvas.
+    function setLegendRowState(c, hidden) {
+      const row = legendRowEls[c];
+      if (!row) return;
+      row.classList.toggle("is-off", hidden);
+      row.setAttribute("aria-pressed", hidden ? "false" : "true");
+      row.title = hidden
+        ? `Click to show "${categories[c]}"`
+        : `Click to hide "${categories[c]}"`;
+    }
+    function toggleCategory(c) {
+      const wasHidden = hiddenCategories.has(c);
+      if (wasHidden) hiddenCategories.delete(c);
+      else hiddenCategories.add(c);
+      const nowHidden = !wasHidden;
+      setLegendRowState(c, nowHidden);
+      if (nowHidden) {
+        // Drop pinned/hovered when the dot they reference just got hidden — otherwise
+        // the sidebar keeps displaying its photo with no corresponding dot on the map.
+        let sidebarChanged = false;
+        if (pinnedIdx >= 0 && nc[pinnedIdx] === c) {
+          pinnedIdx = -1;
+          sidebarChanged = true;
+        }
+        if (hoveredIdx >= 0 && nc[hoveredIdx] === c) {
+          hoveredIdx = -1;
+          sidebarChanged = true;
+        }
+        if (sidebarChanged) syncSidebarFromState();
+      }
+      scheduleRender();
+    }
+    for (let c = 0; c < legendRowEls.length; c++) {
+      const captured = c;
+      setLegendRowState(captured, false);
+      const row = legendRowEls[captured];
+      row.addEventListener("click", () => toggleCategory(captured));
+      // <div role="button"> doesn't get Space/Enter activation for free the way a real
+      // <button> does — wire it up so keyboard users can toggle categories too.
+      row.addEventListener("keydown", (e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          toggleCategory(captured);
+        }
+      });
+    }
 
     // ResizeObserver > window.resize: sidebar flex changes also trigger wrap resize without
     // firing a window resize event.
