@@ -9,6 +9,7 @@ jupyter/
 graphml/
 person_to_files/
 dist/
+node_modules/
 # Fetched by site/build.sh (pinned URLs)
 site/js/imagesloaded.pkgd.min.js
 site/js/latinize.js

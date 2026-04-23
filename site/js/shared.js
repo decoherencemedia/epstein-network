@@ -6,16 +6,13 @@
 
   /** Epstein API origin (no trailing slash). Change here for local dev (e.g. http://127.0.0.1:5000). */
   var API_BASE = "https://api.epstein.photos";
-//   var API_BASE = "http://localhost:5000";
+  //   var API_BASE = "http://localhost:5000";
 
   /**
    * Canonical uppercase stems before numeric suffix (document / image id search).
    * Comparison is case-insensitive via `.toUpperCase()`.
    */
-  var DOCUMENT_ID_PREFIXES = Object.freeze([
-    "EFTA",
-    "HOUSE_OVERSIGHT_",
-  ]);
+  var DOCUMENT_ID_PREFIXES = Object.freeze(["EFTA", "HOUSE_OVERSIGHT_"]);
 
   /**
    * Uppercase query with file extensions and punctuation removed for search/API:
@@ -93,7 +90,11 @@
    */
   function peopleUrlForPersonIds(personIds) {
     const ids = Array.isArray(personIds)
-      ? personIds.map(function (x) { return String(x || "").trim(); }).filter(Boolean)
+      ? personIds
+          .map(function (x) {
+            return String(x || "").trim();
+          })
+          .filter(Boolean)
       : [];
     if (!ids.length) return null;
     const sorted = ids.slice().sort();
@@ -103,7 +104,16 @@
 
   /** Same order as Search page chips: first selected = index 0, … */
   var personColorPalette = Object.freeze([
-    "#00bd00", "#ff42cc", "#ff6300", "#00abff", "#fcee00", "#00e4ca", "#a989ff", "#ff8795", "#7bff83", "#f8a5ff",
+    "#00bd00",
+    "#ff42cc",
+    "#ff6300",
+    "#00abff",
+    "#fcee00",
+    "#00e4ca",
+    "#a989ff",
+    "#ff8795",
+    "#7bff83",
+    "#f8a5ff",
   ]);
 
   function hexToRgb(hex) {

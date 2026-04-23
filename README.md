@@ -27,5 +27,6 @@ cd dist && python3 -m http.server 8000
 GitHub Actions (if configured) runs `./site/build.sh` and deploys **`dist/`** to GitHub Pages.
 
 ## TODO
+
 - add fuzzy search to People page (with filters for category?)
 - fix original PDF link for non-EFTA

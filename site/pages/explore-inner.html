@@ -153,6 +153,8 @@
       min-width: 0;
       cursor: pointer;
       user-select: none;
+      /* Intentionally natural-height (~18 px): accepts the Lighthouse `target-size`
+         hit for a denser legend. The rows are toggles, not primary CTAs. */
     }
     .page-explore-main .legend-color-row:focus-visible {
       outline: 2px solid #4a90e2;
@@ -394,8 +396,11 @@
         <div class="thumb-default-body">
           <div>
             This is a visualization of images in the
-            <a href="https://www.justice.gov/epstein" target="_blank" rel="noopener noreferrer">Epstein Library</a>. Each circle represents an image and similar images are placed near each other, so clusters usually share a setting, subject, or semantic meaning.
-            Only images containing at least one <a href="/people" target="_blank">person</a> we've identified in the network are included.
+            <a href="https://www.justice.gov/epstein" target="_blank" rel="noopener noreferrer"
+              >Epstein Library</a
+            >. Each circle represents an image and similar images are placed near each other, so clusters
+            usually share a setting, subject, or semantic meaning. Only images containing at least one
+            <a href="/people" target="_blank">person</a> we've identified in the network are included.
           </div>
           <div>
             Circles are colored by the most common category of in-network people appearing in the photo.
@@ -403,17 +408,26 @@
           <ul>
             <li>Hover over a dot (or drag your finger across the map) to preview a photo</li>
             <li>Click or tap to pin; double-click or tap the thumbnail to open the image in a new tab</li>
-            <li>Scroll or pinch to zoom; drag with one finger on desktop, two fingers on touch devices to pan</li>
+            <li>
+              Scroll or pinch to zoom; drag with one finger on desktop, two fingers on touch devices to pan
+            </li>
           </ul>
           <div>
             Image embeddings were computed using the
-            <a href="https://github.com/facebookresearch/dinov2" target="_blank" rel="noopener noreferrer">DINOv2</a> image model,
-            projected to 2D with the
-            <a href="https://umap-learn.readthedocs.io" target="_blank" rel="noopener noreferrer">UMAP</a> algorithm,
-            and rendered with
-            <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
-            The scripts are available on
-            <a href="https://github.com/decoherencemedia/epstein-network" target="_blank" rel="noopener noreferrer">GitHub</a>.
+            <a href="https://github.com/facebookresearch/dinov2" target="_blank" rel="noopener noreferrer"
+              >DINOv2</a
+            >
+            image model, projected to 2D with the
+            <a href="https://umap-learn.readthedocs.io" target="_blank" rel="noopener noreferrer">UMAP</a>
+            algorithm, and rendered with
+            <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>. The scripts are
+            available on
+            <a
+              href="https://github.com/decoherencemedia/epstein-network"
+              target="_blank"
+              rel="noopener noreferrer"
+              >GitHub</a
+            >.
           </div>
           <div id="sidebar-stats" class="sidebar-stats">loading…</div>
         </div>
@@ -435,7 +449,16 @@
           <span class="thumb-img-wrapper">
             <img id="thumb-img" alt="" />
             <span class="thumb-img-external-icon" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
                 <polyline points="15 3 21 3 21 9"></polyline>
                 <line x1="10" y1="14" x2="21" y2="3"></line>
@@ -510,7 +533,7 @@
   // Fingertips are an order of magnitude larger than a mouse cursor — nudge the hit
   // radius up on touch so drag-to-browse doesn't require pixel-perfect tracking.
   const TOUCH_HOVER_TOLERANCE_PX = 18;
-  const FIT_PADDING = 2;  // fraction of min(W, H) used as the fit-diameter
+  const FIT_PADDING = 2; // fraction of min(W, H) used as the fit-diameter
   const ZOOM_EXTENT = [0.25, 60];
 
   // On mobile the bottom sheet / collapsed bar eats the lower slice of the canvas, and
@@ -548,8 +571,12 @@
     box.textContent = msg;
   }
 
-  window.addEventListener("error", (e) => showError(`Error: ${e.message}\n${e.error && e.error.stack || ""}`));
-  window.addEventListener("unhandledrejection", (e) => showError(`Unhandled rejection: ${e.reason && (e.reason.stack || e.reason.message) || e.reason}`));
+  window.addEventListener("error", (e) =>
+    showError(`Error: ${e.message}\n${(e.error && e.error.stack) || ""}`),
+  );
+  window.addEventListener("unhandledrejection", (e) =>
+    showError(`Unhandled rejection: ${(e.reason && (e.reason.stack || e.reason.message)) || e.reason}`),
+  );
 
   /**
    * Validate the payload's parallel `colors` array against `categories`. Any hole
@@ -559,7 +586,7 @@
   function paletteFromPayload(categories, colors) {
     if (!Array.isArray(colors) || colors.length !== categories.length) {
       throw new Error(
-        `umap_viz.json: colors[] missing or wrong length (got ${colors && colors.length}, expected ${categories.length})`
+        `umap_viz.json: colors[] missing or wrong length (got ${colors && colors.length}, expected ${categories.length})`,
       );
     }
     const missing = [];
@@ -661,9 +688,7 @@
       //   - Otherwise: pinned > hovered, same priority as `syncSidebarFromState`.
       // Without the hovered-during-touch branch, the title freezes on the previously-pinned
       // dot while the user drags across new ones on a collapsed sheet.
-      const idx = touching
-        ? hoveredIdx
-        : (pinnedIdx >= 0 ? pinnedIdx : hoveredIdx);
+      const idx = touching ? hoveredIdx : pinnedIdx >= 0 ? pinnedIdx : hoveredIdx;
       if (idx >= 0 && points[idx]) return points[idx].name;
       return DEFAULT_SIDEBAR_TITLE;
     }
@@ -702,11 +727,17 @@
     // so the bbox midpoint sits off in empty space and the interesting blob lands noticeably
     // off-center (especially visible on narrow mobile canvases). The centroid is weighted by
     // point density and lines up with what the user actually wants to see first.
-    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
-    let xsum = 0, ysum = 0;
+    let xmin = Infinity,
+      xmax = -Infinity,
+      ymin = Infinity,
+      ymax = -Infinity;
+    let xsum = 0,
+      ysum = 0;
     for (const p of points) {
-      if (p.x < xmin) xmin = p.x; if (p.x > xmax) xmax = p.x;
-      if (p.y < ymin) ymin = p.y; if (p.y > ymax) ymax = p.y;
+      if (p.x < xmin) xmin = p.x;
+      if (p.x > xmax) xmax = p.x;
+      if (p.y < ymin) ymin = p.y;
+      if (p.y > ymax) ymax = p.y;
       xsum += p.x;
       ysum += p.y;
     }
@@ -743,7 +774,9 @@
     // Identity canvas coords (where each point sits at zoom k=1, pan 0). Recomputed on resize.
     const ix = new Float32Array(N);
     const iy = new Float32Array(N);
-    let W = 0, H = 0, DPR = 1;
+    let W = 0,
+      H = 0,
+      DPR = 1;
     let quadtree = null;
 
     const ctx = canvas.getContext("2d");
@@ -769,7 +802,8 @@
         ix[i] = ox + nx[i] * s;
         iy[i] = oy + ny[i] * s;
       }
-      quadtree = d3.quadtree()
+      quadtree = d3
+        .quadtree()
         .x((i) => ix[i])
         .y((i) => iy[i])
         .addAll(d3.range(N));
@@ -849,7 +883,8 @@
       ctx.fill();
     }
 
-    const zoom = d3.zoom()
+    const zoom = d3
+      .zoom()
       .scaleExtent(ZOOM_EXTENT)
       // Reserve 1-finger touch for our own drag-to-browse gesture; pan + pinch-zoom still
       // work with two or more fingers. Non-touch events (wheel, mouse) keep d3.zoom's
@@ -935,7 +970,7 @@
       if (!quadtree || idx < 0) return [];
       const tx = ix[idx];
       const ty = iy[idx];
-      const best = [];                  // parallel arrays: `bestD2` squared-dist, `bestI` index
+      const best = []; // parallel arrays: `bestD2` squared-dist, `bestI` index
       const bestD2 = [];
       const bestI = [];
       let worst = Infinity;
@@ -1081,7 +1116,7 @@
     //   - While a finger is dragging on the canvas: hovered (the finger wins, pinned ignored).
     //   - Otherwise: pinned > hovered.
     function syncSidebarFromState() {
-      const idx = touching ? hoveredIdx : (pinnedIdx >= 0 ? pinnedIdx : hoveredIdx);
+      const idx = touching ? hoveredIdx : pinnedIdx >= 0 ? pinnedIdx : hoveredIdx;
       if (idx >= 0) showPreview(idx);
       else clearPreview();
       // If the user collapsed the sheet, keep the skinny bar's title in sync with the
@@ -1098,9 +1133,9 @@
       // Invert screen → identity coords (same space the quadtree was built in).
       const dxIdent = (mx - transform.x) / k;
       const dyIdent = (my - transform.y) / k;
-      const pointR = BASE_RADIUS * Math.pow(k, POINT_ZOOM_EXP);  // rendered radius in CSS px
+      const pointR = BASE_RADIUS * Math.pow(k, POINT_ZOOM_EXP); // rendered radius in CSS px
       const tol = tolerancePx != null ? tolerancePx : HOVER_TOLERANCE_PX;
-      const searchR = (pointR + tol) / k;                        // in identity-space units
+      const searchR = (pointR + tol) / k; // in identity-space units
       const found = quadtree.find(dxIdent, dyIdent, searchR);
       const idx = typeof found === "number" ? found : -1;
       // Hidden-category points still live in the quadtree (rebuilding it on every
@@ -1184,34 +1219,42 @@
     // live, so the sidebar preview follows the finger across dots. On touchend, the
     // last-hovered dot is pinned; tap-on-empty-space unpins. Pinch + 2-finger pan go
     // to d3.zoom as normal.
-    canvas.addEventListener("touchstart", (e) => {
-      if (e.touches.length !== 1) {
-        // 2+ fingers → pinch/pan gesture; bow out so d3.zoom takes over cleanly.
-        touching = false;
-        return;
-      }
-      touching = true;
-      const t = e.touches[0];
-      hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
-      if (hoveredIdx >= 0) prefetchNeighborsOfIdx(hoveredIdx);
-      syncSidebarFromState();
-      scheduleRender();
-    }, { passive: true });
-    canvas.addEventListener("touchmove", (e) => {
-      if (!touching || e.touches.length !== 1) return;
-      const t = e.touches[0];
-      const i = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
-      const changed = i !== hoveredIdx;
-      hoveredIdx = i;
-      // Only fire a neighbor-prefetch when the hovered dot changes — a finger hovering
-      // in place shouldn't keep re-queuing the same set.
-      if (changed && i >= 0) prefetchNeighborsOfIdx(i);
-      syncSidebarFromState();
-      scheduleRender();
-      // Stop the browser from page-scrolling while the finger sweeps across the canvas —
-      // without this the sheet would jitter under the user's finger on iOS Safari.
-      e.preventDefault();
-    }, { passive: false });
+    canvas.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length !== 1) {
+          // 2+ fingers → pinch/pan gesture; bow out so d3.zoom takes over cleanly.
+          touching = false;
+          return;
+        }
+        touching = true;
+        const t = e.touches[0];
+        hoveredIdx = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+        if (hoveredIdx >= 0) prefetchNeighborsOfIdx(hoveredIdx);
+        syncSidebarFromState();
+        scheduleRender();
+      },
+      { passive: true },
+    );
+    canvas.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!touching || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        const i = pickAt(t.clientX, t.clientY, TOUCH_HOVER_TOLERANCE_PX);
+        const changed = i !== hoveredIdx;
+        hoveredIdx = i;
+        // Only fire a neighbor-prefetch when the hovered dot changes — a finger hovering
+        // in place shouldn't keep re-queuing the same set.
+        if (changed && i >= 0) prefetchNeighborsOfIdx(i);
+        syncSidebarFromState();
+        scheduleRender();
+        // Stop the browser from page-scrolling while the finger sweeps across the canvas —
+        // without this the sheet would jitter under the user's finger on iOS Safari.
+        e.preventDefault();
+      },
+      { passive: false },
+    );
     function endTouch() {
       if (!touching) return;
       touching = false;
@@ -1236,9 +1279,7 @@
       if (!row) return;
       row.classList.toggle("is-off", hidden);
       row.setAttribute("aria-pressed", hidden ? "false" : "true");
-      row.title = hidden
-        ? `Click to show "${categories[c]}"`
-        : `Click to hide "${categories[c]}"`;
+      row.title = hidden ? `Click to show "${categories[c]}"` : `Click to hide "${categories[c]}"`;
     }
     function toggleCategory(c) {
       const wasHidden = hiddenCategories.has(c);

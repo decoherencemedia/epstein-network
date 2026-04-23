@@ -15,8 +15,7 @@
         autocomplete="off"
         spellcheck="false"
         aria-label="Filter people by name"
-        disabled
-      />
+        disabled />
     </div>
   </div>
 
@@ -28,140 +27,141 @@
 <script src="/js/latinize.js"></script>
 <script src="/js/shared.js"></script>
 <script>
-(function () {
-  function displayName(row) {
-    if (row.name && String(row.name).trim()) return String(row.name).trim();
-    const n = SiteShared.personStubNumber(row.person_id);
-    if (n != null) return "Person " + n;
-    return String(row.person_id || "");
-  }
+  (function () {
+    function displayName(row) {
+      if (row.name && String(row.name).trim()) return String(row.name).trim();
+      const n = SiteShared.personStubNumber(row.person_id);
+      if (n != null) return "Person " + n;
+      return String(row.person_id || "");
+    }
 
-  function photoLabel(n) {
-    const x = Number(n);
-    if (x === 1) return "1 photo";
-    return x + " photos";
-  }
+    function photoLabel(n) {
+      const x = Number(n);
+      if (x === 1) return "1 photo";
+      return x + " photos";
+    }
 
-  const statusEl = document.getElementById("people-status");
-  const gridEl = document.getElementById("people-grid");
-  const countEl = document.getElementById("people-title-count");
-  const filterInputEl = document.getElementById("people-filter-input");
+    const statusEl = document.getElementById("people-status");
+    const gridEl = document.getElementById("people-grid");
+    const countEl = document.getElementById("people-title-count");
+    const filterInputEl = document.getElementById("people-filter-input");
 
-  let allRows = [];
+    let allRows = [];
 
-  function placeholderEl() {
-    const d = document.createElement("div");
-    d.className = "people-tile-placeholder";
-    d.setAttribute("aria-hidden", "true");
-    return d;
-  }
+    function placeholderEl() {
+      const d = document.createElement("div");
+      d.className = "people-tile-placeholder";
+      d.setAttribute("aria-hidden", "true");
+      return d;
+    }
 
-  function renderGrid(rows) {
-    gridEl.innerHTML = "";
-    rows.forEach(function (row) {
-      const name = displayName(row);
-      const article = document.createElement("article");
-      article.className = "people-tile";
+    function renderGrid(rows) {
+      gridEl.innerHTML = "";
+      rows.forEach(function (row) {
+        const name = displayName(row);
+        const article = document.createElement("article");
+        article.className = "people-tile";
 
-      const link = document.createElement("a");
-      link.className = "people-tile-link";
-      const pid = String(row.person_id || "").trim();
-      link.href = SiteShared.peopleUrlForPersonIds([pid]) || "#";
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.title = name + " — open in Search";
+        const link = document.createElement("a");
+        link.className = "people-tile-link";
+        const pid = String(row.person_id || "").trim();
+        link.href = SiteShared.peopleUrlForPersonIds([pid]) || "#";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.title = name + " — open in Search";
 
-      const media = document.createElement("div");
-      media.className = "people-tile-media";
+        const media = document.createElement("div");
+        media.className = "people-tile-media";
 
-      const url = SiteShared.cdnAssetUrl(row.image);
-      if (url) {
-        const img = document.createElement("img");
-        img.className = "people-tile-img";
-        img.src = url;
-        img.alt = name;
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.onerror = function () {
-          img.remove();
+        const url = SiteShared.cdnAssetUrl(row.image);
+        if (url) {
+          const img = document.createElement("img");
+          img.className = "people-tile-img";
+          img.src = url;
+          img.alt = name;
+          img.loading = "lazy";
+          img.decoding = "async";
+          img.onerror = function () {
+            img.remove();
+            media.appendChild(placeholderEl());
+          };
+          media.appendChild(img);
+        } else {
           media.appendChild(placeholderEl());
-        };
-        media.appendChild(img);
-      } else {
-        media.appendChild(placeholderEl());
-      }
+        }
 
-      const cap = document.createElement("div");
-      cap.className = "people-tile-caption";
-      const nameEl = document.createElement("span");
-      nameEl.className = "people-tile-name";
-      nameEl.textContent = name;
-      const countLine = document.createElement("span");
-      countLine.className = "people-tile-photos";
-      countLine.textContent = photoLabel(row.photo_count);
-      cap.appendChild(nameEl);
-      cap.appendChild(countLine);
+        const cap = document.createElement("div");
+        cap.className = "people-tile-caption";
+        const nameEl = document.createElement("span");
+        nameEl.className = "people-tile-name";
+        nameEl.textContent = name;
+        const countLine = document.createElement("span");
+        countLine.className = "people-tile-photos";
+        countLine.textContent = photoLabel(row.photo_count);
+        cap.appendChild(nameEl);
+        cap.appendChild(countLine);
 
-      link.appendChild(media);
-      link.appendChild(cap);
-      article.appendChild(link);
-      gridEl.appendChild(article);
-    });
-  }
-
-  function updateSubtitle(query, shownCount, total) {
-    const q = String(query || "").trim();
-    if (!total) {
-      countEl.textContent = "";
-      return;
-    }
-    if (!q) {
-      countEl.textContent = total + " people";
-      return;
-    }
-    if (shownCount === 0) {
-      countEl.textContent = "No matches";
-      return;
-    }
-    countEl.textContent = shownCount + " of " + total + " people";
-  }
-
-  function applyFilter() {
-    const q = SiteShared.normalizePersonSearchKey(filterInputEl ? filterInputEl.value : "");
-    if (!allRows.length) {
-      return;
-    }
-    let filtered = allRows;
-    if (q) {
-      filtered = allRows.filter(function (row) {
-        const name = SiteShared.normalizePersonSearchKey(displayName(row));
-        return name.indexOf(q) !== -1;
+        link.appendChild(media);
+        link.appendChild(cap);
+        article.appendChild(link);
+        gridEl.appendChild(article);
       });
     }
-    renderGrid(filtered);
-    updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length);
-  }
 
-  fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" })
-    .then(function (res) {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    })
-    .then(function (body) {
-      allRows = body && body.data ? body.data : [];
-      countEl.textContent = allRows.length ? allRows.length + " people" : "";
-      statusEl.textContent = "";
-      statusEl.hidden = true;
-      gridEl.hidden = false;
-      renderGrid(allRows);
-      if (filterInputEl) {
-        filterInputEl.disabled = false;
-        filterInputEl.addEventListener("input", applyFilter);
+    function updateSubtitle(query, shownCount, total) {
+      const q = String(query || "").trim();
+      if (!total) {
+        countEl.textContent = "";
+        return;
       }
-    })
-    .catch(function (err) {
-      statusEl.textContent = "Could not load people (" + (err && err.message ? err.message : "error") + ").";
-      gridEl.hidden = true;
-    });
-})();
+      if (!q) {
+        countEl.textContent = total + " people";
+        return;
+      }
+      if (shownCount === 0) {
+        countEl.textContent = "No matches";
+        return;
+      }
+      countEl.textContent = shownCount + " of " + total + " people";
+    }
+
+    function applyFilter() {
+      const q = SiteShared.normalizePersonSearchKey(filterInputEl ? filterInputEl.value : "");
+      if (!allRows.length) {
+        return;
+      }
+      let filtered = allRows;
+      if (q) {
+        filtered = allRows.filter(function (row) {
+          const name = SiteShared.normalizePersonSearchKey(displayName(row));
+          return name.indexOf(q) !== -1;
+        });
+      }
+      renderGrid(filtered);
+      updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length);
+    }
+
+    fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function (body) {
+        allRows = body && body.data ? body.data : [];
+        countEl.textContent = allRows.length ? allRows.length + " people" : "";
+        statusEl.textContent = "";
+        statusEl.hidden = true;
+        gridEl.hidden = false;
+        renderGrid(allRows);
+        if (filterInputEl) {
+          filterInputEl.disabled = false;
+          filterInputEl.addEventListener("input", applyFilter);
+        }
+      })
+      .catch(function (err) {
+        statusEl.textContent =
+          "Could not load people (" + (err && err.message ? err.message : "error") + ").";
+        gridEl.hidden = true;
+      });
+  })();
 </script>

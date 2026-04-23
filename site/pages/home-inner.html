@@ -1,141 +1,175 @@
 <main class="site-home-graph" id="main">
-<div class="svg-container">
-  <canvas id="graph-canvas" class="graph-canvas" aria-hidden="true"></canvas>
-  <canvas id="hover-node-canvas" class="graph-canvas hover-node-canvas" aria-hidden="true"></canvas>
-  <svg id="svg">
-    <g class="full-network-graph"></g>
-  </svg>
-  <div id="name-search" aria-label="Search people">
-    <input id="name-search-input" type="search" placeholder="Search names" autocomplete="off" spellcheck="false" />
-    <div id="name-search-results" role="listbox" aria-label="Search results" style="display:none"></div>
-  </div>
-  <div id="thumb-preview" aria-hidden="true">
-    <div class="thumb-header">
-      <div class="thumb-title" id="thumb-title"></div>
-      <button id="thumb-collapse-btn" type="button" aria-label="Hide info panel" title="Hide info panel">
+  <div class="svg-container">
+    <canvas id="graph-canvas" class="graph-canvas" aria-hidden="true"></canvas>
+    <canvas id="hover-node-canvas" class="graph-canvas hover-node-canvas" aria-hidden="true"></canvas>
+    <svg id="svg">
+      <g class="full-network-graph"></g>
+    </svg>
+    <div id="name-search" aria-label="Search people">
+      <input
+        id="name-search-input"
+        type="search"
+        placeholder="Search names"
+        autocomplete="off"
+        spellcheck="false" />
+      <div id="name-search-results" role="listbox" aria-label="Search results" style="display: none"></div>
+    </div>
+    <div id="thumb-preview" aria-hidden="true">
+      <div class="thumb-header">
+        <div class="thumb-title" id="thumb-title"></div>
+        <button id="thumb-collapse-btn" type="button" aria-label="Hide info panel" title="Hide info panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M6 9l6 6 6-6"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="thumb-meta" id="thumb-meta" style="display: none">
+        <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
+        <span class="thumb-meta-text" id="thumb-category-text"></span>
+      </div>
+      <div class="thumb-total" id="thumb-total" style="display: none"></div>
+      <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display: none">
+        <span class="thumb-img-wrapper">
+          <img id="thumb-img" alt="" />
+          <div id="thumb-bbox" class="thumb-bbox"></div>
+          <div id="thumb-bbox-b" class="thumb-bbox thumb-bbox-b"></div>
+          <span class="thumb-img-external-icon" aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </span>
+        </span>
+      </a>
+      <div id="thumb-empty" style="display: none">
+        <a href="/about#content" target="_blank" rel="noopener noreferrer">No images can be displayed</a>
+      </div>
+      <div id="thumb-node-links" style="display: none"></div>
+      <div id="thumb-top-neighbors" style="display: none"></div>
+      <div id="thumb-default" style="display: none">
+        <div class="thumb-default-body">
+          <div>
+            This is a visualization of the people whose faces are in the
+            <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are
+            people, and the lines (edges) between them are when two people are in the same photograph
+            together.
+          </div>
+          <div>
+            A node's size is related to the number of photos they appear in, and nodes are colored based on
+            the person's category.
+          </div>
+          <ul>
+            <li>
+              Hovering over a node or edge shows you information about that person or the connection between
+              the two people
+            </li>
+            <li>
+              Clicking on a node or edge opens a sidebar with more information about that person or people,
+              including a photograph
+            </li>
+            <li>
+              Double-clicking on a node or edge opens up a new tab showing all photos containing that person
+              or people
+            </li>
+          </ul>
+          <div>
+            Data was taken from
+            <a href="https://ddosecrets.org/article/epstein-files" target="_blank" rel="noopener noreferrer"
+              >DDoSecrets</a
+            >, facial recognition used
+            <a href="https://aws.amazon.com/rekognition/" target="_blank" rel="noopener noreferrer"
+              >AWS Rekognition</a
+            >
+            and manual verification, and the network was laid out using
+            <a href="https://gephi.org/" target="_blank" rel="noopener noreferrer">Gephi</a>
+            and visualized using
+            <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
+          </div>
+          <div>
+            The scripts for the pipeline and this visualization are available on
+            <a href="https://github.com/decoherencemedia/epstein-network">GitHub</a>.
+          </div>
+        </div>
+        <div class="thumb-legend" id="thumb-legend" style="display: none"></div>
+      </div>
+    </div>
+    <div id="thumb-collapsed-bar" hidden aria-hidden="true">
+      <div id="thumb-collapsed-title">Epstein Photo Network</div>
+      <button id="thumb-open-btn" type="button" aria-label="Show info panel" title="Show info panel">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M6 9l6 6 6-6"></path>
+          <path d="M6 15l6-6 6 6"></path>
         </svg>
       </button>
     </div>
-    <div class="thumb-meta" id="thumb-meta" style="display:none">
-      <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
-      <span class="thumb-meta-text" id="thumb-category-text"></span>
-    </div>
-    <div class="thumb-total" id="thumb-total" style="display:none"></div>
-    <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
-      <span class="thumb-img-wrapper">
-        <img id="thumb-img" alt="" />
-        <div id="thumb-bbox" class="thumb-bbox"></div>
-        <div id="thumb-bbox-b" class="thumb-bbox thumb-bbox-b"></div>
-        <span class="thumb-img-external-icon" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-            <polyline points="15 3 21 3 21 9"></polyline>
-            <line x1="10" y1="14" x2="21" y2="3"></line>
-          </svg>
-        </span>
-      </span>
-    </a>
-    <div id="thumb-empty" style="display:none"><a href="/about#content" target="_blank" rel="noopener noreferrer">No images can be displayed</a></div>
-    <div id="thumb-node-links" style="display:none"></div>
-    <div id="thumb-top-neighbors" style="display:none"></div>
-    <div id="thumb-default" style="display:none">
-      <div class="thumb-default-body">
-        <div>This is a visualization of the people whose faces are in the <a href="https://www.justice.gov/epstein">Epstein Library</a> dataset. The circles (nodes) are people, and the lines (edges) between them are when two people are in the same photograph together.</div>
-        <div>A node's size is related to the number of photos they appear in, and nodes are colored based on the person's category.</div>
-        <ul>
-            <li>Hovering over a node or edge shows you information about that person or the connection between the two people</li>
-            <li>Clicking on a node or edge opens a sidebar with more information about that person or people, including a photograph</li>
-            <li>Double-clicking on a node or edge opens up a new tab showing all photos containing that person or people</li>
-        </ul>
-        <div>
-          Data was taken from
-          <a href="https://ddosecrets.org/article/epstein-files" target="_blank" rel="noopener noreferrer">DDoSecrets</a>,
-          facial recognition used
-          <a href="https://aws.amazon.com/rekognition/" target="_blank" rel="noopener noreferrer">AWS Rekognition</a>
-          and manual verification, and the network was laid out using
-          <a href="https://gephi.org/" target="_blank" rel="noopener noreferrer">Gephi</a>
-          and visualized using
-          <a href="https://d3js.org/" target="_blank" rel="noopener noreferrer">D3.js</a>.
-        </div>
-        <div>The scripts for the pipeline and this visualization are available on <a href="https://github.com/decoherencemedia/epstein-network">GitHub</a>.</div>
-      </div>
-      <div class="thumb-legend" id="thumb-legend" style="display:none"></div>
-    </div>
   </div>
-  <div id="thumb-collapsed-bar" hidden aria-hidden="true">
-    <div id="thumb-collapsed-title">Epstein Photo Network</div>
-    <button id="thumb-open-btn" type="button" aria-label="Show info panel" title="Show info panel">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M6 15l6-6 6 6"></path>
-      </svg>
-    </button>
-  </div>
-</div>
 </main>
 
-  <script src="/js/latinize.js"></script>
-  <script src="/js/shared.js"></script>
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script>
-
-    const linkedByIndex = {},
-      options = {
-        linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
-        linkStroke: "#999",
-        nodeStrokeOpacity: 1,
-        linkStrokeOpacity: 1,
-        linkStrokeLinecap: "butt",
-        nodeFill: "#000",
-        // Sigma-style: no node stroke at rest.
-        nodeStrokeWidth: 0,
-        nodeStroke: "none",
-      }
-
-    const nodeId = (d) => d.key;
-    const linkSource = (d) => d.source;
-    const linkTarget = (d) => d.target;
-
-    const IS_LOCAL_DEV =
-      typeof window !== "undefined" &&
-      (
-        window.location.protocol === "file:" ||
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "0.0.0.0"
-      );
-    // Central place for user-tweakable visualization constants.
-    const TWEAK = {
-      nodeScaling: 2.75,
-      initialZoomK: 0.73,
-      nodeZoomScaleExp: 0.2,
-      edgeHighlightWidthMult: 2,
-      mutedNodeFill: "#cfcfcf",
-      mediaSmallViewport: "(pointer: coarse), (max-width: 768px)",
-      viewbox: { x: -200, y: -200, width: 400, height: 400 },
-      mobileViewbox: { x: -100, y: -100, width: 200, height: 200 },
-      mobileBreakpoint: 1280,
-      labelSizeThreshold: 10,
-      labelPaddingX: 3,
-      labelPaddingY: 2,
-      labelGapPx: 5,
-      labelLineHeight: 6,
-      labelZoomResponseExp: 0.7,
+<script src="/js/latinize.js"></script>
+<script src="/js/shared.js"></script>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+  const linkedByIndex = {},
+    options = {
+      linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
+      linkStroke: "#999",
+      nodeStrokeOpacity: 1,
+      linkStrokeOpacity: 1,
+      linkStrokeLinecap: "butt",
+      nodeFill: "#000",
+      // Sigma-style: no node stroke at rest.
+      nodeStrokeWidth: 0,
+      nodeStroke: "none",
     };
 
-    const EDGE_BBOX_COLOR_ALPHABETIC_FIRST = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[0], 0.95);
-    const EDGE_BBOX_COLOR_ALPHABETIC_SECOND = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[1], 0.95);
+  const nodeId = (d) => d.key;
+  const linkSource = (d) => d.source;
+  const linkTarget = (d) => d.target;
 
-    Promise.all([
-      d3.json("viz_data/dataset.json"),
-      d3.json("viz_data/image_data.json"),
-      d3.json("viz_data/atlas_manifest.json"),
-    ]).then(function ([data, imageData, atlasManifest]) {
+  const IS_LOCAL_DEV =
+    typeof window !== "undefined" &&
+    (window.location.protocol === "file:" ||
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "0.0.0.0");
+  // Central place for user-tweakable visualization constants.
+  const TWEAK = {
+    nodeScaling: 2.75,
+    initialZoomK: 0.73,
+    nodeZoomScaleExp: 0.2,
+    edgeHighlightWidthMult: 2,
+    mutedNodeFill: "#cfcfcf",
+    mediaSmallViewport: "(pointer: coarse), (max-width: 768px)",
+    viewbox: { x: -200, y: -200, width: 400, height: 400 },
+    mobileViewbox: { x: -100, y: -100, width: 200, height: 200 },
+    mobileBreakpoint: 1280,
+    labelSizeThreshold: 10,
+    labelPaddingX: 3,
+    labelPaddingY: 2,
+    labelGapPx: 5,
+    labelLineHeight: 6,
+    labelZoomResponseExp: 0.7,
+  };
 
+  const EDGE_BBOX_COLOR_ALPHABETIC_FIRST = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[0], 0.95);
+  const EDGE_BBOX_COLOR_ALPHABETIC_SECOND = SiteShared.rgbaWithAlpha(SiteShared.personColorPalette[1], 0.95);
+
+  Promise.all([
+    d3.json("viz_data/dataset.json"),
+    d3.json("viz_data/image_data.json"),
+    d3.json("viz_data/atlas_manifest.json"),
+  ])
+    .then(function ([data, imageData, atlasManifest]) {
       function intern(value) {
-        return value !== null && typeof value === "object"
-          ? value.valueOf()
-          : value;
+        return value !== null && typeof value === "object" ? value.valueOf() : value;
       }
 
       // dataset.json: nodes have key, label, size, cluster; edges are [[srcKey, tgtKey], ...]
@@ -151,24 +185,21 @@
       const nodeScaling = TWEAK.nodeScaling;
 
       function isConnected(a, b) {
-        return (
-          linkedByIndex[`${a.id},${b.id}`] ||
-          linkedByIndex[`${b.id},${a.id}`] ||
-          a.id === b.id
-        );
+        return linkedByIndex[`${a.id},${b.id}`] || linkedByIndex[`${b.id},${a.id}`] || a.id === b.id;
       }
 
-      const NODE_ATLAS_IMAGE_HREF = IS_LOCAL_DEV
-        ? "images/atlas.webp"
-        : SiteShared.cdnAtlasWebpUrl();
+      const NODE_ATLAS_IMAGE_HREF = IS_LOCAL_DEV ? "images/atlas.webp" : SiteShared.cdnAtlasWebpUrl();
 
       function sanitizeLabelForAtlasKey(label) {
         // Match scripts/12__export_node_faces.py and scripts/15__build_atlas.py.
-        const s = String(label || "").split("").filter((c) => {
-          const isAlnum = /^[0-9A-Za-z]$/.test(c);
-          const isAllowed = "._- ".includes(c);
-          return isAlnum || isAllowed;
-        }).join("");
+        const s = String(label || "")
+          .split("")
+          .filter((c) => {
+            const isAlnum = /^[0-9A-Za-z]$/.test(c);
+            const isAllowed = "._- ".includes(c);
+            return isAlnum || isAllowed;
+          })
+          .join("");
         const trimmed = s.trim();
         return trimmed.replace(/ /g, "_").replace(/\//g, "_") || "node";
       }
@@ -271,10 +302,22 @@
         // Avoid aria-hidden-on-focused-descendant warnings by moving focus before hiding.
         if (typeof document !== "undefined") {
           const active = document.activeElement;
-          if (!show && active && previewEl && previewEl.contains(active) && typeof active.blur === "function") {
+          if (
+            !show &&
+            active &&
+            previewEl &&
+            previewEl.contains(active) &&
+            typeof active.blur === "function"
+          ) {
             active.blur();
           }
-          if (show && active && previewCollapsedBarEl && previewCollapsedBarEl.contains(active) && typeof active.blur === "function") {
+          if (
+            show &&
+            active &&
+            previewCollapsedBarEl &&
+            previewCollapsedBarEl.contains(active) &&
+            typeof active.blur === "function"
+          ) {
             active.blur();
           }
         }
@@ -351,7 +394,12 @@
             if (!Array.isArray(bb) || bb.length < 4) continue;
             const cx = bb[0] + bb[2] / 2;
             const cy = bb[1] + bb[3] / 2;
-            if (![cx, cy].every(function (x) { return Number.isFinite(x); })) continue;
+            if (
+              ![cx, cy].every(function (x) {
+                return Number.isFinite(x);
+              })
+            )
+              continue;
             sx += cx;
             sy += cy;
             n++;
@@ -381,7 +429,11 @@
         }
         const cx = b[0] + b[2] / 2;
         const cy = b[1] + b[3] / 2;
-        if (![cx, cy].every(function (x) { return Number.isFinite(x); })) {
+        if (
+          ![cx, cy].every(function (x) {
+            return Number.isFinite(x);
+          })
+        ) {
           img.style.removeProperty("object-position");
           return;
         }
@@ -604,7 +656,12 @@
         previewLegendEl.style.display = "block";
       }
 
-      function setTopNeighbors(neighbors, onSelectNeighbor, titleText = "Top connections", onNavigateToNeighbor) {
+      function setTopNeighbors(
+        neighbors,
+        onSelectNeighbor,
+        titleText = "Top connections",
+        onNavigateToNeighbor,
+      ) {
         if (!neighbors || !neighbors.length) {
           previewNeighborsEl.style.display = "none";
           previewNeighborsEl.innerHTML = "";
@@ -659,19 +716,19 @@
         bboxes,
         onNavigateToNeighbor,
         peopleIdsForPreviewLink,
-        previewOptions
+        previewOptions,
       ) {
         const focalEdgeAverage =
-          previewOptions &&
-          typeof previewOptions === "object" &&
-          previewOptions.focalEdgeAverage === true;
+          previewOptions && typeof previewOptions === "object" && previewOptions.focalEdgeAverage === true;
         const src = isFacesBucketFilename(filename)
           ? SiteShared.cdnFacesUrl(filename)
           : SiteShared.cdnThumbnailWebpUrl(filename);
         const peopleUrl = peopleUrlForPersonIdsWithPhoto(peopleIdsForPreviewLink, filename);
         const origUrl =
           peopleUrl ||
-          (isFacesBucketFilename(filename) ? SiteShared.cdnFacesUrl(filename) : SiteShared.cdnImagesUrl(filename));
+          (isFacesBucketFilename(filename)
+            ? SiteShared.cdnFacesUrl(filename)
+            : SiteShared.cdnImagesUrl(filename));
         previewDefaultEl.style.display = "none";
         previewTitleEl.textContent = title || "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
@@ -690,7 +747,7 @@
           previewTotalEl.style.display = "none";
           previewTotalEl.textContent = "";
         }
-        currentBboxes = (src && Array.isArray(bboxes) && bboxes.length) ? bboxes : [];
+        currentBboxes = src && Array.isArray(bboxes) && bboxes.length ? bboxes : [];
         if (previewBboxEl) previewBboxEl.style.display = "none";
         if (previewBboxBEl) previewBboxBEl.style.display = "none";
         if (src) {
@@ -703,11 +760,7 @@
           }
           previewImgEl.src = src;
           previewImgEl.alt = title || "";
-          setPreviewImgObjectPositionFromBboxes(
-            previewImgEl,
-            currentBboxes,
-            focalEdgeAverage
-          );
+          setPreviewImgObjectPositionFromBboxes(previewImgEl, currentBboxes, focalEdgeAverage);
           if (currentBboxes.length && previewImgEl.complete && previewImgEl.naturalWidth) {
             updateBboxOverlay();
           }
@@ -750,9 +803,7 @@
             linksOut.forEach(function (entry) {
               const a = document.createElement("a");
               const kindClass =
-                entry.text === "View in Jmail.World"
-                  ? "thumb-node-link--jmail"
-                  : "thumb-node-link--info";
+                entry.text === "View in Jmail.World" ? "thumb-node-link--jmail" : "thumb-node-link--info";
               a.className = "neighbor-row thumb-node-link " + kindClass;
               a.href = entry.href;
               a.target = "_blank";
@@ -824,7 +875,9 @@
         if (window.SiteShared && typeof window.SiteShared.peopleUrlForPersonIds === "function") {
           return window.SiteShared.peopleUrlForPersonIds(personIds);
         }
-        const ids = Array.isArray(personIds) ? personIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
+        const ids = Array.isArray(personIds)
+          ? personIds.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
         if (!ids.length) return null;
         const sorted = ids.slice().sort();
         return `/search/people/${sorted.join("-")}/`;
@@ -880,7 +933,10 @@
         const params = new URLSearchParams(window.location.search);
         const raw = String(params.get("person_ids") || "").trim();
         if (!raw) return null;
-        const ids = raw.split(",").map((x) => String(x || "").trim()).filter(Boolean);
+        const ids = raw
+          .split(",")
+          .map((x) => String(x || "").trim())
+          .filter(Boolean);
         return ids.length === 2 ? ids : null;
       }
 
@@ -965,7 +1021,7 @@
         // row by data-category so this stays correct even if the legend ever gets
         // re-rendered out from under us.
         const row = previewLegendEl.querySelector(
-          `.legend-color-row[data-category="${cat.replace(/"/g, '\\"')}"]`
+          `.legend-color-row[data-category="${cat.replace(/"/g, '\\"')}"]`,
         );
         if (row) {
           row.classList.toggle("is-off", nowHidden);
@@ -980,7 +1036,8 @@
           if (state.lock.active) {
             const item = state.lock.item;
             if (state.lock.kind === "node" && isNodeHidden(item)) needFullReset = true;
-            if (state.lock.kind === "edge" && (item == null || isLinkHiddenByCategory(item))) needFullReset = true;
+            if (state.lock.kind === "edge" && (item == null || isLinkHiddenByCategory(item)))
+              needFullReset = true;
             if (!needFullReset && isNodeHidden(state.lock.highlightNode)) {
               state.lock.highlightNode = null;
             }
@@ -1017,7 +1074,11 @@
       }
 
       function isSmallViewport() {
-        return typeof window !== "undefined" && window.matchMedia && window.matchMedia(TWEAK.mediaSmallViewport).matches;
+        return (
+          typeof window !== "undefined" &&
+          window.matchMedia &&
+          window.matchMedia(TWEAK.mediaSmallViewport).matches
+        );
       }
 
       function clearHoverAndLabel() {
@@ -1046,10 +1107,7 @@
         if (!l) return;
         const s = getNodeFromLinkEnd(l.source);
         const t = getNodeFromLinkEnd(l.target);
-        const isEndpoint = (o) => !!o && (
-          (s && o.id === s.id) ||
-          (t && o.id === t.id)
-        );
+        const isEndpoint = (o) => !!o && ((s && o.id === s.id) || (t && o.id === t.id));
         state.label.allowFn = isEndpoint;
         updateNodeLabels();
         drawGraphCanvas();
@@ -1104,10 +1162,7 @@
         typeof options.linkStrokeWidth !== "function"
           ? null
           : d3.map(networkData.links, options.linkStrokeWidth);
-      const R =
-        typeof nodeRadius !== "function"
-          ? null
-          : d3.map(networkData.nodes, nodeRadius);
+      const R = typeof nodeRadius !== "function" ? null : d3.map(networkData.nodes, nodeRadius);
 
       // Replace the input nodes and links with mutable objects; use fixed x,y from dataset.
       const nodes = d3.map(networkData.nodes, (_, i) => {
@@ -1154,7 +1209,8 @@
           const s = getNodeFromLinkEnd(l.source);
           const t = getNodeFromLinkEnd(l.target);
           if (!s || !t) continue;
-          const incident = s === focusNode || t === focusNode || s.id === focusNode.id || t.id === focusNode.id;
+          const incident =
+            s === focusNode || t === focusNode || s.id === focusNode.id || t.id === focusNode.id;
           if (!incident) continue;
           const other = s === focusNode || s.id === focusNode.id ? t : s;
           const weight = typeof l.weight === "number" ? l.weight : Number(l.weight);
@@ -1183,7 +1239,9 @@
         const unsortedKey = `${a}-${b}`;
         const reverseKey = `${b}-${a}`;
         const v =
-          (imageData && imageData.edges && (imageData.edges[sortedKey] || imageData.edges[unsortedKey] || imageData.edges[reverseKey])) ||
+          (imageData &&
+            imageData.edges &&
+            (imageData.edges[sortedKey] || imageData.edges[unsortedKey] || imageData.edges[reverseKey])) ||
           null;
         if (!Array.isArray(v)) return null;
         return { filename: v[0], bboxA: v[1], bboxB: v[2] };
@@ -1205,7 +1263,7 @@
             ? imageData.node_metadata[pid]
             : null;
         return {
-          filename: Array.isArray(nodeEntry) ? nodeEntry[0] : (nodeEntry || null),
+          filename: Array.isArray(nodeEntry) ? nodeEntry[0] : nodeEntry || null,
           bbox: Array.isArray(nodeEntry) ? nodeEntry[1] : null,
           nodeMeta,
         };
@@ -1282,7 +1340,7 @@
             if (!t) return;
             showNodeInSidebar(t);
           },
-          [personIdForNode(targetNode)]
+          [personIdForNode(targetNode)],
         );
         syncSidebarPersonToUrl(personIdForNode(targetNode));
         applyLockedNodeHighlight(targetNode);
@@ -1294,12 +1352,22 @@
         if (typeof zoom === "undefined" || !zoom) return;
         if (!svgEl) return;
         const rect = svgEl.getBoundingClientRect();
-        if (!rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
+        if (
+          !rect ||
+          !Number.isFinite(rect.width) ||
+          !Number.isFinite(rect.height) ||
+          rect.width <= 0 ||
+          rect.height <= 0
+        )
+          return;
         const vb = getSvgViewBox();
         if (!vb || !vb.width || !vb.height) return;
 
         const sidebarPx = getSidebarWidthPx();
-        const previewRect = isSmallViewport() && previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
+        const previewRect =
+          isSmallViewport() && previewEl && previewEl.classList.contains("visible")
+            ? previewEl.getBoundingClientRect()
+            : null;
         const bottomBarPx = previewRect && Number.isFinite(previewRect.height) ? previewRect.height : 0;
 
         // Desired center of the visible area in SVG pixel coordinates (excluding sidebar / bottom sheet).
@@ -1322,9 +1390,7 @@
           .map((n) => ({
             node: n,
             label: String(n.label),
-            tokens: SiteShared.normalizePersonSearchKey(String(n.label))
-              .split(/\s+/)
-              .filter(Boolean),
+            tokens: SiteShared.normalizePersonSearchKey(String(n.label)).split(/\s+/).filter(Boolean),
           }));
       }
 
@@ -1443,7 +1509,7 @@
             searchState.pointerOptionIndex = idx >= 0 ? idx : null;
             applyNameSearchHighlightClasses(searchState);
           },
-          true
+          true,
         );
         nameSearchResultsEl.addEventListener("pointerleave", function () {
           searchState.pointerOptionIndex = null;
@@ -1493,8 +1559,7 @@
           if (e.key === "Enter") {
             if (!searchState.current.length || !hasTypedQuery) return;
             e.preventDefault();
-            const chosen =
-              searchState.current[searchState.activeIndex >= 0 ? searchState.activeIndex : 0];
+            const chosen = searchState.current[searchState.activeIndex >= 0 ? searchState.activeIndex : 0];
             if (!chosen) return;
             showNodeInSidebar(chosen.node);
             centerNodeInViewport(chosen.node);
@@ -1530,12 +1595,23 @@
         const edgeBboxes = edgePreview.edgeBboxes;
         const total = d.weight;
         // Alphabetically first label = palette[0], second = palette[1] (same as /search chip order convention)
-        const bboxColors = sLabel <= tLabel
-          ? { [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND }
-          : { [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND };
+        const bboxColors =
+          sLabel <= tLabel
+            ? { [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND }
+            : { [tLabel]: EDGE_BBOX_COLOR_ALPHABETIC_FIRST, [sLabel]: EDGE_BBOX_COLOR_ALPHABETIC_SECOND };
         const endpoints = [
-          { id: (s && s.id) ?? d.source, label: sLabel, weight: s && typeof s.total === "number" ? s.total : "—", color: bboxColors[sLabel] },
-          { id: (t && t.id) ?? d.target, label: tLabel, weight: t && typeof t.total === "number" ? t.total : "—", color: bboxColors[tLabel] },
+          {
+            id: (s && s.id) ?? d.source,
+            label: sLabel,
+            weight: s && typeof s.total === "number" ? s.total : "—",
+            color: bboxColors[sLabel],
+          },
+          {
+            id: (t && t.id) ?? d.target,
+            label: tLabel,
+            weight: t && typeof t.total === "number" ? t.total : "—",
+            color: bboxColors[tLabel],
+          },
         ];
         showPreview(
           `${[sLabel, tLabel].sort().join(" & ")}`,
@@ -1559,7 +1635,7 @@
             showNodeInSidebar(target);
           },
           personIdsForEdge(d),
-          { focalEdgeAverage: true }
+          { focalEdgeAverage: true },
         );
         syncSidebarEdgeToUrl(personIdsForEdge(d));
       }
@@ -1584,7 +1660,10 @@
       const labelBgLayer = labelLayer.append("g").attr("class", "label-bg-layer");
       const labelTextLayer = labelLayer.append("g").attr("class", "label-text-layer");
       // Tooltip overlay drawn on top of all labels so its bg is never covered by other node labels.
-      const tooltipOverlay = labelLayer.append("g").attr("class", "tooltip-overlay").attr("visibility", "hidden");
+      const tooltipOverlay = labelLayer
+        .append("g")
+        .attr("class", "tooltip-overlay")
+        .attr("visibility", "hidden");
       const tooltipOverlayBg = tooltipOverlay.append("rect").attr("class", "node-label-bg");
       const tooltipOverlayText = tooltipOverlay.append("g");
       tooltipOverlayText.append("text").attr("class", "node-label-line1").attr("x", 0).attr("y", 0);
@@ -1718,27 +1797,43 @@
           if (state.lock.highlightNode) {
             const h = state.lock.highlightNode;
             const isInFocusSet = isConnected(h, d);
-            return { fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isInFocusSet ? 1 : 0 };
+            return {
+              fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill,
+              opacity: 1,
+              faceOpacity: isInFocusSet ? 1 : 0,
+            };
           }
           if (state.lock.kind === "edge" && state.lock.item) {
             const edge = state.lock.item;
             const s = getNodeFromLinkEnd(edge.source);
             const t = getNodeFromLinkEnd(edge.target);
             const isEndpoint = d === s || d === t;
-            return { fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isEndpoint ? 1 : 0 };
+            return {
+              fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill,
+              opacity: 1,
+              faceOpacity: isEndpoint ? 1 : 0,
+            };
           }
         }
         if (state.hover.kind === "node" && state.hover.item) {
           const h = state.hover.item;
           const isInFocusSet = isConnected(h, d);
-          return { fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isInFocusSet ? 1 : 0 };
+          return {
+            fill: isInFocusSet ? nodeColor(d) : TWEAK.mutedNodeFill,
+            opacity: 1,
+            faceOpacity: isInFocusSet ? 1 : 0,
+          };
         }
         if (state.hover.kind === "edge" && state.hover.item) {
           const edge = state.hover.item;
           const s = getNodeFromLinkEnd(edge.source);
           const t = getNodeFromLinkEnd(edge.target);
           const isEndpoint = d === s || d === t;
-          return { fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill, opacity: 1, faceOpacity: isEndpoint ? 1 : 0 };
+          return {
+            fill: isEndpoint ? nodeColor(d) : TWEAK.mutedNodeFill,
+            opacity: 1,
+            faceOpacity: isEndpoint ? 1 : 0,
+          };
         }
         return { fill: nodeColor(d), opacity: 1, faceOpacity: 1 };
       }
@@ -1920,17 +2015,7 @@
         ctx.arc(c.x, c.y, rPx, 0, 2 * Math.PI);
         ctx.clip();
         try {
-          ctx.drawImage(
-            atlasCanvasImg,
-            sx,
-            sy,
-            sw,
-            sh,
-            c.x - rPx,
-            c.y - rPx,
-            2 * rPx,
-            2 * rPx
-          );
+          ctx.drawImage(atlasCanvasImg, sx, sy, sw, sh, c.x - rPx, c.y - rPx, 2 * rPx, 2 * rPx);
         } catch (_) {
           /* invalid drawImage in some browsers if CORS/taint */
         }
@@ -1967,8 +2052,7 @@
         const uy1 = currentTransform.applyY(0);
         const p0 = svgUserToCanvasPx(ux0, uy0);
         const p1 = svgUserToCanvasPx(ux1, uy1);
-        const pxPerUser =
-          p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1 : 1;
+        const pxPerUser = p0 && p1 ? Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1 : 1;
 
         const zoomScale = zoomScaleFactor(currentTransform.k);
 
@@ -2056,14 +2140,7 @@
             const rPx = (d.radius / zoomScale) * pxPerUser;
             const iw = atlasCanvasImg.naturalWidth || 0;
             const ih = atlasCanvasImg.naturalHeight || 0;
-            if (
-              iw <= 0 ||
-              ih <= 0 ||
-              sx < 0 ||
-              sy < 0 ||
-              sx + sw > iw + 0.5 ||
-              sy + sh > ih + 0.5
-            ) {
+            if (iw <= 0 || ih <= 0 || sx < 0 || sy < 0 || sx + sw > iw + 0.5 || sy + sh > ih + 0.5) {
               continue;
             }
             ctx.save();
@@ -2074,17 +2151,7 @@
             try {
               // Map the atlas cell directly into the node circle bounds.
               // The old pattern-era full-atlas transform over-shifted canvas faces.
-              ctx.drawImage(
-                atlasCanvasImg,
-                sx,
-                sy,
-                sw,
-                sh,
-                c.x - rPx,
-                c.y - rPx,
-                2 * rPx,
-                2 * rPx
-              );
+              ctx.drawImage(atlasCanvasImg, sx, sy, sw, sh, c.x - rPx, c.y - rPx, 2 * rPx, 2 * rPx);
             } catch (_) {
               /* invalid drawImage in some browsers if CORS/taint */
             }
@@ -2100,7 +2167,12 @@
       // (< 1) makes reveal more gradual across wheel increments.
 
       function styleTooltipOverlayBg(sel) {
-        return sel.attr("rx", 4).attr("ry", 4).style("fill", "rgba(255,255,255,1)").attr("stroke", "rgba(0,0,0,0.35)").attr("stroke-width", "1");
+        return sel
+          .attr("rx", 4)
+          .attr("ry", 4)
+          .style("fill", "rgba(255,255,255,1)")
+          .attr("stroke", "rgba(0,0,0,0.35)")
+          .attr("stroke-width", "1");
       }
 
       function tooltipRectFromLines(line1Node, line2Node, paddingX, paddingY, line2Y) {
@@ -2167,7 +2239,7 @@
               line2.node(),
               TWEAK.labelPaddingX,
               TWEAK.labelPaddingY,
-              TWEAK.labelLineHeight
+              TWEAK.labelLineHeight,
             );
             line2.text("").attr("display", "none").attr("y", TWEAK.labelLineHeight);
             const collapsedRect = tooltipRectFromLines(
@@ -2175,7 +2247,7 @@
               line2.node(),
               TWEAK.labelPaddingX,
               TWEAK.labelPaddingY,
-              TWEAK.labelLineHeight
+              TWEAK.labelLineHeight,
             );
             d._labelLayout = { expandedRect, collapsedRect };
           }
@@ -2212,13 +2284,18 @@
           const x = sx + d.radius * nodeScreenScale + TWEAK.labelGapPx;
           const y = currentTransform.applyY(d.y);
           tooltipOverlayText.select("text.node-label-line1").text(d.label || "");
-          tooltipOverlayText.select("text.node-label-line2").text(d.cluster || "—").attr("display", null).attr("y", TWEAK.labelLineHeight).style("fill", nodeColor(d));
+          tooltipOverlayText
+            .select("text.node-label-line2")
+            .text(d.cluster || "—")
+            .attr("display", null)
+            .attr("y", TWEAK.labelLineHeight)
+            .style("fill", nodeColor(d));
           const rect = tooltipRectFromLines(
             tooltipOverlayText.select("text.node-label-line1").node(),
             tooltipOverlayText.select("text.node-label-line2").node(),
             TWEAK.labelPaddingX,
             TWEAK.labelPaddingY,
-            TWEAK.labelLineHeight
+            TWEAK.labelLineHeight,
           );
           const ty = y - rect.cy1;
           tooltipOverlayText.attr("transform", `translate(${x},${ty})`);
@@ -2239,10 +2316,12 @@
             const sy = currentTransform.applyY(my);
             const x = sx + TWEAK.labelGapPx;
             const y = sy;
-            tooltipOverlayText.select("text.node-label-line1")
+            tooltipOverlayText
+              .select("text.node-label-line1")
               .text(`${sLabel} & ${tLabel}`)
               .style("fill", "#111");
-            tooltipOverlayText.select("text.node-label-line2")
+            tooltipOverlayText
+              .select("text.node-label-line2")
               .text(`Shared photos: ${l.weight ?? "—"}`)
               .attr("display", null)
               .attr("y", TWEAK.labelLineHeight)
@@ -2253,7 +2332,7 @@
               tooltipOverlayText.select("text.node-label-line2").node(),
               TWEAK.labelPaddingX,
               TWEAK.labelPaddingY,
-              TWEAK.labelLineHeight
+              TWEAK.labelLineHeight,
             );
             tooltipOverlayBg
               .attr("x", rect.bgX + x)
@@ -2268,7 +2347,6 @@
         } else {
           tooltipOverlay.attr("visibility", "hidden");
         }
-
       }
 
       function getSidebarWidthPx() {
@@ -2284,7 +2362,10 @@
         if (!svgEl) return null;
         const vb = svgEl.getAttribute("viewBox");
         if (!vb) return null;
-        const parts = vb.trim().split(/\s+/).map((x) => Number(x));
+        const parts = vb
+          .trim()
+          .split(/\s+/)
+          .map((x) => Number(x));
         if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return null;
         return { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
       }
@@ -2318,7 +2399,8 @@
         if (!rect || !Number.isFinite(rect.height) || rect.height <= 0) return 0;
         const vbHeight = getSvgViewBoxHeight();
         if (!vbHeight || !Number.isFinite(vbHeight) || vbHeight <= 0) return 0;
-        const previewRect = previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
+        const previewRect =
+          previewEl && previewEl.classList.contains("visible") ? previewEl.getBoundingClientRect() : null;
         const bottomBarPx = previewRect && Number.isFinite(previewRect.height) ? previewRect.height : 0;
         if (!bottomBarPx) return 0;
         const userUnitsPerPxY = vbHeight / rect.height;
@@ -2326,31 +2408,29 @@
         return -(bottomBarPx / 2) * userUnitsPerPxY;
       }
 
-      let zoom = d3
-        .zoom()
-        .on("zoom", (e) => {
-          currentTransform = e.transform;
-          drawGraphCanvas();
+      let zoom = d3.zoom().on("zoom", (e) => {
+        currentTransform = e.transform;
+        drawGraphCanvas();
 
-          // Re-apply focus styles (includes scaled edge widths).
-          if (state.lock.active) {
-            if (state.lock.kind === "node" && state.lock.highlightNode) {
-              focusOnNode(state.lock.highlightNode);
-            } else if (state.lock.kind === "edge" && state.lock.item) {
-              focusOnEdge(state.lock.item);
-            } else {
-              resetFocus();
-            }
-          } else if (state.hover.kind === "node" && state.hover.item) {
-            focusOnNode(state.hover.item);
-          } else if (state.hover.kind === "edge" && state.hover.item) {
-            focusOnEdge(state.hover.item);
+        // Re-apply focus styles (includes scaled edge widths).
+        if (state.lock.active) {
+          if (state.lock.kind === "node" && state.lock.highlightNode) {
+            focusOnNode(state.lock.highlightNode);
+          } else if (state.lock.kind === "edge" && state.lock.item) {
+            focusOnEdge(state.lock.item);
           } else {
             resetFocus();
           }
+        } else if (state.hover.kind === "node" && state.hover.item) {
+          focusOnNode(state.hover.item);
+        } else if (state.hover.kind === "edge" && state.hover.item) {
+          focusOnEdge(state.hover.item);
+        } else {
+          resetFocus();
+        }
 
-          updateNodeLabels({ recomputeLayout: false });
-        });
+        updateNodeLabels({ recomputeLayout: false });
+      });
 
       function canvasPointerToLocalPx(event) {
         if (!svgEl) return { x: 0, y: 0 };
@@ -2410,15 +2490,25 @@
           const { x, y } = canvasPointerToLocalPx(event);
           const picked = pickGraphTargetAtCanvasPx(x, y);
           if (picked && picked.kind === "node") {
-            handleGraphOpenClick(event, [personIdForNode(picked.item)], getNodePreviewEntry(picked.item).filename, function () {
-              showNodeInSidebar(picked.item);
-            });
+            handleGraphOpenClick(
+              event,
+              [personIdForNode(picked.item)],
+              getNodePreviewEntry(picked.item).filename,
+              function () {
+                showNodeInSidebar(picked.item);
+              },
+            );
             return;
           }
           if (picked && picked.kind === "edge") {
-            handleGraphOpenClick(event, personIdsForEdge(picked.item), getEdgePreviewEntry(picked.item).filename, function () {
-              pinEdge(picked.item);
-            });
+            handleGraphOpenClick(
+              event,
+              personIdsForEdge(picked.item),
+              getEdgePreviewEntry(picked.item).filename,
+              function () {
+                pinEdge(picked.item);
+              },
+            );
             return;
           }
           if (event.defaultPrevented) return;
@@ -2442,7 +2532,7 @@
             if (picked.kind === "edge") pinEdge(picked.item);
             else showNodeInSidebar(picked.item);
           },
-          { passive: false }
+          { passive: false },
         );
       }
 
@@ -2538,8 +2628,8 @@
         }
         drawGraphCanvas();
       }
-    }).catch(function (err) {
+    })
+    .catch(function (err) {
       document.body.innerHTML = `<pre style="padding:2rem;color:#c00;font:14px/1.6 monospace">Failed to load data:\n${err}</pre>`;
     });
-
-  </script>
+</script>

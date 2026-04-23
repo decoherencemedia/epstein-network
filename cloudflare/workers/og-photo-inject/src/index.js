@@ -18,10 +18,7 @@ const DEFAULT_SPACES_CDN = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
 /** @param {string} s */
 function escapeHtmlAttr(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;");
+  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 /**
@@ -53,22 +50,15 @@ function injectOgImageMeta(html, imageUrl) {
   let out = html;
   for (const [attr, key, val] of tags) {
     const prop = attr;
-    const re = new RegExp(
-      `<meta\\s+${prop}="${key}"\\s+content="[^"]*"\\s*/?>`,
-      "i"
-    );
+    const re = new RegExp(`<meta\\s+${prop}="${key}"\\s+content="[^"]*"\\s*/?>`, "i");
     const replacement = `<meta ${prop}="${key}" content="${val}" />`;
     if (re.test(out)) {
       out = out.replace(re, replacement);
     } else {
-      out = out.replace(
-        /<\/head>/i,
-        `  <meta ${prop}="${key}" content="${val}" />\n</head>`
-      );
+      out = out.replace(/<\/head>/i, `  <meta ${prop}="${key}" content="${val}" />\n</head>`);
     }
   }
-  const cardRe =
-    /<meta\s+name="twitter:card"\s+content="[^"]*"\s*\/?>/i;
+  const cardRe = /<meta\s+name="twitter:card"\s+content="[^"]*"\s*\/?>/i;
   const cardRepl = '<meta name="twitter:card" content="summary_large_image" />';
   if (cardRe.test(out)) {
     out = out.replace(cardRe, cardRepl);
