@@ -977,14 +977,38 @@ body.page-home #name-search {
     /* Restore full frame on floating bottom sheet (desktop rule removes left/bottom). */
     border: 1px solid var(--border-panel);
   }
+  /* Two-column layout on mobile so the image doesn't dominate the 40 vh sheet:
+   * image in col 1; meta, photo count, and person links stack in col 2 alongside it.
+   * Header plus any below-media sections (empty state, top-connections, default legend)
+   * span both columns. Image `grid-row: 2 / span 3` absorbs the right-column stack
+   * height — hidden items still collapse their rows so the image ends up square-ish. */
   #thumb-preview.visible {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 0;
+    align-content: start;
+  }
+  #thumb-preview .thumb-header,
+  #thumb-preview #thumb-empty,
+  #thumb-preview #thumb-top-neighbors,
+  #thumb-preview #thumb-default {
+    grid-column: 1 / -1;
+  }
+  #thumb-preview .thumb-meta,
+  #thumb-preview .thumb-total,
+  #thumb-preview #thumb-node-links {
+    grid-column: 2;
+  }
+  #thumb-preview #thumb-img-link {
+    grid-column: 1;
+    grid-row: 2 / span 3;
+    align-self: start;
+    width: 130px;
   }
   .thumb-img-wrapper {
-    flex: 0 0 auto;
-    width: 100%;
-    max-height: min(28vh, 100%);
+    width: 130px;
+    max-height: none;
     aspect-ratio: 1 / 1;
   }
   #thumb-img {
@@ -993,6 +1017,23 @@ body.page-home #name-search {
     max-height: none;
     min-height: 0;
     object-fit: cover;
+  }
+  /* Tighten vertical rhythm inside the right column (defaults add too much margin). */
+  #thumb-preview .thumb-meta {
+    margin: 0 0 4px;
+  }
+  #thumb-preview .thumb-total {
+    margin: 0 0 4px;
+  }
+  #thumb-preview #thumb-node-links {
+    margin-top: 4px;
+  }
+  /* Edge preview has a fixed-size neighbor list (always exactly 2 connected nodes), so
+   * it fits alongside the image in col 2 instead of spanning full-width below. Person
+   * previews keep the full-width layout — their "Top connections" list can run to ~10. */
+  #thumb-preview.is-edge-preview #thumb-top-neighbors {
+    grid-column: 2;
+    margin-top: 14px;
   }
   #thumb-preview .thumb-title {
     font-size: 19px;

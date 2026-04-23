@@ -512,6 +512,7 @@
           previewBboxBEl.style.borderColor = "";
         }
         previewDefaultEl.style.display = "block";
+        previewEl.classList.remove("is-edge-preview");
         applyPreviewVisibility();
       }
 
@@ -834,6 +835,10 @@
           }
         }
         setTopNeighbors(topNeighbors, onSelectNeighbor, topNeighborsTitle, onNavigateToNeighbor);
+        // Marker for the mobile grid layout: edge previews have exactly 2 connected nodes,
+        // which fit alongside the image in col 2. Keep this string in sync with the edge
+        // call site's `topNeighborsTitle` arg.
+        previewEl.classList.toggle("is-edge-preview", topNeighborsTitle === "Connected nodes");
         applyPreviewVisibility();
       }
 
