@@ -1910,16 +1910,14 @@
 
     function syncJustifiedThumbFaceBoxes() {
       if (!justifiedState || !justifiedState.elements.length) return;
-      const els = justifiedState.elements;
-      for (let i = 0; i < els.length; i++) {
-        const el = els[i];
+      justifiedState.elements.forEach(function (el) {
         const img = el.querySelector("img");
         const overlay = el.querySelector(".search-thumb-bboxes");
-        if (!img || !overlay) continue;
+        if (!img || !overlay) return;
         const faces = overlay._thumbFaces;
-        if (faces == null) continue;
+        if (faces == null) return;
         positionThumbFaceBoxes(overlay, faces, img);
-      }
+      });
     }
 
     function captureStatusSnapshot() {
@@ -2343,9 +2341,21 @@
         }
       };
 
+      /* Fallback path is load-bearing only on catastrophic failure (imagesloaded.pkgd.min.js
+       * missing or evaluating to something non-callable). Running it silently once caused a
+       * subtle regression where face boxes only rendered for already-cached thumbs: without
+       * waiting on `load` events, `onImagesReady` reads `naturalWidth` while fresh images are
+       * still fetching, so `getCoveredImageRect` no-ops and no boxes get drawn. Warn loudly so
+       * a future regression (CDN hiccup, global-scope pollution from another bundled script's
+       * UMD wrapper — see the IIFE in site/build.sh around latinize.js) is immediately visible. */
       if (typeof imagesLoaded === "function") {
         imagesLoaded(elements, onImagesReady);
       } else {
+        if (typeof console !== "undefined" && console && typeof console.warn === "function") {
+          console.warn(
+            "imagesLoaded is not available — face bounding boxes may only render for cached thumbnails.",
+          );
+        }
         onImagesReady();
       }
       return lightboxPayload;
