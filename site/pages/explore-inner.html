@@ -63,9 +63,9 @@
       color: var(--ink-medium);
     }
     /* Each panel gets its own header so the grid-overlay below can factor the title into
-     * both panels' natural heights. Small bottom gap so the title doesn't crowd the body. */
+     * both panels' natural heights. 6px bottom gap matches the home-inner preview header. */
     .page-explore-main #sidebar-top .thumb-header {
-      margin: 0 0 10px;
+      margin: 0 0 6px;
     }
     /*
      * Both the default (description) and active (preview) panels share a single grid cell
@@ -95,7 +95,9 @@
     }
     /* Preview panel: title → image → top-people. `gap` provides consistent spacing without
      * relying on each child's default margins. Header & neighbors both get their margins
-     * zeroed so the flex gap alone drives spacing — otherwise they stack on top. */
+     * zeroed so the container's gap alone drives spacing — otherwise they stack on top.
+     * The mobile block below overrides `display` to grid for a two-column layout; `gap` works
+     * the same way there, so the zeroed margins keep doing their job. */
     .page-explore-main #thumb-preview-active {
       display: flex;
       flex-direction: column;
@@ -105,16 +107,10 @@
     .page-explore-main #thumb-preview-active #thumb-top-neighbors {
       margin: 0;
     }
-    /* The global #thumb-default .thumb-default-body > div rule only zeros <div> margins;
-     * the <ul> still carries ~16px of browser default margin which stacks on top of the
-     * container's flex `gap: 10px`, producing a visibly large gap above/below the list. */
-    .page-explore-main #thumb-default .thumb-default-body ul {
-      margin: 0;
-      padding-left: 1.25em;
-    }
-    /* Compact stats line tucked under the description prose. */
+    /* Stats line tucked under the description prose. Medium weight + subtle color keeps it
+     * visually distinct from the description body text (which is ink-medium / weight 400). */
     .page-explore-main .sidebar-stats {
-      font: 12px var(--font-ui);
+      font: 500 12px var(--font-ui);
       color: var(--ink-subtle);
       font-variant-numeric: tabular-nums;
     }
@@ -125,19 +121,36 @@
      */
     .page-explore-main #explore-legend-section {
       margin-top: 14px;
-      padding-top: 10px;
+      padding-top: 14px;
       border-top: 1px solid var(--border-panel-strong);
       flex: 0 0 auto;
     }
     .page-explore-main .legend-section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
       font: 700 13px/1.2 var(--font-ui);
       color: var(--ink-soft);
       margin: 0 0 8px;
+    }
+    .page-explore-main .legend-section-title-label {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .page-explore-main .legend-section-title-count {
+      flex: 0 0 auto;
     }
     .page-explore-main #legend {
       display: flex;
       flex-direction: column;
       gap: 4px;
+    }
+    /* Per-row photo count — right-aligned, tabular digits so the column stacks cleanly. */
+    .page-explore-main .legend-color-count {
+      flex: 0 0 auto;
+      color: var(--ink-body);
+      font-variant-numeric: tabular-nums;
     }
     /* `.legend-color-row`, `.legend-swatch`, `.legend-color-label`, and the off-state
      * variant are defined unscoped in styles.css and shared with home-inner. */
@@ -192,13 +205,22 @@
          * this photo" lists have different lengths. Extra rows simply become scroll
          * content — the sheet itself never grows or shrinks. */
         height: 40vh;
-        padding: 12px 12px 14px;
+        padding: 12px;
         border: 1px solid var(--border-panel);
         border-radius: var(--radius-8);
         box-shadow: var(--shadow-md);
         z-index: 100;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+      }
+      /* Filename-variant title: bump from 15 to 16 on mobile — still fits the long
+       * ij-####-####_####.webp strings, just less cramped next to the 14 px surroundings. */
+      .page-explore-main .thumb-title.is-filename {
+        font-size: 16px;
+      }
+      /* Match the body-text bump so the stat line reads alongside the description. */
+      .page-explore-main .sidebar-stats {
+        font-size: 14px;
       }
       /* JS toggles `.is-collapsed` on the sidebar when the user clicks the collapse
        * button — only respected on mobile so a stale class from a resized-down session
@@ -218,13 +240,33 @@
         display: none;
         visibility: visible;
       }
-      /* Fixed-size square thumbnail, centered; at 300px wide viewport the sheet is ~276px
-       * internal → image 220px square keeps ~56px of breathing room for title + list. */
+      /* Two-column layout for the active preview, matching home-inner's bottom-sheet pattern:
+       * image in col 1, "People in this photo" in col 2, title spans both. The default panel
+       * (description + legend) stays a single column because it lives in a sibling element. */
+      .page-explore-main #thumb-preview-active {
+        display: grid;
+        grid-template-columns: 130px minmax(0, 1fr);
+        column-gap: 12px;
+        row-gap: 0;
+        align-content: start;
+      }
+      .page-explore-main #thumb-preview-active .thumb-header {
+        grid-column: 1 / -1;
+        margin-bottom: 6px;
+      }
+      .page-explore-main #thumb-preview-active #thumb-img-link {
+        grid-column: 1;
+        align-self: start;
+        width: 130px;
+      }
+      .page-explore-main #thumb-preview-active #thumb-top-neighbors {
+        grid-column: 2;
+      }
       .page-explore-main .thumb-img-wrapper {
-        width: min(50vw, 220px);
+        width: 130px;
         height: auto;
         aspect-ratio: 1 / 1;
-        margin: 0 auto;
+        margin: 0;
       }
       /* Collapse button: float in the top-right of the sheet (the global rule positions
        * it as a flex item for home; explore wants it overlaying the scrolling content). */
@@ -238,10 +280,10 @@
       .page-explore-main #sidebar-top .thumb-header {
         padding-right: 36px;
       }
-      /* Smaller/lighter collapsed-bar title than home (home shows image filename, explore
-       * shows "Epstein Photo Atlas" — different rhythm). Other bar styling is global. */
+      /* Smaller/lighter collapsed-bar title than home's 18 px — explore often shows a long
+       * lowercase filename where home shows a short person name. Other styling is global. */
       .page-explore-main #thumb-collapsed-title {
-        font: 600 15px/1.2 var(--font-ui);
+        font: 600 16px/1.2 var(--font-ui);
       }
     }
   </style>
@@ -349,7 +391,10 @@
     </div>
 
     <div id="explore-legend-section">
-      <div class="legend-section-title">Category</div>
+      <div class="legend-section-title">
+        <span class="legend-section-title-label">Category</span>
+        <span class="legend-section-title-count">Photos</span>
+      </div>
       <div id="legend"></div>
     </div>
   </aside>
@@ -471,8 +516,8 @@
 
   // Build the legend using the same markup/classes as home-inner's #thumb-default .legend-colors
   // so it picks up the grid + swatch styles from styles.css. Rows are <div role="button"> (not
-  // <button>) so user-agent form-control font styling doesn't override our 12.5px sans-serif —
-  // keyboard activation is wired up explicitly in `main()`. The category color goes on the row
+  // <button>) so user-agent form-control font styling doesn't override the shared 13.5px
+  // sans-serif — keyboard activation is wired up explicitly in `main()`. The category color goes on the row
   // as a `--swatch-color` custom property so the same CSS rule renders the on (filled) and off
   // (hollow stroke) states without JS having to touch the swatch element. Returns the row
   // elements so the toggle handler can flip aria-pressed / class.
@@ -491,8 +536,11 @@
       sw.className = "legend-swatch";
       const label = document.createElement("span");
       label.className = "legend-color-label";
-      label.textContent = `${categories[i]} (${counts[i].toLocaleString()})`;
-      row.append(sw, label);
+      label.textContent = categories[i];
+      const count = document.createElement("span");
+      count.className = "legend-color-count";
+      count.textContent = counts[i].toLocaleString();
+      row.append(sw, label, count);
       legend.appendChild(row);
       rows.push(row);
     }

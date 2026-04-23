@@ -665,7 +665,13 @@
         previewNeighborsEl.innerHTML = "";
         const title = document.createElement("div");
         title.className = "neighbors-title";
-        title.textContent = titleText;
+        const titleLabel = document.createElement("span");
+        titleLabel.className = "neighbors-title-label";
+        titleLabel.textContent = titleText;
+        const titleCount = document.createElement("span");
+        titleCount.className = "neighbors-title-count";
+        titleCount.textContent = "Photos";
+        title.append(titleLabel, titleCount);
         const list = document.createElement("div");
         list.className = "neighbors-list";
         neighbors.forEach((n) => {

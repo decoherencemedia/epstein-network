@@ -658,10 +658,20 @@ body.page-home #name-search {
   padding-top: 0;
 }
 #thumb-top-neighbors .neighbors-title {
-  font: 13px var(--font-ui);
-  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font: 600 13px var(--font-ui);
   color: var(--ink-body);
   margin-bottom: 6px;
+}
+#thumb-top-neighbors .neighbors-title-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#thumb-top-neighbors .neighbors-title-count {
+  flex: 0 0 auto;
 }
 #thumb-top-neighbors .neighbors-list {
   display: flex;
@@ -709,6 +719,12 @@ body.page-home #name-search {
 #thumb-default .thumb-default-body > div {
   margin: 0;
 }
+/* Zero the <ul>'s ~16px UA margin so it doesn't stack on top of the container's 10px
+ * flex gap; 1.25em padding-left keeps bullet indentation in the panel's internal rhythm. */
+#thumb-default .thumb-default-body ul {
+  margin: 0;
+  padding-left: 1.25em;
+}
 #thumb-default .thumb-default-body a {
   color: var(--site-accent);
   text-decoration: underline;
@@ -721,7 +737,7 @@ body.page-home #name-search {
 #thumb-default .thumb-legend {
   margin-top: 14px;
   border-top: 1px solid var(--border-panel-strong);
-  padding-top: 6px;
+  padding-top: 14px;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -730,7 +746,7 @@ body.page-home #name-search {
 #thumb-default .legend-section-title {
   font: 700 13px/1.2 var(--font-ui);
   color: var(--ink-soft);
-  margin: 12px 0 8px;
+  margin: 0 0 8px;
 }
 #thumb-default .legend-colors + .legend-section-title {
   margin-top: 20px;
@@ -751,7 +767,7 @@ body.page-home #name-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  font: 12.5px/1.25 var(--font-ui);
+  font: 13.5px/1.25 var(--font-ui);
   color: var(--ink-body);
   min-width: 0;
   cursor: pointer;
@@ -955,7 +971,7 @@ body.page-home #name-search {
     top: auto;
     width: auto;
     max-width: none;
-    padding: 10px;
+    padding: 12px;
     display: none;
     max-height: 40vh;
     height: auto;
@@ -1035,9 +1051,6 @@ body.page-home #name-search {
     grid-column: 2;
     margin-top: 14px;
   }
-  #thumb-preview .thumb-title {
-    font-size: 19px;
-  }
   #thumb-default {
     margin-top: 4px;
     padding-top: 0px;
@@ -1064,7 +1077,7 @@ body.page-home #name-search {
   #thumb-top-neighbors .neighbor-weight,
   #thumb-default .thumb-default-body,
   #thumb-default .legend-section-title,
-  #thumb-default .legend-color-row,
+  #explore-legend-section .legend-section-title,
   #thumb-default .legend-size-item,
   #thumb-default .legend-size-label,
   #thumb-default .legend-size-label .legend-size-count,
