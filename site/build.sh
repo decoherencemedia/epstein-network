@@ -20,36 +20,40 @@ fi
 rm -rf "$DIST"
 mkdir -p "$DIST/people" "$DIST/search" "$DIST/about" "$DIST/explore"
 
+# Shared header + nav for every page. nav.js adds `site-nav-active` /
+# aria-current="page" based on location.pathname, so no per-page partial needed.
+NAV="$SITE/partials/nav.html"
+
 # Home: graph (no footer — full-viewport viz)
 cat "$SITE/partials/head-root.html" \
-  "$SITE/partials/nav-home.html" \
+  "$NAV" \
   "$SITE/pages/home-inner.html" \
   "$SITE/partials/close.html" > "$DIST/index.html"
 
 # Search (/search)
 cat "$SITE/partials/head-search.html" \
-  "$SITE/partials/nav-search.html" \
+  "$NAV" \
   "$SITE/pages/search-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/search/index.html"
 
 # People gallery (/people) — data from /faces API
 cat "$SITE/partials/head-people.html" \
-  "$SITE/partials/nav-people.html" \
+  "$NAV" \
   "$SITE/pages/people-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/people/index.html"
 
 # About
 cat "$SITE/partials/head-about.html" \
-  "$SITE/partials/nav-about.html" \
+  "$NAV" \
   "$SITE/pages/about-inner.html" \
   "$SITE/partials/footer.html" \
   "$SITE/partials/close.html" > "$DIST/about/index.html"
 
 # Explore (/explore) — UMAP scatter viewer (d3 canvas). No footer (full-viewport viz).
 cat "$SITE/partials/head-explore.html" \
-  "$SITE/partials/nav-explore.html" \
+  "$NAV" \
   "$SITE/pages/explore-inner.html" \
   "$SITE/partials/close.html" > "$DIST/explore/index.html"
 

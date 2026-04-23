@@ -452,7 +452,8 @@ def render_head(
 """
 
 
-def render_nav_search_static() -> str:
+def render_nav() -> str:
+    """Mirror of site/partials/nav.html. nav.js adds the active class at runtime."""
     return """<header class="site-header">
   <nav class="site-nav" aria-label="Main">
     <a class="site-nav-brand" href="/">Epstein Network</a>
@@ -465,7 +466,8 @@ def render_nav_search_static() -> str:
     <div class="site-nav-links" id="site-nav-menu" role="navigation" aria-label="Site pages">
       <a class="site-nav-link" href="/">Graph</a>
       <a class="site-nav-link" href="/people/">People</a>
-      <a class="site-nav-link site-nav-active" href="/search/" aria-current="page">Search</a>
+      <a class="site-nav-link" href="/search/">Search</a>
+      <a class="site-nav-link" href="/explore/">Explore</a>
       <a class="site-nav-link" href="/about/">About</a>
     </div>
   </nav>
@@ -530,7 +532,7 @@ def build_page_html(
         canonical_url=canonical_url,
         og_image_url=og_image_url,
     )
-    nav = render_nav_search_static()
+    nav = render_nav()
     bootstrap_script = (
         f'<script>window.__EPSTEIN_STATIC_SEARCH__={bootstrap_json};</script>\n'
     )

@@ -207,15 +207,13 @@
     /*
      * Desktop-only defaults for the collapse UI — hidden until the mobile media query
      * flips them on. Keeping them out of the default DOM flow means desktop layout
-     * doesn't shift when the elements exist in the HTML.
+     * doesn't shift when the elements exist in the HTML. The mobile rules below are
+     * scoped with `:not([hidden])` so JS can pin them open/closed via the `hidden`
+     * attribute without needing `!important` to undo the flex layout.
      */
     #thumb-collapse-btn,
     #thumb-collapsed-bar {
       display: none;
-    }
-    #thumb-collapse-btn[hidden],
-    #thumb-collapsed-bar[hidden] {
-      display: none !important;
     }
 
     /*
@@ -285,7 +283,7 @@
       /* Collapse button: floats in the top-right corner of the sheet, overlaying the
        * scrolling content. Matches the styling of home-inner's version (defined in the
        * global styles) for visual consistency. */
-      .page-explore-main #thumb-collapse-btn {
+      .page-explore-main #thumb-collapse-btn:not([hidden]) {
         position: absolute;
         top: 8px;
         right: 8px;
@@ -321,7 +319,7 @@
       }
       /* Collapsed bar: thin, fixed to the visual viewport bottom (see #sidebar rule
        * above for why `fixed` beats `absolute` on real mobile). */
-      .page-explore-main #thumb-collapsed-bar {
+      .page-explore-main #thumb-collapsed-bar:not([hidden]) {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -347,7 +345,7 @@
         font: 600 15px/1.2 sans-serif;
         color: #222;
       }
-      .page-explore-main #thumb-open-btn {
+      .page-explore-main #thumb-open-btn:not([hidden]) {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -498,30 +496,9 @@
   // Keep in sync with the default value in the #preview-title element above.
   const DEFAULT_SIDEBAR_TITLE = "Epstein Photo Atlas";
 
-  // Canonical category colors — kept in sync with
-  // epstein-pipeline/scripts/pipeline/14__visualize_graph.py. "Other" (images with no
-  // in-network faces) reuses the same grey as "Unknown".
-  const CATEGORY_COLORS = {
-    // Synthetic category emitted by 03__export_viz_data.py for images whose only
-    // in-network face is Jeffrey Epstein. Off-black (rather than pure #000) matches
-    // the site's primary dark and the hover-ring stroke color, so it composes
-    // cleanly with the rest of the UI without "vibrating" against the panel bg.
-    "Jeffrey Epstein":       "#1a1a1a",
-    "Inner Circle":          "#d60000",
-    "Academia & Science":    "#8c3bff",
-    "Politics & Government": "#00acc6",
-    "Entertainment & Media": "#e6a500",
-    "Nobility & Old Money":  "#0000dd",
-    "Finance & Business":    "#018700",
-    "Fashion & Modeling":    "#ff7ed1",
-    "Miscellaneous":         "#573b00",
-    "Victim":                "#97ff00",
-    "Staff & Professionals": "#bcb6ff",
-    "Tech":                  "#005659",
-    "Unknown":               "#999999",
-    "Other":                 "#999999",
-  };
-  const FALLBACK_COLOR = "#72747a";
+  // Category colors arrive in the payload (parallel to `categories`); see
+  // CATEGORY_COLORS in epstein-pipeline/epstein_photos/config.py for the canonical
+  // palette, shared with home-inner via dataset.json.
 
   // Point size at zoom k=1 (CSS px), scaled by k^POINT_ZOOM_EXP as the user zooms — matching
   // home-inner's nodeZoomScaleExp so points grow sublinearly with zoom instead of tracking the
@@ -574,20 +551,25 @@
   window.addEventListener("error", (e) => showError(`Error: ${e.message}\n${e.error && e.error.stack || ""}`));
   window.addEventListener("unhandledrejection", (e) => showError(`Unhandled rejection: ${e.reason && (e.reason.stack || e.reason.message) || e.reason}`));
 
-  function paletteForCategories(categories) {
-    const unknownNames = [];
-    const palette = categories.map((name) => {
-      const hex = CATEGORY_COLORS[name];
-      if (!hex) {
-        unknownNames.push(name);
-        return FALLBACK_COLOR;
-      }
-      return hex;
-    });
-    if (unknownNames.length > 0) {
-      console.warn("No color mapping for category(ies):", unknownNames);
+  /**
+   * Validate the payload's parallel `colors` array against `categories`. Any hole
+   * throws — the pipeline is expected to emit a complete parallel array (see
+   * CATEGORY_COLORS in epstein_photos/config.py + 03__export_viz_data.py).
+   */
+  function paletteFromPayload(categories, colors) {
+    if (!Array.isArray(colors) || colors.length !== categories.length) {
+      throw new Error(
+        `umap_viz.json: colors[] missing or wrong length (got ${colors && colors.length}, expected ${categories.length})`
+      );
     }
-    return palette;
+    const missing = [];
+    colors.forEach((hex, i) => {
+      if (typeof hex !== "string" || !hex) missing.push(categories[i]);
+    });
+    if (missing.length > 0) {
+      throw new Error(`umap_viz.json: missing color for category(ies): ${missing.join(", ")}`);
+    }
+    return colors;
   }
 
   // Build the legend using the same markup/classes as home-inner's #thumb-default .legend-colors
@@ -703,7 +685,7 @@
     const resp = await fetch(`${UMAP_BASE}umap_viz.json`, { cache: "no-cache" });
     if (!resp.ok) throw new Error(`Failed to load umap_viz.json: ${resp.status} ${resp.statusText}`);
     const data = await resp.json();
-    const { points, categories, thumb_dir, thumb_ext, model } = data;
+    const { points, categories, colors, thumb_dir, thumb_ext, model } = data;
     // Map of person_id -> { name, n (photo count across the site). Populated by
     // scripts/umap_viz/03__export_viz_data.py, referenced by the "top connections" list.
     const people = data.people || {};
@@ -742,7 +724,7 @@
       nc[i] = points[i].c | 0;
     }
 
-    const palette = paletteForCategories(categories);
+    const palette = paletteFromPayload(categories, colors);
     const counts = new Array(categories.length).fill(0);
     for (let i = 0; i < N; i++) counts[nc[i]]++;
     const legendRowEls = buildLegend(categories, palette, counts);

@@ -1,8 +1,8 @@
-<main class="site-home-graph" id="main" style="position:relative;min-height:calc(100vh - 48px);">
-<div class="svg-container" style="position:relative;width:100%;height:100%;">
-  <canvas id="graph-canvas" class="graph-canvas" aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;z-index:0;"></canvas>
-  <canvas id="hover-node-canvas" class="graph-canvas hover-node-canvas" aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2;"></canvas>
-  <svg id="svg" style="position:relative;z-index:1;width:100%;height:100%;display:block;pointer-events:auto;touch-action:none;">
+<main class="site-home-graph" id="main">
+<div class="svg-container">
+  <canvas id="graph-canvas" class="graph-canvas" aria-hidden="true"></canvas>
+  <canvas id="hover-node-canvas" class="graph-canvas hover-node-canvas" aria-hidden="true"></canvas>
+  <svg id="svg">
     <g class="full-network-graph"></g>
   </svg>
   <div id="name-search" aria-label="Search people">
@@ -72,11 +72,11 @@
       </svg>
     </button>
   </div>
-</main>
 </div>
+</main>
 
-  <script src="js/latinize.js"></script>
-  <script src="js/shared.js"></script>
+  <script src="/js/latinize.js"></script>
+  <script src="/js/shared.js"></script>
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script>
 

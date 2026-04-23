@@ -181,9 +181,10 @@ body.site-nav-open {
 
 .site-home-graph {
   flex: 1 1 auto;
-  min-height: 0;
   position: relative;
   width: 100%;
+  /* At least full viewport minus the 48px header, so the graph fills the screen even before flex resolves. */
+  min-height: calc(100vh - 48px);
 }
 
 .site-footer {
@@ -310,17 +311,15 @@ body.page-home #thumb-preview {
   gap: 8px;
   margin-bottom: 6px;
 }
+/* These three are toggled exclusively via the `hidden` HTML attribute (see home-inner JS).
+   `:not([hidden])` lets us state the visible flex/inline-flex without needing `!important`
+   to undo it when `hidden` is present — the rule simply doesn't match. */
 #thumb-collapse-btn,
 #thumb-open-btn,
 #thumb-collapsed-bar {
   display: none;
 }
-#thumb-open-btn[hidden],
-#thumb-collapse-btn[hidden],
-#thumb-collapsed-bar[hidden] {
-  display: none !important;
-}
-#thumb-collapsed-bar {
+#thumb-collapsed-bar:not([hidden]) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -346,7 +345,7 @@ body.page-home #thumb-preview {
   font: 700 18px/1.15 sans-serif;
   color: #222;
 }
-#thumb-open-btn {
+#thumb-open-btn:not([hidden]) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -957,7 +956,7 @@ body.page-home #name-search {
     margin-top: 4px;
     padding-top: 0px;
   }
-  #thumb-collapse-btn {
+  #thumb-collapse-btn:not([hidden]) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1083,9 +1082,6 @@ body.page-home #name-search {
 .search-tab-panel {
   min-width: 0;
 }
-.search-tab-panel[hidden] {
-  display: none !important;
-}
 .search-document-wrap {
   width: 100%;
   max-width: none;
@@ -1099,9 +1095,6 @@ body.page-home #name-search {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-.search-document-validation[hidden] {
-  display: none !important;
 }
 .search-page .search-input.search-input--invalid {
   border-color: #c62828;
@@ -1288,18 +1281,17 @@ body.page-home #name-search {
   margin: 0 0 14px;
   color: #1c2633;
 }
-.search-results-loading {
-  font: 15px/1.4 system-ui, sans-serif;
-  color: var(--search-text-muted);
+.search-results-loading:not([hidden]) {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.search-results-loading {
+  font: 15px/1.4 system-ui, sans-serif;
+  color: var(--search-text-muted);
   min-height: 100px;
   box-sizing: border-box;
   margin: 0 0 8px;
-}
-.search-results-loading[hidden] {
-  display: none !important;
 }
 /* Grid hidden until layout runs (see search-inner): no stacked-thumb flash. */
 .search-justified.search-justified--pending {
