@@ -29,8 +29,13 @@ export default [
       "no-unreachable-loop": "error",
       "no-constructor-return": "error",
       "no-promise-executor-return": "error",
-      "no-use-before-define": ["error", { functions: false, classes: true, variables: true }],
+      // variables: false — module-state `const`s are declared below the helpers that
+      // reference them; those helpers only fire after init, so the forward refs are safe.
+      "no-use-before-define": ["error", { functions: false, classes: true, variables: false }],
       radix: "error",
+      // allowEmptyCatch — `catch (_) {}` is used intentionally around JSON/URL-decode
+      // fallbacks where swallowing the error is the behavior we want.
+      "no-empty": ["error", { allowEmptyCatch: true }],
 
       "no-useless-concat": "warn",
       "no-useless-return": "warn",
@@ -42,7 +47,9 @@ export default [
       "no-duplicate-imports": "error",
 
       "no-shadow": ["warn", { builtinGlobals: false, hoist: "functions" }],
-      "no-implicit-coercion": ["warn", { boolean: false }],
+      // allow "+" — the `+x` numeric coercion is used throughout with `!= null` guards;
+      // `Number(x)` isn't clearer. `!!x` / `"" + x` are still flagged.
+      "no-implicit-coercion": ["warn", { boolean: false, allow: ["+"] }],
       "no-new-wrappers": "error",
       "no-new-native-nonconstructor": "error",
       "no-sequences": "error",

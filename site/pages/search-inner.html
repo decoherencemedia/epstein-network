@@ -1270,10 +1270,6 @@
       return { ox, oy, dw, dh };
     }
 
-    function rectsOverlap(a, b) {
-      return !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
-    }
-
     /** @returns {number} 0 if intervals overlap or touch; else positive edge-to-edge gap. */
     function horizontalGap1D(lo1, hi1, lo2, hi2) {
       if (hi1 <= lo2) return lo2 - hi1;
@@ -2505,7 +2501,6 @@
         const labelEl = labels[i];
         const bL = parseFloat(boxEl.style.left) || 0;
         const bT = parseFloat(boxEl.style.top) || 0;
-        const bW = parseFloat(boxEl.style.width) || 0;
         const bH = parseFloat(boxEl.style.height) || 0;
         const lL = parseFloat(labelEl.style.left) || 0;
         const lT = parseFloat(labelEl.style.top) || 0;

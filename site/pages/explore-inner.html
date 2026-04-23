@@ -741,9 +741,9 @@
       xsum += p.x;
       ysum += p.y;
     }
-    const dx = xmax - xmin || 1;
-    const dy = ymax - ymin || 1;
-    const nScale = 2 / Math.max(dx, dy);
+    const xSpan = xmax - xmin || 1;
+    const ySpan = ymax - ymin || 1;
+    const nScale = 2 / Math.max(xSpan, ySpan);
     const cxD = xsum / N;
     const cyD = ysum / N;
     const nx = new Float32Array(N);
@@ -970,7 +970,7 @@
       if (!quadtree || idx < 0) return [];
       const tx = ix[idx];
       const ty = iy[idx];
-      const best = []; // parallel arrays: `bestD2` squared-dist, `bestI` index
+      // Parallel arrays: `bestD2[j]` is the squared-distance of candidate `bestI[j]`.
       const bestD2 = [];
       const bestI = [];
       let worst = Infinity;

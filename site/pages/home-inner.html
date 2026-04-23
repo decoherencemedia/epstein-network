@@ -1872,13 +1872,13 @@
         canvas.style.zIndex = String(zIndex);
       }
 
-      function ensureSvgOverlayLayout(svgEl) {
-        if (!svgEl) return;
+      function ensureSvgOverlayLayout(el) {
+        if (!el) return;
         // Keep SVG labels/tooltips above base graph canvas even if CSS is stale in production.
-        svgEl.style.position = "relative";
-        svgEl.style.zIndex = "1";
-        svgEl.style.pointerEvents = "auto";
-        svgEl.style.touchAction = "none";
+        el.style.position = "relative";
+        el.style.zIndex = "1";
+        el.style.pointerEvents = "auto";
+        el.style.touchAction = "none";
       }
 
       function getCanvasPxCalibration() {
@@ -2358,7 +2358,6 @@
       }
 
       function getSvgViewBox() {
-        const svgEl = document.getElementById("svg");
         if (!svgEl) return null;
         const vb = svgEl.getAttribute("viewBox");
         if (!vb) return null;
