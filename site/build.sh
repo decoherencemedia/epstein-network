@@ -97,13 +97,20 @@ IMAGELOADED_URL="https://unpkg.com/imagesloaded@5.0.0/imagesloaded.pkgd.min.js"
 IMAGELOADED_OUT="$SITE/js/imagesloaded.pkgd.min.js"
 curl -fsSL "$IMAGELOADED_URL" -o "$IMAGELOADED_OUT"
 
-# latinize: pin 1.x — 2.x is ESM-only (``export default``). Strip ``module.exports`` and expose ``window.latinize``.
+# latinize: pin 1.x — 2.x is ESM-only (``export default``). Neutralize the Node
+# ``module.exports = latinize;`` trailer with a local ``module`` shim (so the line
+# is a harmless assignment in-browser) and expose ``window.latinize`` at EOF.
+# More robust than line-anchored stripping: trailing sourcemap comments or blank
+# lines upstream can no longer silently corrupt the patch.
 LATINIZE_URL="https://unpkg.com/latinize@1.0.0/latinize.js"
 LATINIZE_TMP="$SITE/js/latinize.js.tmp"
 LATINIZE_OUT="$SITE/js/latinize.js"
 curl -fsSL "$LATINIZE_URL" -o "$LATINIZE_TMP"
-sed '$d' "$LATINIZE_TMP" > "$LATINIZE_OUT"
-printf '%s\n' 'window.latinize = latinize;' >> "$LATINIZE_OUT"
+{
+  printf 'var module={exports:{}};\n'
+  cat "$LATINIZE_TMP"
+  printf '\nwindow.latinize = latinize;\n'
+} > "$LATINIZE_OUT"
 rm -f "$LATINIZE_TMP"
 
 cp -r "$SITE/js" "$DIST/"

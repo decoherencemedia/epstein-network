@@ -648,26 +648,16 @@
      */
     function displayNameForPersonId(personId, facesForContext, precomputedIgnoredSet) {
       const pid = String(personId || "").trim();
-      let ign = null;
-      if (precomputedIgnoredSet != null) {
-        ign = precomputedIgnoredSet;
-      } else if (facesForContext) {
-        ign = ignoredPersonIdSetFromFaces(facesForContext);
-      }
-      if (ign && ign.has(pid)) {
-        return "Ignored";
-      }
-      const selectedMatch = selected.find(function (p) {
-        return p.person_id === personId;
-      });
-      if (selectedMatch && selectedMatch.name && String(selectedMatch.name).trim()) {
-        return String(selectedMatch.name).trim();
-      }
-      const raw = namesById[personId];
-      if (raw != null && String(raw).trim()) {
-        return String(raw).trim();
-      }
-      return SiteShared.personStubNumber(personId) != null ? "Unidentified" : String(personId);
+      const ign =
+        precomputedIgnoredSet != null
+          ? precomputedIgnoredSet
+          : facesForContext
+            ? ignoredPersonIdSetFromFaces(facesForContext)
+            : null;
+      if (ign && ign.has(pid)) return "Ignored";
+      const selectedMatch = selected.find((p) => p.person_id === personId);
+      const name = (selectedMatch && selectedMatch.name) || namesById[personId];
+      return SiteShared.personDisplayName(personId, name, "Unidentified");
     }
 
     /**

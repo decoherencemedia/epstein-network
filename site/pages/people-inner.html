@@ -29,10 +29,7 @@
 <script>
   (function () {
     function displayName(row) {
-      if (row.name && String(row.name).trim()) return String(row.name).trim();
-      const n = SiteShared.personStubNumber(row.person_id);
-      if (n != null) return "Person " + n;
-      return String(row.person_id || "");
+      return SiteShared.personDisplayName(row.person_id, row.name, (n) => "Person " + n);
     }
 
     function photoLabel(n) {

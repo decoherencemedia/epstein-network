@@ -184,6 +184,19 @@
   }
 
   /**
+   * Display name for a person: trimmed ``name`` if present, else ``stubLabel`` for
+   * ``person_<digits>`` ids (string or ``(n) => string``), else the raw ``personId``.
+   * Callers own the source lookup (sheets / API / etc.); this only owns the fallback chain.
+   */
+  function personDisplayName(personId, name, stubLabel) {
+    var s = name != null ? String(name).trim() : "";
+    if (s) return s;
+    var n = personStubNumber(personId);
+    if (n != null) return typeof stubLabel === "function" ? stubLabel(n) : stubLabel;
+    return String(personId || "");
+  }
+
+  /**
    * Lowercase + latinize for people-name search (accent-insensitive, ASCII-ish keys).
    * Normalize curly apostrophes to ASCII first. Load ``js/latinize.js`` before this file
    * (see ``site/build.sh``); if ``latinize`` is missing, falls back to lowercase only.
@@ -219,6 +232,7 @@
     cdnImagesUrl: cdnImagesUrl,
     cdnAtlasWebpUrl: cdnAtlasWebpUrl,
     personStubNumber: personStubNumber,
+    personDisplayName: personDisplayName,
     normalizePersonSearchKey: normalizePersonSearchKey,
   });
 })();
