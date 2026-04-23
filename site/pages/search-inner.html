@@ -1,122 +1,122 @@
-<main class="site-page people-page" id="main">
-  <h1 class="site-page-title" id="people-page-title">Search</h1>
+<main class="site-page search-page" id="main">
+  <h1 class="site-page-title" id="search-page-title">Search</h1>
   <p class="site-page-lead">Search photos by people&rsquo;s names or by document number</p>
 
-  <section class="people-toolbar-shell" aria-label="Find photos">
-    <div class="people-toolbar-tabs" role="tablist" aria-label="Search mode">
-      <button type="button" class="people-tab" role="tab" id="people-tab-people" aria-selected="true" aria-controls="people-panel-people">People</button>
-      <button type="button" class="people-tab" role="tab" id="people-tab-document" aria-selected="false" aria-controls="people-panel-document" tabindex="-1">Document</button>
+  <section class="search-toolbar-shell" aria-label="Find photos">
+    <div class="search-toolbar-tabs" role="tablist" aria-label="Search mode">
+      <button type="button" class="search-tab" role="tab" id="search-tab-people" aria-selected="true" aria-controls="search-panel-people">People</button>
+      <button type="button" class="search-tab" role="tab" id="search-tab-document" aria-selected="false" aria-controls="search-panel-document" tabindex="-1">Document</button>
     </div>
 
-    <div class="people-toolbar">
-      <div id="people-panel-people" class="people-tab-panel" role="tabpanel" aria-labelledby="people-tab-people">
-        <div class="people-autocomplete-wrap">
-          <div class="people-autocomplete">
+    <div class="search-toolbar">
+      <div id="search-panel-people" class="search-tab-panel" role="tabpanel" aria-labelledby="search-tab-people">
+        <div class="search-autocomplete-wrap">
+          <div class="search-autocomplete">
             <input
-              id="people-search-input"
+              id="search-people-input"
               type="text"
-              class="people-search-input"
+              class="search-input"
               placeholder="Type a name…"
               aria-label="Search people by name"
               autocomplete="off"
               spellcheck="false"
               aria-autocomplete="list"
-              aria-controls="people-search-listbox"
+              aria-controls="search-people-listbox"
               aria-expanded="false"
               role="combobox"
             />
-            <ul id="people-search-listbox" class="people-search-results" role="listbox" hidden></ul>
+            <ul id="search-people-listbox" class="search-people-results" role="listbox" hidden></ul>
           </div>
         </div>
 
-        <div class="people-selected" id="people-selected" aria-label="Selected people"></div>
+        <div class="search-selected" id="search-selected" aria-label="Selected people"></div>
       </div>
 
-      <div id="people-panel-document" class="people-tab-panel" role="tabpanel" aria-labelledby="people-tab-document" hidden>
-        <div class="people-document-wrap">
+      <div id="search-panel-document" class="search-tab-panel" role="tabpanel" aria-labelledby="search-tab-document" hidden>
+        <div class="search-document-wrap">
           <input
-            id="people-document-input"
+            id="search-document-input"
             type="text"
-            class="people-search-input"
+            class="search-input"
             placeholder="EFTA00249282, EFTA….pdf, or HOUSE_OVERSIGHT…"
             maxlength="80"
             aria-label="Document ID"
-            aria-describedby="people-document-hint"
+            aria-describedby="search-document-hint"
             autocomplete="off"
             spellcheck="false"
           />
         </div>
-        <p id="people-document-validation" class="people-document-validation" role="alert" aria-live="polite" hidden></p>
-        <p id="people-document-hint" class="people-document-hint">Search by document id; you can paste a file name (extensions and hyphens are ignored for matching)</p>
+        <p id="search-document-validation" class="search-document-validation" role="alert" aria-live="polite" hidden></p>
+        <p id="search-document-hint" class="search-document-hint">Search by document id; you can paste a file name (extensions and hyphens are ignored for matching)</p>
       </div>
 
-      <div class="people-actions">
-        <button type="button" class="people-graph-btn" id="people-open-graph" disabled title="Select 1 or 2 people to open in graph">Open in graph</button>
-        <button type="button" class="people-search-btn" id="people-run-search" disabled>Search photos</button>
+      <div class="search-actions">
+        <button type="button" class="search-graph-btn" id="search-open-graph" disabled title="Select 1 or 2 people to open in graph">Open in graph</button>
+        <button type="button" class="search-submit-btn" id="search-submit" disabled>Search photos</button>
       </div>
     </div>
   </section>
 
-  <section class="people-person-metadata" id="people-person-metadata" hidden aria-live="polite">
-    <div class="people-person-metadata-links" id="people-person-metadata-links"></div>
+  <section class="search-person-metadata" id="search-person-metadata" hidden aria-live="polite">
+    <div class="search-person-metadata-links" id="search-person-metadata-links"></div>
   </section>
 
-  <p class="people-status" id="people-status" role="status" aria-live="polite"></p>
+  <p class="search-status" id="search-status" role="status" aria-live="polite"></p>
 
-  <section class="people-results-wrap" id="people-results-wrap" hidden>
-    <div id="people-results-loading" class="people-results-loading" hidden aria-hidden="true">Loading photos…</div>
-    <div class="people-justified" id="people-masonry"></div>
-    <div class="people-results-more" id="people-results-more" hidden>
-      <button type="button" class="people-search-btn" id="people-load-more">Load more</button>
+  <section class="search-results-wrap" id="search-results-wrap" hidden>
+    <div id="search-results-loading" class="search-results-loading" hidden aria-hidden="true">Loading photos…</div>
+    <div class="search-justified" id="search-masonry"></div>
+    <div class="search-results-more" id="search-results-more" hidden>
+      <button type="button" class="search-submit-btn" id="search-load-more">Load more</button>
     </div>
   </section>
 
-  <div class="people-lightbox" id="people-lightbox" hidden aria-hidden="true">
-    <div class="people-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
-      <button type="button" class="people-lightbox-close" id="people-lightbox-close" aria-label="Close viewer">
+  <div class="search-lightbox" id="search-lightbox" hidden aria-hidden="true">
+    <div class="search-lightbox-dialog" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <button type="button" class="search-lightbox-close" id="search-lightbox-close" aria-label="Close viewer">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M6 6l12 12"></path>
           <path d="M18 6l-12 12"></path>
         </svg>
       </button>
-      <button type="button" class="people-lightbox-nav people-lightbox-prev" id="people-lightbox-prev" aria-label="Previous photo">
+      <button type="button" class="search-lightbox-nav search-lightbox-prev" id="search-lightbox-prev" aria-label="Previous photo">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M15 18l-6-6 6-6"></path>
         </svg>
       </button>
-      <div class="people-lightbox-stage" id="people-lightbox-stage">
-        <div class="people-lightbox-zoom" id="people-lightbox-zoom">
-          <img id="people-lightbox-image" class="people-lightbox-image" alt="" draggable="false" />
+      <div class="search-lightbox-stage" id="search-lightbox-stage">
+        <div class="search-lightbox-zoom" id="search-lightbox-zoom">
+          <img id="search-lightbox-image" class="search-lightbox-image" alt="" draggable="false" />
         </div>
-        <div id="people-lightbox-bboxes" class="people-lightbox-bboxes" aria-hidden="true"></div>
+        <div id="search-lightbox-bboxes" class="search-lightbox-bboxes" aria-hidden="true"></div>
       </div>
-      <button type="button" class="people-lightbox-nav people-lightbox-next" id="people-lightbox-next" aria-label="Next photo">
+      <button type="button" class="search-lightbox-nav search-lightbox-next" id="search-lightbox-next" aria-label="Next photo">
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M9 6l6 6-6 6"></path>
         </svg>
       </button>
-      <div class="people-lightbox-footer">
-        <p class="people-lightbox-count" id="people-lightbox-count"></p>
-        <p class="people-lightbox-filename" id="people-lightbox-filename"></p>
-        <a class="people-lightbox-pdf-link" id="people-lightbox-pdf-link" href="#" target="_blank" rel="noopener">View original file</a>
+      <div class="search-lightbox-footer">
+        <p class="search-lightbox-count" id="search-lightbox-count"></p>
+        <p class="search-lightbox-filename" id="search-lightbox-filename"></p>
+        <a class="search-lightbox-pdf-link" id="search-lightbox-pdf-link" href="#" target="_blank" rel="noopener">View original file</a>
       </div>
     </div>
   </div>
 </main>
 
 <style>
-.people-lightbox[hidden] { display: none; }
-.people-person-metadata[hidden] { display: none; }
-.people-person-metadata {
+.search-lightbox[hidden] { display: none; }
+.search-person-metadata[hidden] { display: none; }
+.search-person-metadata {
   margin: 14px 0 4px;
   padding: 0;
 }
-.people-person-metadata-links {
+.search-person-metadata-links {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.people-person-metadata-link {
+.search-person-metadata-link {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -124,18 +124,18 @@
   color: #1f5fbf;
   font: 500 13px/1.25 system-ui, sans-serif;
 }
-.people-person-metadata-link-icon {
+.search-person-metadata-link-icon {
   width: 20px;
   height: 20px;
   margin-right: 8px;
   object-fit: contain;
   flex: 0 0 20px;
 }
-.people-person-metadata-link:hover,
-.people-person-metadata-link:focus-visible {
+.search-person-metadata-link:hover,
+.search-person-metadata-link:focus-visible {
   text-decoration: underline;
 }
-.people-lightbox {
+.search-lightbox {
   position: fixed;
   inset: 0;
   z-index: 10000;
@@ -151,7 +151,7 @@
   padding-top: calc(24px + env(safe-area-inset-top, 0px));
   box-sizing: border-box;
 }
-.people-lightbox-dialog {
+.search-lightbox-dialog {
   position: relative;
   width: min(96vw, 1400px);
   /* 92vh is often taller than what users see on Android/iOS when toolbars are visible. */
@@ -164,26 +164,26 @@
   padding-bottom: 78px;
   box-sizing: border-box;
 }
-.people-lightbox-stage {
+.search-lightbox-stage {
   position: relative;
   display: inline-block;
   max-width: 100%;
   max-height: calc(100% - 8px);
 }
-.people-lightbox-zoom {
+.search-lightbox-zoom {
   display: inline-block;
   line-height: 0;
   vertical-align: top;
   transform-origin: center center;
 }
-.people-lightbox-stage.people-lightbox-stage--pinch-zoom {
+.search-lightbox-stage.search-lightbox-stage--pinch-zoom {
   touch-action: none;
   cursor: grab;
 }
-.people-lightbox-stage.people-lightbox-stage--pinch-zoom.people-lightbox-stage--grabbing {
+.search-lightbox-stage.search-lightbox-stage--pinch-zoom.search-lightbox-stage--grabbing {
   cursor: grabbing;
 }
-.people-lightbox-image {
+.search-lightbox-image {
   display: block;
   max-width: 100%;
   max-height: calc(min(92vh, 1000px) - 92px);
@@ -192,7 +192,7 @@
   height: auto;
   object-fit: contain;
 }
-.people-lightbox-bboxes {
+.search-lightbox-bboxes {
   position: absolute;
   left: 0;
   top: 0;
@@ -201,12 +201,12 @@
   pointer-events: none;
   box-sizing: border-box;
 }
-.people-thumb-wrap {
+.search-thumb-wrap {
   position: relative;
   display: block;
   width: 100%;
 }
-.people-thumb-bboxes {
+.search-thumb-bboxes {
   position: absolute;
   left: 0;
   top: 0;
@@ -215,7 +215,7 @@
   pointer-events: none;
   box-sizing: border-box;
 }
-.people-face-box {
+.search-face-box {
   position: absolute;
   z-index: 2;
   box-sizing: border-box;
@@ -225,7 +225,7 @@
   cursor: pointer;
   pointer-events: auto;
 }
-.people-face-label {
+.search-face-label {
   position: absolute;
   z-index: 1;
   padding: 1px 6px;
@@ -240,32 +240,32 @@
   cursor: pointer;
   pointer-events: auto;
 }
-.people-face-label.people-face-label--stacked {
+.search-face-label.search-face-label--stacked {
   white-space: normal;
   text-align: center;
   line-height: 1.08;
   max-width: 160px;
 }
 @media (max-width: 800px) {
-  .people-face-label {
+  .search-face-label {
     font-size: 10px;
     max-width: 150px;
   }
-  .people-face-label.people-face-label--stacked {
+  .search-face-label.search-face-label--stacked {
     max-width: 130px;
   }
 }
 /* Lightbox pinch-zoom: keep label typography in screen px (same as unzoomed mobile/desktop). */
-.people-lightbox--zoomed .people-lightbox-bboxes .people-face-label {
+.search-lightbox--zoomed .search-lightbox-bboxes .search-face-label {
   font-size: 12px;
 }
 @media (max-width: 800px) {
-  .people-lightbox--zoomed .people-lightbox-bboxes .people-face-label {
+  .search-lightbox--zoomed .search-lightbox-bboxes .search-face-label {
     font-size: 10px;
   }
 }
-.people-lightbox-close,
-.people-lightbox-nav {
+.search-lightbox-close,
+.search-lightbox-nav {
   position: absolute;
   z-index: 2;
   border-radius: 999px;
@@ -286,46 +286,46 @@
   appearance: none;
   -webkit-appearance: none;
 }
-.people-lightbox-close {
+.search-lightbox-close {
   top: -10px;
   right: -10px;
   width: 44px;
   height: 44px;
 }
-.people-lightbox-nav {
+.search-lightbox-nav {
   top: 50%;
   transform: translateY(-50%);
   width: 48px;
   height: 48px;
 }
-.people-lightbox-close svg {
+.search-lightbox-close svg {
   width: 18px;
   height: 18px;
   display: block;
 }
-.people-lightbox-nav svg {
+.search-lightbox-nav svg {
   width: 20px;
   height: 20px;
   display: block;
   /* Single soft halo so white chevrons stay visible on pale image areas. */
   filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.85));
 }
-.people-lightbox-close svg path,
-.people-lightbox-nav svg path {
+.search-lightbox-close svg path,
+.search-lightbox-nav svg path {
   fill: none;
   stroke: currentColor;
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.people-lightbox-prev { left: -8px; }
-.people-lightbox-next { right: -8px; }
-.people-lightbox-count {
+.search-lightbox-prev { left: -8px; }
+.search-lightbox-next { right: -8px; }
+.search-lightbox-count {
   margin: 0 0 2px;
   color: #fff;
   font-size: 13px;
 }
-.people-lightbox-footer {
+.search-lightbox-footer {
   position: absolute;
   left: 50%;
   bottom: max(10px, env(safe-area-inset-bottom, 0px));
@@ -336,7 +336,7 @@
   gap: 2px;
   min-width: min(92vw, 900px);
 }
-.people-lightbox-filename {
+.search-lightbox-filename {
   margin: 0;
   color: #ddd;
   font: 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -345,28 +345,28 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.people-lightbox-pdf-link {
+.search-lightbox-pdf-link {
   color: #9ad0ff;
   font: 12px/1.2 system-ui, sans-serif;
   text-decoration: underline;
 }
-.people-lightbox-pdf-link[hidden] {
+.search-lightbox-pdf-link[hidden] {
   display: none;
 }
-.people-thumb-bboxes .people-face-box {
+.search-thumb-bboxes .search-face-box {
   cursor: default;
   pointer-events: none;
 }
-.people-results-more {
+.search-results-more {
   display: flex;
   justify-content: center;
   margin-top: 1.25rem;
 }
-.people-results-more[hidden] {
+.search-results-more[hidden] {
   display: none;
 }
-/* Decode thumbs off-screen before append merge + masonry relayout (initial load uses .people-justified--pending on the grid instead). */
-.people-justified-append-stage {
+/* Decode thumbs off-screen before append merge + masonry relayout (initial load uses .search-justified--pending on the grid instead). */
+.search-justified-append-stage {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -381,19 +381,19 @@
   pointer-events: none;
 }
 @media (max-width: 800px) {
-  .people-lightbox {
+  .search-lightbox {
     padding: 10px;
     padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     padding-left: calc(10px + env(safe-area-inset-left, 0px));
     padding-right: calc(10px + env(safe-area-inset-right, 0px));
     padding-top: calc(10px + env(safe-area-inset-top, 0px));
   }
-  .people-lightbox-dialog { padding-bottom: 62px; }
-  .people-lightbox-prev { left: 4px; }
-  .people-lightbox-next { right: 4px; }
-  .people-lightbox-close { top: 4px; right: 4px; }
-  .people-lightbox-footer { bottom: 10px; }
-  .people-lightbox-filename, .people-lightbox-pdf-link, .people-lightbox-count { font-size: 11px; }
+  .search-lightbox-dialog { padding-bottom: 62px; }
+  .search-lightbox-prev { left: 4px; }
+  .search-lightbox-next { right: 4px; }
+  .search-lightbox-close { top: 4px; right: 4px; }
+  .search-lightbox-footer { bottom: 10px; }
+  .search-lightbox-filename, .search-lightbox-pdf-link, .search-lightbox-count { font-size: 11px; }
 }
 </style>
 
@@ -418,20 +418,20 @@
   const PEOPLE_NAMES_CACHE_KEY = "people_names_cache_v1";
   const PEOPLE_NAMES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-  const inputEl = document.getElementById("people-search-input");
-  const listboxEl = document.getElementById("people-search-listbox");
-  const documentInputEl = document.getElementById("people-document-input");
-  const documentValidationEl = document.getElementById("people-document-validation");
-  const tabPeopleBtn = document.getElementById("people-tab-people");
-  const tabDocumentBtn = document.getElementById("people-tab-document");
-  const panelPeopleEl = document.getElementById("people-panel-people");
-  const panelDocumentEl = document.getElementById("people-panel-document");
-  const selectedEl = document.getElementById("people-selected");
-  const searchBtn = document.getElementById("people-run-search");
-  const openGraphBtn = document.getElementById("people-open-graph");
-  const pageTitleEl = document.getElementById("people-page-title");
-  const personMetadataWrapEl = document.getElementById("people-person-metadata");
-  const personMetadataLinksEl = document.getElementById("people-person-metadata-links");
+  const inputEl = document.getElementById("search-people-input");
+  const listboxEl = document.getElementById("search-people-listbox");
+  const documentInputEl = document.getElementById("search-document-input");
+  const documentValidationEl = document.getElementById("search-document-validation");
+  const tabPeopleBtn = document.getElementById("search-tab-people");
+  const tabDocumentBtn = document.getElementById("search-tab-document");
+  const panelPeopleEl = document.getElementById("search-panel-people");
+  const panelDocumentEl = document.getElementById("search-panel-document");
+  const selectedEl = document.getElementById("search-selected");
+  const searchBtn = document.getElementById("search-submit");
+  const openGraphBtn = document.getElementById("search-open-graph");
+  const pageTitleEl = document.getElementById("search-page-title");
+  const personMetadataWrapEl = document.getElementById("search-person-metadata");
+  const personMetadataLinksEl = document.getElementById("search-person-metadata-links");
   /** @type {"people" | "document"} */
   let activeSearchTab = "people";
 
@@ -461,23 +461,23 @@
   let lastPeoplePhotoItems = /** @type {unknown[] | null} */ (null);
   let lastDocumentPhotoItems = /** @type {unknown[] | null} */ (null);
 
-  const statusEl = document.getElementById("people-status");
-  const resultsWrap = document.getElementById("people-results-wrap");
-  const masonryEl = document.getElementById("people-masonry");
-  const loadMoreWrap = document.getElementById("people-results-more");
-  const loadMoreBtn = document.getElementById("people-load-more");
-  const loadingEl = document.getElementById("people-results-loading");
-  const lightboxEl = document.getElementById("people-lightbox");
-  const lightboxStageEl = document.getElementById("people-lightbox-stage");
-  const lightboxZoomEl = document.getElementById("people-lightbox-zoom");
-  const lightboxImgEl = document.getElementById("people-lightbox-image");
-  const lightboxBboxesEl = document.getElementById("people-lightbox-bboxes");
-  const lightboxCountEl = document.getElementById("people-lightbox-count");
-  const lightboxFilenameEl = document.getElementById("people-lightbox-filename");
-  const lightboxPdfLinkEl = document.getElementById("people-lightbox-pdf-link");
-  const lightboxCloseBtn = document.getElementById("people-lightbox-close");
-  const lightboxPrevBtn = document.getElementById("people-lightbox-prev");
-  const lightboxNextBtn = document.getElementById("people-lightbox-next");
+  const statusEl = document.getElementById("search-status");
+  const resultsWrap = document.getElementById("search-results-wrap");
+  const masonryEl = document.getElementById("search-masonry");
+  const loadMoreWrap = document.getElementById("search-results-more");
+  const loadMoreBtn = document.getElementById("search-load-more");
+  const loadingEl = document.getElementById("search-results-loading");
+  const lightboxEl = document.getElementById("search-lightbox");
+  const lightboxStageEl = document.getElementById("search-lightbox-stage");
+  const lightboxZoomEl = document.getElementById("search-lightbox-zoom");
+  const lightboxImgEl = document.getElementById("search-lightbox-image");
+  const lightboxBboxesEl = document.getElementById("search-lightbox-bboxes");
+  const lightboxCountEl = document.getElementById("search-lightbox-count");
+  const lightboxFilenameEl = document.getElementById("search-lightbox-filename");
+  const lightboxPdfLinkEl = document.getElementById("search-lightbox-pdf-link");
+  const lightboxCloseBtn = document.getElementById("search-lightbox-close");
+  const lightboxPrevBtn = document.getElementById("search-lightbox-prev");
+  const lightboxNextBtn = document.getElementById("search-lightbox-next");
 
   const PERSON_COLOR_PALETTE = SiteShared.personColorPalette;
   const hexToRgb = SiteShared.hexToRgb;
@@ -730,12 +730,12 @@
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
       const a = document.createElement("a");
-      a.className = "people-person-metadata-link";
+      a.className = "search-person-metadata-link";
       a.href = link.href;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
       const icon = document.createElement("img");
-      icon.className = "people-person-metadata-link-icon";
+      icon.className = "search-person-metadata-link-icon";
       icon.src = iconSrcByKind[link.kind] || iconSrcByKind.info;
       icon.alt = "";
       if (link.kind === "reference") {
@@ -1088,7 +1088,7 @@
     entries.forEach(function (entry) {
       const boxData = entry.box;
       const box = document.createElement("div");
-      box.className = "people-face-box";
+      box.className = "search-face-box";
       box.style.left = (ox + boxData.left * dw) / cw * 100 + "%";
       box.style.top = (oy + boxData.top * dh) / ch * 100 + "%";
       box.style.width = (boxData.w * dw) / cw * 100 + "%";
@@ -1408,7 +1408,7 @@
       const boxLeft = mapLightboxZoomCoordX(left0, ox, oy, dw, dh, pinchZoom);
       const boxTop = mapLightboxZoomCoordY(top0, ox, oy, dw, dh, pinchZoom);
       const box = document.createElement("div");
-      box.className = "people-face-box";
+      box.className = "search-face-box";
       box.style.left = boxLeft + "px";
       box.style.top = boxTop + "px";
       box.style.width = bw0 * zMap + "px";
@@ -1426,7 +1426,7 @@
       });
 
       const label = document.createElement("div");
-      label.className = "people-face-label";
+      label.className = "search-face-label";
       label.setAttribute("data-person-id", pid);
       label.style.background = rgbaWithAlpha(color, 0.9);
       attachOpenPersonPageHandler(label, pid, openTitle);
@@ -1464,14 +1464,14 @@
           const stackParts = splitDisplayNameForStackedLabel(displayName);
           if (stackParts) {
             applyStackedLabelContent(labelEl, stackParts);
-            labelEl.classList.add("people-face-label--stacked");
+            labelEl.classList.add("search-face-label--stacked");
           } else {
             labelEl.textContent = displayName;
-            labelEl.classList.remove("people-face-label--stacked");
+            labelEl.classList.remove("search-face-label--stacked");
           }
         } else {
           labelEl.textContent = displayName;
-          labelEl.classList.remove("people-face-label--stacked");
+          labelEl.classList.remove("search-face-label--stacked");
         }
         const bd = entries[faceIndex].box;
         const bl0 = ox + bd.left * dw;
@@ -1509,7 +1509,7 @@
       const displayName = displayNameForPersonId(entry.personId, null, ignoredSet);
       const labelEl = entry.el;
       labelEl.textContent = displayName;
-      labelEl.classList.remove("people-face-label--stacked");
+      labelEl.classList.remove("search-face-label--stacked");
 
       const labelRect0 = labelEl.getBoundingClientRect();
       const labelHeight0 = labelRect0.height || labelEl.offsetHeight;
@@ -1533,7 +1533,7 @@
       if (stackParts && placed.score > labelStackScoreThreshold) {
         occupiedRects.pop();
         applyStackedLabelContent(labelEl, stackParts);
-        labelEl.classList.add("people-face-label--stacked");
+        labelEl.classList.add("search-face-label--stacked");
         const labelRect1 = labelEl.getBoundingClientRect();
         const labelHeight1 = labelRect1.height || labelEl.offsetHeight;
         placed = placeLabelWithoutOverlap(
@@ -1570,7 +1570,7 @@
   function getPeopleAppendStage() {
     if (!peopleAppendStageEl) {
       peopleAppendStageEl = document.createElement("div");
-      peopleAppendStageEl.className = "people-justified-append-stage";
+      peopleAppendStageEl.className = "search-justified-append-stage";
       peopleAppendStageEl.setAttribute("aria-hidden", "true");
       document.body.appendChild(peopleAppendStageEl);
     }
@@ -1600,8 +1600,8 @@
 
   function destroyPeopleMasonry() {
     justifiedState = null;
-    masonryEl.classList.remove("people-justified--few");
-    masonryEl.classList.remove("people-justified--pending");
+    masonryEl.classList.remove("search-justified--few");
+    masonryEl.classList.remove("search-justified--pending");
     hidePeopleResultsLoading();
     clearPeopleAppendStage();
     if (justifiedResizeObserver) {
@@ -1616,19 +1616,19 @@
     return Number.isFinite(n) && n > 0 ? n : fallback;
   }
 
-  /** Desktop / mobile ranges set on `.people-justified` in styles.css */
+  /** Desktop / mobile ranges set on `.search-justified` in styles.css */
   function readJustifiedRowHeightRange() {
-    const a = parseCssPxVar(masonryEl, "--people-justified-row-height-min", 168);
-    const b = parseCssPxVar(masonryEl, "--people-justified-row-height-max", 248);
+    const a = parseCssPxVar(masonryEl, "--search-justified-row-height-min", 168);
+    const b = parseCssPxVar(masonryEl, "--search-justified-row-height-max", 248);
     return { minH: Math.min(a, b), maxH: Math.max(a, b) };
   }
 
   function readJustifiedGapPx() {
-    return parseCssPxVar(masonryEl, "--people-justified-gap", 4);
+    return parseCssPxVar(masonryEl, "--search-justified-gap", 4);
   }
 
   /**
-   * Width available for rows: #people-masonry has horizontal padding for gutters; clientWidth
+   * Width available for rows: #search-masonry has horizontal padding for gutters; clientWidth
    * includes that padding, so subtract it or rows overflow and the right gutter disappears.
    * @param {HTMLElement} el
    */
@@ -1746,9 +1746,9 @@
     if (!justifiedState || !justifiedState.elements.length) return;
     const total = justifiedState.elements.length;
     if (total < FEW_PHOTOS_THRESHOLD) {
-      masonryEl.classList.add("people-justified--few");
+      masonryEl.classList.add("search-justified--few");
     } else {
-      masonryEl.classList.remove("people-justified--few");
+      masonryEl.classList.remove("search-justified--few");
     }
     void masonryEl.offsetWidth;
     const W = readJustifiedContentWidthForLayout();
@@ -1798,7 +1798,7 @@
         }
       }
       const rowEl = document.createElement("div");
-      rowEl.className = "people-justified-row";
+      rowEl.className = "search-justified-row";
       if (n === 1 && widths[0] < contentW - 0.5) {
         rowEl.style.justifyContent = "center";
       }
@@ -1812,7 +1812,7 @@
       }
       masonryEl.appendChild(rowEl);
     }
-    if (masonryEl.classList.contains("people-justified--pending")) {
+    if (masonryEl.classList.contains("search-justified--pending")) {
       revealJustifiedGallery();
     } else {
       syncJustifiedThumbFaceBoxes();
@@ -1820,7 +1820,7 @@
   }
 
   function revealJustifiedGallery() {
-    masonryEl.classList.remove("people-justified--pending");
+    masonryEl.classList.remove("search-justified--pending");
     hidePeopleResultsLoading();
     /* Reflow after reveal so thumb cells have non-zero client dimensions; sync in the same turn as
        first visible paint (double rAF deferred boxes ~1–2 frames after images). */
@@ -1834,7 +1834,7 @@
     for (let i = 0; i < els.length; i++) {
       const el = els[i];
       const img = el.querySelector("img");
-      const overlay = el.querySelector(".people-thumb-bboxes");
+      const overlay = el.querySelector(".search-thumb-bboxes");
       if (!img || !overlay) continue;
       const faces = overlay._thumbFaces;
       if (faces == null) continue;
@@ -1846,7 +1846,7 @@
     return {
       text: statusEl.textContent,
       html: statusEl.innerHTML,
-      isError: statusEl.classList.contains("people-status-error"),
+      isError: statusEl.classList.contains("search-status-error"),
     };
   }
 
@@ -2196,7 +2196,7 @@
 
     if (!append) {
       showPeopleResultsLoading(DEFAULT_RESULTS_LOADING_LABEL);
-      masonryEl.classList.add("people-justified--pending");
+      masonryEl.classList.add("search-justified--pending");
     }
 
     const lightboxPayload = photoItems.map(function (p) {
@@ -2214,7 +2214,7 @@
     photoItems.forEach(function (photo, idx) {
       const globalIdx = indexOffset + idx;
       const item = document.createElement("div");
-      item.className = "people-justified-item";
+      item.className = "search-justified-item";
       const img = document.createElement("img");
       const thumbSrc = SiteShared.cdnThumbnailWebpUrl(photo.image);
       const fullSrc = lightboxPayload[idx].url;
@@ -2226,9 +2226,9 @@
         img.fetchPriority = "high";
       }
       const wrap = document.createElement("div");
-      wrap.className = "people-thumb-wrap";
+      wrap.className = "search-thumb-wrap";
       const bboxes = document.createElement("div");
-      bboxes.className = "people-thumb-bboxes";
+      bboxes.className = "search-thumb-bboxes";
       wrap.appendChild(img);
       wrap.appendChild(bboxes);
       appendThumbFaceBoxes(bboxes, photo.faces);
@@ -2359,7 +2359,7 @@
       document.removeEventListener("mouseup", onLightboxDocMouseUp);
     }
     if (lightboxStageEl) {
-      lightboxStageEl.classList.remove("people-lightbox-stage--grabbing");
+      lightboxStageEl.classList.remove("search-lightbox-stage--grabbing");
     }
     lightboxZoomScale = 1;
     lightboxZoomPanX = 0;
@@ -2373,15 +2373,15 @@
       lightboxZoomEl.style.transformOrigin = "";
     }
     if (lightboxEl) {
-      lightboxEl.classList.remove("people-lightbox--zoomed");
+      lightboxEl.classList.remove("search-lightbox--zoomed");
     }
     if (lightboxStageEl) {
-      lightboxStageEl.classList.remove("people-lightbox-stage--pinch-zoom");
+      lightboxStageEl.classList.remove("search-lightbox-stage--pinch-zoom");
     }
   }
 
   /**
-   * Map pre-zoom overlay coords (same origin as getContainedImageRect) to screen — matches CSS on #people-lightbox-zoom.
+   * Map pre-zoom overlay coords (same origin as getContainedImageRect) to screen — matches CSS on #search-lightbox-zoom.
    * Pass pinchActive from renderLightboxFaceBoxes to avoid repeated matchMedia.
    */
   function mapLightboxZoomCoordX(x, ox, oy, dw, dh, pinchActive) {
@@ -2407,8 +2407,8 @@
    */
   function captureLightboxLabelFreezeFromDom() {
     if (!lightboxZoomInteractionsEnabled() || !lightboxBboxesEl) return;
-    const boxes = lightboxBboxesEl.querySelectorAll(".people-face-box");
-    const labels = lightboxBboxesEl.querySelectorAll(".people-face-label");
+    const boxes = lightboxBboxesEl.querySelectorAll(".search-face-box");
+    const labels = lightboxBboxesEl.querySelectorAll(".search-face-label");
     if (!labels.length || boxes.length !== labels.length) {
       lightboxLabelFrozenBase = null;
       return;
@@ -2444,7 +2444,7 @@
           ? lightboxPhotos[lightboxIndex].faces
           : null;
       const displayName = displayNameForPersonId(pid, facesCtx);
-      const stacked = labelEl.classList.contains("people-face-label--stacked");
+      const stacked = labelEl.classList.contains("search-face-label--stacked");
       out.push({
         verticalMode: verticalMode,
         gapScreen: gapScreen,
@@ -2505,13 +2505,13 @@
     lightboxZoomEl.style.transform =
       "translate(" + lightboxZoomPanX + "px," + lightboxZoomPanY + "px) scale(" + lightboxZoomScale + ")";
     const zoomed = lightboxZoomScale > 1.001;
-    lightboxEl.classList.toggle("people-lightbox--zoomed", zoomed);
-    lightboxStageEl.classList.toggle("people-lightbox-stage--pinch-zoom", zoomed);
+    lightboxEl.classList.toggle("search-lightbox--zoomed", zoomed);
+    lightboxStageEl.classList.toggle("search-lightbox-stage--pinch-zoom", zoomed);
   }
 
   function isLightboxFaceInteractiveTarget(t) {
     if (!t || !t.closest) return false;
-    return !!(t.closest(".people-face-box") || t.closest(".people-face-label"));
+    return !!(t.closest(".search-face-box") || t.closest(".search-face-label"));
   }
 
   function onLightboxDocMouseMove(e) {
@@ -2529,7 +2529,7 @@
     document.removeEventListener("mousemove", onLightboxDocMouseMove);
     document.removeEventListener("mouseup", onLightboxDocMouseUp);
     if (lightboxStageEl) {
-      lightboxStageEl.classList.remove("people-lightbox-stage--grabbing");
+      lightboxStageEl.classList.remove("search-lightbox-stage--grabbing");
     }
     cancelLightboxWheelRelayout();
     if (lightboxOverlayGestureActive) {
@@ -2548,7 +2548,7 @@
     lightboxOverlayGestureActive = true;
     captureLightboxLabelFreezeFromDom();
     if (lightboxStageEl) {
-      lightboxStageEl.classList.add("people-lightbox-stage--grabbing");
+      lightboxStageEl.classList.add("search-lightbox-stage--grabbing");
     }
     document.addEventListener("mousemove", onLightboxDocMouseMove);
     document.addEventListener("mouseup", onLightboxDocMouseUp);
@@ -2828,12 +2828,12 @@
 
   function setStatus(msg, isError) {
     statusEl.textContent = msg || "";
-    statusEl.classList.toggle("people-status-error", !!isError);
+    statusEl.classList.toggle("search-status-error", !!isError);
   }
 
   function setStatusHtml(html, isError) {
     statusEl.innerHTML = html || "";
-    statusEl.classList.toggle("people-status-error", !!isError);
+    statusEl.classList.toggle("search-status-error", !!isError);
   }
 
   function setStatusError(err) {
@@ -2864,7 +2864,7 @@
         documentValidationEl.textContent = "";
       }
       documentInputEl.removeAttribute("aria-invalid");
-      documentInputEl.classList.remove("people-search-input--invalid");
+      documentInputEl.classList.remove("search-input--invalid");
       return;
     }
     const raw = String(documentInputEl.value || "").trim();
@@ -2874,7 +2874,7 @@
         documentValidationEl.textContent = "";
       }
       documentInputEl.removeAttribute("aria-invalid");
-      documentInputEl.classList.remove("people-search-input--invalid");
+      documentInputEl.classList.remove("search-input--invalid");
       return;
     }
     if (!SiteShared.isValidPartialDocumentQuery(raw)) {
@@ -2883,7 +2883,7 @@
         documentValidationEl.textContent = DOCUMENT_ID_FORMAT_MESSAGE;
       }
       documentInputEl.setAttribute("aria-invalid", "true");
-      documentInputEl.classList.add("people-search-input--invalid");
+      documentInputEl.classList.add("search-input--invalid");
       return;
     }
     if (documentValidationEl) {
@@ -2891,7 +2891,7 @@
       documentValidationEl.textContent = "";
     }
     documentInputEl.removeAttribute("aria-invalid");
-    documentInputEl.classList.remove("people-search-input--invalid");
+    documentInputEl.classList.remove("search-input--invalid");
   }
 
   function updateSearchButton() {
@@ -2941,18 +2941,18 @@
     selectedEl.innerHTML = "";
     selected.forEach((p, i) => {
       const card = document.createElement("div");
-      card.className = "people-chip";
+      card.className = "search-chip";
       card.setAttribute("data-person-id", p.person_id);
       const accent = PERSON_COLOR_PALETTE[i % PERSON_COLOR_PALETTE.length];
       card.style.border = "2px solid " + accent;
       card.style.background = chipBackgroundTint(accent);
       card.style.color = "#1a1a1a";
       const label = document.createElement("span");
-      label.className = "people-chip-label";
+      label.className = "search-chip-label";
       label.textContent = chipLabelForSelected(p);
       const rm = document.createElement("button");
       rm.type = "button";
-      rm.className = "people-chip-remove";
+      rm.className = "search-chip-remove";
       rm.setAttribute("aria-label", "Remove " + chipLabelForSelected(p));
       rm.textContent = "×";
       rm.addEventListener("click", () => {
@@ -3047,7 +3047,7 @@
   }
 
   function syncPeopleSearchListboxHighlight() {
-    const opts = listboxEl.querySelectorAll(".people-search-option");
+    const opts = listboxEl.querySelectorAll(".search-people-option");
     if (!opts.length) return;
     opts.forEach((el, i) => {
       const keyboardOn = activeIndex >= 0 && i === activeIndex;
@@ -3055,18 +3055,18 @@
         activeIndex < 0 &&
         i === 0 &&
         (peopleSearchPointerOptionIndex === null || peopleSearchPointerOptionIndex === 0);
-      el.classList.toggle("people-search-option-active", keyboardOn);
-      el.classList.toggle("people-search-option-enter-default", enterDefault);
+      el.classList.toggle("search-people-option-active", keyboardOn);
+      el.classList.toggle("search-people-option-enter-default", enterDefault);
       const ariaSel = keyboardOn || enterDefault;
       el.setAttribute("aria-selected", ariaSel ? "true" : "false");
     });
     if (activeIndex >= 0) {
-      inputEl.setAttribute("aria-activedescendant", "people-opt-" + activeIndex);
+      inputEl.setAttribute("aria-activedescendant", "search-people-opt-" + activeIndex);
     } else if (
       peopleSearchPointerOptionIndex === null ||
       peopleSearchPointerOptionIndex === 0
     ) {
-      inputEl.setAttribute("aria-activedescendant", "people-opt-0");
+      inputEl.setAttribute("aria-activedescendant", "search-people-opt-0");
     } else {
       inputEl.removeAttribute("aria-activedescendant");
     }
@@ -3082,9 +3082,9 @@
     matches.forEach((row, i) => {
       const li = document.createElement("li");
       li.setAttribute("role", "option");
-      li.id = "people-opt-" + i;
+      li.id = "search-people-opt-" + i;
       li.dataset.personId = row.person_id;
-      li.className = "people-search-option";
+      li.className = "search-people-option";
       li.textContent = row.label;
       li.addEventListener("mousedown", (e) => {
         e.preventDefault();
@@ -3297,9 +3297,9 @@
   listboxEl.addEventListener(
     "pointerover",
     function (e) {
-      const li = e.target && e.target.closest && e.target.closest(".people-search-option");
+      const li = e.target && e.target.closest && e.target.closest(".search-people-option");
       if (!li || !listboxEl.contains(li)) return;
-      const opts = listboxEl.querySelectorAll(".people-search-option");
+      const opts = listboxEl.querySelectorAll(".search-people-option");
       const idx = Array.prototype.indexOf.call(opts, li);
       peopleSearchPointerOptionIndex = idx >= 0 ? idx : null;
       syncPeopleSearchListboxHighlight();
@@ -3312,7 +3312,7 @@
   });
 
   inputEl.addEventListener("keydown", (e) => {
-    const opts = listboxEl.querySelectorAll(".people-search-option");
+    const opts = listboxEl.querySelectorAll(".search-people-option");
     const hasTypedQuery = String(inputEl.value || "").trim().length > 0;
     if (e.key === "Enter" && activeSearchTab === "people" && selected.length > 0 && !searchBtn.disabled) {
       const pickingFromOpenList =
@@ -3348,7 +3348,7 @@
   });
 
   document.addEventListener("click", (e) => {
-    if (!e.target.closest(".people-autocomplete")) setListboxOpen(false);
+    if (!e.target.closest(".search-autocomplete")) setListboxOpen(false);
   });
 
   lightboxCloseBtn.addEventListener("click", () => navigateLightbox("close"));

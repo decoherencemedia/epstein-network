@@ -1,16 +1,16 @@
-<main class="site-page browse-page" id="main">
-  <div class="browse-top">
-    <header class="browse-heading">
-      <h1 class="browse-title">
-        <span class="browse-title-main">People</span>
-        <span class="browse-title-count" id="browse-title-count"></span>
+<main class="site-page people-page" id="main">
+  <div class="people-top">
+    <header class="people-heading">
+      <h1 class="people-title">
+        <span class="people-title-main">People</span>
+        <span class="people-title-count" id="people-title-count"></span>
       </h1>
     </header>
-    <div class="browse-filter-wrap">
+    <div class="people-filter-wrap">
       <input
         type="search"
-        id="browse-filter-input"
-        class="people-search-input browse-filter-input"
+        id="people-filter-input"
+        class="search-input people-filter-input"
         placeholder="Filter by name…"
         autocomplete="off"
         spellcheck="false"
@@ -20,9 +20,9 @@
     </div>
   </div>
 
-  <p class="browse-status" id="browse-status" role="status" aria-live="polite">Loading…</p>
+  <p class="people-status" id="people-status" role="status" aria-live="polite">Loading…</p>
 
-  <div class="browse-grid" id="browse-grid" hidden></div>
+  <div class="people-grid" id="people-grid" hidden></div>
 </main>
 
 <script src="/js/latinize.js"></script>
@@ -42,16 +42,16 @@
     return x + " photos";
   }
 
-  const statusEl = document.getElementById("browse-status");
-  const gridEl = document.getElementById("browse-grid");
-  const countEl = document.getElementById("browse-title-count");
-  const filterInputEl = document.getElementById("browse-filter-input");
+  const statusEl = document.getElementById("people-status");
+  const gridEl = document.getElementById("people-grid");
+  const countEl = document.getElementById("people-title-count");
+  const filterInputEl = document.getElementById("people-filter-input");
 
   let allRows = [];
 
   function placeholderEl() {
     const d = document.createElement("div");
-    d.className = "browse-tile-placeholder";
+    d.className = "people-tile-placeholder";
     d.setAttribute("aria-hidden", "true");
     return d;
   }
@@ -61,10 +61,10 @@
     rows.forEach(function (row) {
       const name = displayName(row);
       const article = document.createElement("article");
-      article.className = "browse-tile";
+      article.className = "people-tile";
 
       const link = document.createElement("a");
-      link.className = "browse-tile-link";
+      link.className = "people-tile-link";
       const pid = String(row.person_id || "").trim();
       link.href = SiteShared.peopleUrlForPersonIds([pid]) || "#";
       link.target = "_blank";
@@ -72,12 +72,12 @@
       link.title = name + " — open in Search";
 
       const media = document.createElement("div");
-      media.className = "browse-tile-media";
+      media.className = "people-tile-media";
 
       const url = SiteShared.cdnAssetUrl(row.image);
       if (url) {
         const img = document.createElement("img");
-        img.className = "browse-tile-img";
+        img.className = "people-tile-img";
         img.src = url;
         img.alt = name;
         img.loading = "lazy";
@@ -92,12 +92,12 @@
       }
 
       const cap = document.createElement("div");
-      cap.className = "browse-tile-caption";
+      cap.className = "people-tile-caption";
       const nameEl = document.createElement("span");
-      nameEl.className = "browse-tile-name";
+      nameEl.className = "people-tile-name";
       nameEl.textContent = name;
       const countLine = document.createElement("span");
-      countLine.className = "browse-tile-photos";
+      countLine.className = "people-tile-photos";
       countLine.textContent = photoLabel(row.photo_count);
       cap.appendChild(nameEl);
       cap.appendChild(countLine);

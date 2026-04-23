@@ -543,7 +543,7 @@ def build_page_html(
     close = "</body>\n</html>\n"
     return (
         head
-        + '<body class="page-people">\n'
+        + '<body class="page-search">\n'
         + nav
         + bootstrap_script
         + search_inner_body
