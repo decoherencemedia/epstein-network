@@ -45,6 +45,7 @@
     function close() {
       header.classList.remove("site-nav-open");
       toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-label", "Open menu");
       document.body.classList.remove("site-nav-open");
     }
 
@@ -52,6 +53,7 @@
       if (!isMobile()) return;
       header.classList.add("site-nav-open");
       toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-label", "Close menu");
       document.body.classList.add("site-nav-open");
     }
 

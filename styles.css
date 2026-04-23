@@ -153,8 +153,12 @@ body.site-nav-open .site-header {
   color: var(--ink);
   -webkit-tap-highlight-color: transparent;
 }
-.site-nav-toggle:hover {
-  background: color-mix(in srgb, var(--border-focus) 8%, transparent);
+/* `(hover: hover)` keeps the tint off touch devices, where a tap otherwise leaves
+ * the button in :hover until the user taps elsewhere. */
+@media (hover: hover) {
+  .site-nav-toggle:hover {
+    background: color-mix(in srgb, var(--border-focus) 8%, transparent);
+  }
 }
 .site-nav-toggle:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -166,6 +170,20 @@ body.site-nav-open .site-header {
   height: 2px;
   background: currentColor;
   border-radius: 1px;
+  /* Animated hamburger↔X. 7px = bar height (2) + gap (5) — what each outer bar must
+   * translate vertically to meet the middle bar before rotating. */
+  transition:
+    transform 180ms ease,
+    opacity 120ms ease;
+}
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle-bar:nth-child(2) {
+  opacity: 0;
+}
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
 }
 .site-nav-backdrop {
   display: none;
