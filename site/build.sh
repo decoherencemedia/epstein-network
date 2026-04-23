@@ -23,11 +23,15 @@ mkdir -p "$DIST/people" "$DIST/search" "$DIST/about" "$DIST/explore"
 # Shared header + nav for every page. nav.js adds `site-nav-active` /
 # aria-current="page" based on location.pathname, so no per-page partial needed.
 NAV="$SITE/partials/nav.html"
+# First-visit disclaimer gate. Same markup on every page; disclaimer.js (loaded
+# from the head partials) reads localStorage to decide whether to show it.
+DISCLAIMER="$SITE/partials/disclaimer.html"
 
 # Home: graph (no footer — full-viewport viz)
 cat "$SITE/partials/head-root.html" \
   "$NAV" \
   "$SITE/pages/home-inner.html" \
+  "$DISCLAIMER" \
   "$SITE/partials/close.html" > "$DIST/index.html"
 
 # Search (/search)
@@ -35,6 +39,7 @@ cat "$SITE/partials/head-search.html" \
   "$NAV" \
   "$SITE/pages/search-inner.html" \
   "$SITE/partials/footer.html" \
+  "$DISCLAIMER" \
   "$SITE/partials/close.html" > "$DIST/search/index.html"
 
 # People gallery (/people) — data from /faces API
@@ -42,6 +47,7 @@ cat "$SITE/partials/head-people.html" \
   "$NAV" \
   "$SITE/pages/people-inner.html" \
   "$SITE/partials/footer.html" \
+  "$DISCLAIMER" \
   "$SITE/partials/close.html" > "$DIST/people/index.html"
 
 # About
@@ -49,12 +55,14 @@ cat "$SITE/partials/head-about.html" \
   "$NAV" \
   "$SITE/pages/about-inner.html" \
   "$SITE/partials/footer.html" \
+  "$DISCLAIMER" \
   "$SITE/partials/close.html" > "$DIST/about/index.html"
 
 # Explore (/explore) — UMAP scatter viewer (d3 canvas). No footer (full-viewport viz).
 cat "$SITE/partials/head-explore.html" \
   "$NAV" \
   "$SITE/pages/explore-inner.html" \
+  "$DISCLAIMER" \
   "$SITE/partials/close.html" > "$DIST/explore/index.html"
 
 cp "$ROOT/styles.css" "$DIST/"

@@ -1,0 +1,33 @@
+<!--
+  First-visit disclaimer gate. Markup lives here; show/hide logic + localStorage
+  persistence are in /js/disclaimer.js (loaded via the shared head partials).
+
+  Starts with the `hidden` attribute so returning visitors (and users with JS
+  disabled) see no modal. The script removes `hidden` on first visit and locks
+  body scroll until the user clicks Accept. The same modal is concatenated into
+  every page by site/build.sh, so acceptance is site-wide (same origin = shared
+  localStorage).
+-->
+<div
+  id="disclaimer-modal"
+  class="disclaimer-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="disclaimer-title"
+  aria-describedby="disclaimer-body"
+  hidden>
+  <div class="disclaimer-backdrop" aria-hidden="true"></div>
+  <div class="disclaimer-card" role="document">
+    <h2 id="disclaimer-title" class="disclaimer-title">Disclaimer</h2>
+    <p id="disclaimer-body" class="disclaimer-body">
+      This website uses facial recognition to identify by name people who appear in images released by the
+      Department of Justice and House Oversight Committee as part of the Epstein Files Transparency Act.
+      Inclusion in this website does not in any way imply that any person identified had or has knowledge of,
+      or participated in, any of Jeffrey Epstein&rsquo;s misconduct or crimes, and Decoherence Media makes no
+      claims regarding the nature of connection with Epstein or between any of the individuals.
+    </p>
+    <div class="disclaimer-actions">
+      <button type="button" id="disclaimer-accept" class="disclaimer-accept">Accept</button>
+    </div>
+  </div>
+</div>

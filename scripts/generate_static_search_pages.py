@@ -43,6 +43,7 @@ import sqlite3
 import subprocess
 import urllib.parse
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 from typing import NamedTuple
 from xml.sax.saxutils import escape as xml_escape
@@ -84,6 +85,7 @@ def fetch_sqlite_db(db_path: Path, url: str) -> None:
 
 
 DIST_DIR = EPSTEIN_WEB_ROOT / "dist"
+SITE_PARTIALS_DIR = EPSTEIN_WEB_ROOT / "site" / "partials"
 
 MAX_K = 3
 SITE_ORIGIN = "https://epstein.photos"
@@ -448,31 +450,20 @@ def render_head(
 {og_block}  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/styles.css">
   <script src="/js/nav.js" defer></script>
+  <script src="/js/disclaimer.js" defer></script>
 </head>
 """
 
 
-def render_nav() -> str:
-    """Mirror of site/partials/nav.html. nav.js adds the active class at runtime."""
-    return """<header class="site-header">
-  <nav class="site-nav" aria-label="Main">
-    <a class="site-nav-brand" href="/">Epstein Network</a>
-    <button type="button" class="site-nav-toggle" aria-expanded="false" aria-controls="site-nav-menu" aria-label="Open menu">
-      <span class="site-nav-toggle-bar" aria-hidden="true"></span>
-      <span class="site-nav-toggle-bar" aria-hidden="true"></span>
-      <span class="site-nav-toggle-bar" aria-hidden="true"></span>
-    </button>
-    <div class="site-nav-backdrop" tabindex="-1" aria-hidden="true"></div>
-    <div class="site-nav-links" id="site-nav-menu" role="navigation" aria-label="Site pages">
-      <a class="site-nav-link" href="/">Graph</a>
-      <a class="site-nav-link" href="/people/">People</a>
-      <a class="site-nav-link" href="/search/">Search</a>
-      <a class="site-nav-link" href="/explore/">Explore</a>
-      <a class="site-nav-link" href="/about/">About</a>
-    </div>
-  </nav>
-</header>
-"""
+@cache
+def read_site_partial(name: str) -> str:
+    """Read ``site/partials/<name>.html`` so the static generator shares a single source
+    of truth with site/build.sh (instead of duplicating markup inline). Cached because
+    partials are static for the lifetime of the build."""
+    path = SITE_PARTIALS_DIR / f"{name}.html"
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing site partial: {path}")
+    return path.read_text(encoding="utf8")
 
 
 def write_root_sitemap(*, dist: Path, loc_urls: list[str], lastmod_by_url: dict[str, str]) -> Path:
@@ -532,15 +523,11 @@ def build_page_html(
         canonical_url=canonical_url,
         og_image_url=og_image_url,
     )
-    nav = render_nav()
+    nav = read_site_partial("nav")
+    disclaimer = read_site_partial("disclaimer")
+    footer = read_site_partial("footer")
     bootstrap_script = (
         f'<script>window.__EPSTEIN_STATIC_SEARCH__={bootstrap_json};</script>\n'
-    )
-    footer = (
-        '<footer class="site-footer">\n'
-        '  <p class="site-footer-note">© 2026 '
-        '<a href="https://decoherence.media/">Decoherence Media</a> · All rights reserved</p>\n'
-        "</footer>\n"
     )
     close = "</body>\n</html>\n"
     return (
@@ -550,6 +537,7 @@ def build_page_html(
         + bootstrap_script
         + search_inner_body
         + footer
+        + disclaimer
         + close
     )
 
