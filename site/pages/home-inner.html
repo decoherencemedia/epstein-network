@@ -483,16 +483,35 @@
         colorsWrap.className = "legend-colors";
         if (cats.length) {
           cats.forEach((cat) => {
+            // Rows are <div role="button"> rather than real <button>s so they don't pick
+            // up user-agent form-control font styling that drifts from the rest of the
+            // sidebar text. Keyboard activation (Space/Enter) is wired up explicitly.
+            // The category color is set as a CSS custom property so the styles in
+            // styles.css can render both the on (filled) and off (hollow stroke) states
+            // from a single rule. Click toggles via toggleLegendCategory (defined later
+            // in this file, after the canvas/picker/state machinery it touches exists).
             const row = document.createElement("div");
             row.className = "legend-color-row";
+            row.setAttribute("role", "button");
+            row.setAttribute("tabindex", "0");
+            row.setAttribute("aria-pressed", "true");
+            row.dataset.category = cat;
+            row.style.setProperty("--swatch-color", (colorByCategory && colorByCategory[cat]) || "#ccc");
+            row.title = `Click to hide "${cat}"`;
             const sw = document.createElement("span");
             sw.className = "legend-swatch";
-            sw.style.backgroundColor = (colorByCategory && colorByCategory[cat]) || "#ccc";
             const lab = document.createElement("span");
             lab.className = "legend-color-label";
             lab.textContent = cat;
             row.appendChild(sw);
             row.appendChild(lab);
+            row.addEventListener("click", () => toggleLegendCategory(cat));
+            row.addEventListener("keydown", (e) => {
+              if (e.key === " " || e.key === "Enter") {
+                e.preventDefault();
+                toggleLegendCategory(cat);
+              }
+            });
             colorsWrap.appendChild(row);
           });
         } else {
@@ -915,6 +934,83 @@
         hover: { kind: null, item: null }, // kind: "edge" | "node" | null
         label: { hoveredNode: null, hoveredEdge: null, allowFn: null },
       };
+
+      // Categories the user has toggled off via the legend. Read by drawGraphCanvas()
+      // (skip nodes + atlas faces in the category, plus any edge with at least one
+      // endpoint in it), pickGraphTargetAtCanvasPx() / isLinkPickable() (so hidden
+      // items can't catch hover/click), and updateNodeLabels() (so floating labels
+      // for hidden nodes don't linger). Toggled by toggleLegendCategory below; the
+      // toggle handler is wired to the legend rows in renderLegend() above, but the
+      // function itself is defined here so it can close over hover/lock state.
+      const hiddenCategories = new Set();
+      function isCategoryHidden(cat) {
+        return cat != null && hiddenCategories.has(cat);
+      }
+      function isNodeHidden(d) {
+        return !!d && isCategoryHidden(d.cluster);
+      }
+      function isLinkHiddenByCategory(l) {
+        if (!l) return false;
+        const s = getNodeFromLinkEnd(l.source);
+        const t = getNodeFromLinkEnd(l.target);
+        return isNodeHidden(s) || isNodeHidden(t);
+      }
+      function toggleLegendCategory(cat) {
+        if (cat == null) return;
+        const wasHidden = hiddenCategories.has(cat);
+        if (wasHidden) hiddenCategories.delete(cat);
+        else hiddenCategories.add(cat);
+        const nowHidden = !wasHidden;
+        // Reflect new state on the row: aria-pressed / class / tooltip. We look up the
+        // row by data-category so this stays correct even if the legend ever gets
+        // re-rendered out from under us.
+        const row = previewLegendEl.querySelector(
+          `.legend-color-row[data-category="${cat.replace(/"/g, '\\"')}"]`
+        );
+        if (row) {
+          row.classList.toggle("is-off", nowHidden);
+          row.setAttribute("aria-pressed", nowHidden ? "false" : "true");
+          row.title = nowHidden ? `Click to show "${cat}"` : `Click to hide "${cat}"`;
+        }
+        // If a node/edge that's now hidden was driving the hover, lock, sidebar, or
+        // label state, clear it so the sidebar / focus styling doesn't keep referring
+        // to something the user can no longer see on the canvas.
+        if (nowHidden) {
+          let needFullReset = false;
+          if (state.lock.active) {
+            const item = state.lock.item;
+            if (state.lock.kind === "node" && isNodeHidden(item)) needFullReset = true;
+            if (state.lock.kind === "edge" && (item == null || isLinkHiddenByCategory(item))) needFullReset = true;
+            if (!needFullReset && isNodeHidden(state.lock.highlightNode)) {
+              state.lock.highlightNode = null;
+            }
+          }
+          // Clearing hover.item alone leaves state.label.allowFn pointing at the now-
+          // hidden node's "isConnected" predicate, so visible nodes stay context-muted
+          // until the next mousemove. Mirror the empty-canvas hover path by also
+          // dropping allowFn to fully exit focus mode.
+          if (state.hover.kind === "node" && isNodeHidden(state.hover.item)) {
+            state.hover.kind = null;
+            state.hover.item = null;
+            state.label.allowFn = null;
+          }
+          if (state.hover.kind === "edge" && isLinkHiddenByCategory(state.hover.item)) {
+            state.hover.kind = null;
+            state.hover.item = null;
+            state.label.allowFn = null;
+          }
+          if (isNodeHidden(state.label.hoveredNode)) state.label.hoveredNode = null;
+          if (isLinkHiddenByCategory(state.label.hoveredEdge)) state.label.hoveredEdge = null;
+          if (needFullReset) {
+            // Locked node/edge just disappeared — drop the sidebar like the user
+            // clicked the empty background. Pulls in the same teardown the ESC key
+            // and bg-click paths use, so we don't have to duplicate the bookkeeping.
+            unlockPreviewAndHighlights();
+          }
+        }
+        updateNodeLabels();
+        drawGraphCanvas();
+      }
 
       function isLockedFor(kind, item) {
         return state.lock.active && state.lock.kind === kind && state.lock.item === item;
@@ -1717,6 +1813,11 @@
       }
 
       function isLinkPickable(l) {
+        // Toggled-off categories take precedence over lock state — a hidden edge
+        // can't catch hover/click even if it's the currently locked one (the
+        // lock would have been cleared by toggleLegendCategory in that case, but
+        // belt-and-suspenders since the picker is also called from other paths).
+        if (isLinkHiddenByCategory(l)) return false;
         if (!state.lock.active) return true;
         if (state.lock.kind === "node" && state.lock.highlightNode) {
           const d = state.lock.highlightNode;
@@ -1733,6 +1834,7 @@
         const nodePad = 4;
         for (let i = nodes.length - 1; i >= 0; i--) {
           const d = nodes[i];
+          if (isNodeHidden(d)) continue;
           const c = graphPointToCanvasPx(d.x, d.y);
           if (!c) continue;
           const rPx = (d.radius / zoomScale) * pxPerUser;
@@ -1879,6 +1981,9 @@
         const gradientLinks = [];
         for (let i = 0; i < links.length; i++) {
           const l = links[i];
+          // Hide any edge whose source or target category is toggled off — matches
+          // the rule used by the picker and labels so the three views stay in sync.
+          if (isLinkHiddenByCategory(l)) continue;
           const st = getLinkCanvasStyle(l, i);
           if (st.skip) continue;
           const s = l.source;
@@ -1920,6 +2025,7 @@
         ctx.globalAlpha = 1;
 
         for (const d of nodes) {
+          if (isNodeHidden(d)) continue;
           const nst = getNodeCanvasStyle(d);
           const c = pairScreen(d.x, d.y);
           if (!c) continue;
@@ -1934,6 +2040,7 @@
 
         if (atlasCanvasImg && atlasCanvasImg.complete && atlasCanvasImg.naturalWidth) {
           for (const d of nodes) {
+            if (isNodeHidden(d)) continue;
             const nst = getNodeCanvasStyle(d);
             if (!nst.faceOpacity) continue;
             const k = atlasKeyForNode(d);
@@ -2024,7 +2131,11 @@
           const shouldShowBySize = d.radius * labelZoomK >= TWEAK.labelSizeThreshold;
           const shouldShowByHover = state.label.hoveredNode === d;
           const shouldAllow = typeof state.label.allowFn === "function" ? !!state.label.allowFn(d) : true;
-          const visible = shouldAllow && (shouldShowBySize || shouldShowByHover);
+          // A node toggled off via the legend is fully hidden — no canvas dot, no label,
+          // no background plate. Forcing `visible = false` here also takes the early
+          // return below so we don't bother computing layout for something invisible.
+          const categoryHidden = isNodeHidden(d);
+          const visible = !categoryHidden && shouldAllow && (shouldShowBySize || shouldShowByHover);
           // When this node is the expanded tooltip, draw it in tooltipOverlay (above all labels); hide here.
           const drawInOverlay = visible && shouldShowByHover;
 

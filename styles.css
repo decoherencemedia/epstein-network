@@ -696,6 +696,12 @@ body.page-home #name-search {
   grid-template-columns: 1fr 1fr;
   gap: 8px 12px;
 }
+/* Each legend color row is a clickable toggle that hides/shows nodes (and their incident
+ * edges) of that category on the home graph. Built as <div role="button"> rather than
+ * <button> in JS so user-agent form-control font styling doesn't drift from the rest of
+ * the sidebar text. The category color is plumbed in via the `--swatch-color` custom
+ * property (set inline by JS) so the swatch rule below can render both states from a
+ * single declaration. */
 #thumb-default .legend-color-row {
   display: flex;
   align-items: center;
@@ -703,13 +709,29 @@ body.page-home #name-search {
   font: 12.5px/1.25 sans-serif;
   color: #222;
   min-width: 0;
+  cursor: pointer;
+  user-select: none;
+}
+#thumb-default .legend-color-row:focus-visible {
+  outline: 2px solid #4a90e2;
+  outline-offset: 1px;
+  border-radius: 3px;
 }
 #thumb-default .legend-swatch {
   width: 12px;
   height: 12px;
   border-radius: var(--radius-4);
   border: 1px solid var(--border-subtle);
+  background: var(--swatch-color);
   flex: 0 0 auto;
+  box-sizing: border-box;
+}
+/* Off state: hollow swatch stroked in the category color; the row also stays clickable
+ * to toggle it back on. `box-sizing: border-box` keeps the swatch the same 12×12 visual
+ * size when the border thickens from 1px to 2px. */
+#thumb-default .legend-color-row.is-off .legend-swatch {
+  background: transparent;
+  border: 2px solid var(--swatch-color);
 }
 #thumb-default .legend-color-label {
   flex: 1 1 auto;
