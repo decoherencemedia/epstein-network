@@ -22,7 +22,7 @@
       height: calc(100vh - var(--site-header-height));
       height: calc(100dvh - var(--site-header-height));
       background: #f6f7f9;
-      color: #1a1a1a;
+      color: var(--ink);
       overflow: hidden;
     }
     .page-explore-main #canvas-wrap {
@@ -38,11 +38,11 @@
       cursor: grabbing;
     }
     .page-explore-main #sidebar {
-      background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+      background: var(--panel-bg);
       border-right: 1px solid var(--border-panel);
       padding: 14px 14px 16px;
       overflow-y: auto;
-      box-shadow: 10px 24px 24px -16px rgba(0, 0, 0, 0.22);
+      box-shadow: var(--shadow-sidebar);
       display: flex;
       flex-direction: column;
       min-height: 0;
@@ -51,16 +51,16 @@
      * the home-inner panel header. `.is-filename` is added by JS while a dot is pinned/hovered
      * so the long, lowercase image filenames don't dominate the sidebar. */
     .page-explore-main .thumb-title {
-      font: 700 17px/1.2 sans-serif;
-      color: #222;
+      font: 700 17px/1.2 var(--font-ui);
+      color: var(--ink-body);
       overflow-wrap: anywhere;
       word-break: break-word;
       flex: 1 1 auto;
       min-width: 0;
     }
     .page-explore-main .thumb-title.is-filename {
-      font: 600 15px/1.25 sans-serif;
-      color: #444;
+      font: 600 15px/1.25 var(--font-ui);
+      color: var(--ink-medium);
     }
     /* Each panel gets its own header so the grid-overlay below can factor the title into
      * both panels' natural heights. Small bottom gap so the title doesn't crowd the body. */
@@ -114,8 +114,8 @@
     }
     /* Compact stats line tucked under the description prose. */
     .page-explore-main .sidebar-stats {
-      font: 12px sans-serif;
-      color: #666;
+      font: 12px var(--font-ui);
+      color: var(--ink-subtle);
       font-variant-numeric: tabular-nums;
     }
     /*
@@ -130,8 +130,8 @@
       flex: 0 0 auto;
     }
     .page-explore-main .legend-section-title {
-      font: 700 13px/1.2 sans-serif;
-      color: #333;
+      font: 700 13px/1.2 var(--font-ui);
+      color: var(--ink-soft);
       margin: 0 0 8px;
     }
     .page-explore-main #legend {
@@ -139,59 +139,15 @@
       flex-direction: column;
       gap: 4px;
     }
-    /* Rows are <div role="button"> rather than real <button>s so they don't pick up
-     * user-agent form-control styling (line-height, letter-spacing) that visibly drifts
-     * from the rest of the sidebar text. Keyboard activation is wired up explicitly in
-     * JS. `cursor: pointer` is the only chrome change; the rest of the rule matches
-     * the original presentation exactly. */
-    .page-explore-main .legend-color-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font: 12.5px/1.25 sans-serif;
-      color: #222;
-      min-width: 0;
-      cursor: pointer;
-      user-select: none;
-      /* Intentionally natural-height (~18 px): accepts the Lighthouse `target-size`
-         hit for a denser legend. The rows are toggles, not primary CTAs. */
-    }
-    .page-explore-main .legend-color-row:focus-visible {
-      outline: 2px solid #4a90e2;
-      outline-offset: 1px;
-      border-radius: 3px;
-    }
-    /* The category color is plumbed in via the `--swatch-color` custom property (set
-     * inline in JS) so a single CSS rule can toggle between filled (on) and hollow
-     * stroked (off) without JS having to touch the swatch element on every toggle.
-     * `box-sizing: border-box` keeps the swatch the same 12×12 visual size when the
-     * border thickens from 1px to 2px in the off state. */
-    .page-explore-main .legend-swatch {
-      width: 12px;
-      height: 12px;
-      border-radius: 4px;
-      border: 1px solid var(--border-subtle);
-      background: var(--swatch-color);
-      flex: 0 0 auto;
-      box-sizing: border-box;
-    }
-    .page-explore-main .legend-color-row.is-off .legend-swatch {
-      background: transparent;
-      border: 2px solid var(--swatch-color);
-    }
-    .page-explore-main .legend-color-label {
-      flex: 1 1 auto;
-      min-width: 0;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+    /* `.legend-color-row`, `.legend-swatch`, `.legend-color-label`, and the off-state
+     * variant are defined unscoped in styles.css and shared with home-inner. */
+
     /* <a class="neighbor-row"> needs the anchor defaults stripped; the global button-shaped
      * rule leaves text-decoration/color alone because it targets .neighbor-row without an
      * element selector. */
     .page-explore-main #thumb-top-neighbors .neighbor-row {
       text-decoration: none;
-      color: #222;
+      color: var(--ink-body);
     }
     .page-explore-main #error {
       position: absolute;
@@ -204,18 +160,6 @@
       display: none;
       overflow: auto;
       z-index: 10;
-    }
-
-    /*
-     * Desktop-only defaults for the collapse UI — hidden until the mobile media query
-     * flips them on. Keeping them out of the default DOM flow means desktop layout
-     * doesn't shift when the elements exist in the HTML. The mobile rules below are
-     * scoped with `:not([hidden])` so JS can pin them open/closed via the `hidden`
-     * attribute without needing `!important` to undo the flex layout.
-     */
-    #thumb-collapse-btn,
-    #thumb-collapsed-bar {
-      display: none;
     }
 
     /*
@@ -250,8 +194,8 @@
         height: 40vh;
         padding: 12px 12px 14px;
         border: 1px solid var(--border-panel);
-        border-radius: 10px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+        border-radius: var(--radius-8);
+        box-shadow: var(--shadow-md);
         z-index: 100;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
@@ -282,96 +226,22 @@
         aspect-ratio: 1 / 1;
         margin: 0 auto;
       }
-      /* Collapse button: floats in the top-right corner of the sheet, overlaying the
-       * scrolling content. Matches the styling of home-inner's version (defined in the
-       * global styles) for visual consistency. */
+      /* Collapse button: float in the top-right of the sheet (the global rule positions
+       * it as a flex item for home; explore wants it overlaying the scrolling content). */
       .page-explore-main #thumb-collapse-btn:not([hidden]) {
         position: absolute;
         top: 8px;
         right: 8px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        padding: 0;
-        border: 1px solid var(--border-neutral);
-        background: #fff;
-        color: #222;
-        border-radius: 4px;
-        cursor: pointer;
         z-index: 1;
       }
-      .page-explore-main #thumb-collapse-btn svg {
-        width: 16px;
-        height: 16px;
-        display: block;
-      }
-      .page-explore-main #thumb-collapse-btn svg path {
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2.25;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-      }
-      /* Ensure each panel's title doesn't slide under the absolutely-positioned collapse
-       * button (mobile only; button is display:none on desktop). */
+      /* Title can't slide under the absolutely-positioned collapse button. */
       .page-explore-main #sidebar-top .thumb-header {
         padding-right: 36px;
       }
-      /* Collapsed bar: thin, fixed to the visual viewport bottom (see #sidebar rule
-       * above for why `fixed` beats `absolute` on real mobile). */
-      .page-explore-main #thumb-collapsed-bar:not([hidden]) {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        bottom: 10px;
-        z-index: 100;
-        padding: 8px 10px;
-        border: 1px solid var(--border-panel);
-        border-radius: 8px;
-        background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
-        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
-        box-sizing: border-box;
-      }
+      /* Smaller/lighter collapsed-bar title than home (home shows image filename, explore
+       * shows "Epstein Photo Atlas" — different rhythm). Other bar styling is global. */
       .page-explore-main #thumb-collapsed-title {
-        flex: 1 1 auto;
-        min-width: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font: 600 15px/1.2 sans-serif;
-        color: #222;
-      }
-      .page-explore-main #thumb-open-btn:not([hidden]) {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        padding: 0;
-        border: 1px solid var(--border-neutral);
-        background: #fff;
-        color: #222;
-        border-radius: 4px;
-        cursor: pointer;
-        flex: 0 0 auto;
-      }
-      .page-explore-main #thumb-open-btn svg {
-        width: 16px;
-        height: 16px;
-        display: block;
-      }
-      .page-explore-main #thumb-open-btn svg path {
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 2.25;
-        stroke-linecap: round;
-        stroke-linejoin: round;
+        font: 600 15px/1.2 var(--font-ui);
       }
     }
   </style>

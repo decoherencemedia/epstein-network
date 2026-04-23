@@ -1,17 +1,35 @@
 :root {
+  /* Layout */
   --sidebar-width: 390px;
+  --site-header-height: 48px;
+  --name-search-edge-gap: 10px; /* inset name-search from header + corner */
+
+  /* Typography — single UI font stack used app-wide. */
+  --font-ui: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Ink scale (text colours, dark→light). #1a1a1a is the body default. */
+  --ink-strong: #111;
+  --ink: #1a1a1a;
+  --ink-body: #222;
+  --ink-soft: #333;
+  --ink-medium: #444;
+  --ink-muted: #555;
+  --ink-subtle: #666;
+
+  /* Surfaces */
   --panel-bg-rgb: 238, 241, 245;
   --panel-bg-alpha: 0.95;
-  --site-header-height: 48px;
-  /* Nav active link, Search page “Search photos” button border/fill family — single source of truth. */
-  --site-accent: #00646f;
-  /* Inset search panel from header + viewport corner (reads better with site nav). */
-  --name-search-edge-gap: 10px;
-  --radius-0: 0;
-  --radius-4: 4px;
-  --radius-8: 8px;
-  --radius-12: 12px;
-  --radius-pill: 999px;
+  --panel-bg: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+
+  /* Accent / focus / link */
+  --site-accent: #00646f; /* nav active, primary CTA — single source of truth */
+  --border-focus: #1565c0; /* primary form focus (text inputs, buttons) */
+  --search-focus: #5a79b8; /* search-page form focus (slightly cooler) */
+  --focus-ring-subtle: #4a90e2; /* low-emphasis toggles (legend rows) */
+  --link: #1f5fbf; /* informational links on light surfaces */
+  --link-on-dark: #9ad0ff; /* links on dark overlays (lightbox PDF trailer) */
+
+  /* Borders */
   --border-panel: rgba(182, 190, 202, 0.9);
   --border-panel-strong: #7f8aa0;
   --border-neutral: #9aa9ba;
@@ -19,7 +37,17 @@
   --border-subtle: rgba(0, 0, 0, 0.08);
   --border-accent-soft: #bbdefb;
   --border-accent: var(--site-accent);
-  --border-focus: #1565c0;
+
+  /* Radii */
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.06); /* subtle elevation (header) */
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.15); /* floating panel (preview, name-search, results, mobile sheet) */
+  --shadow-sidebar: 10px 24px 24px -16px rgba(0, 0, 0, 0.22); /* directional, no upward bloom into header */
 }
 /* Needed so body.page-home height: 100% and flex graph column resolve to the real viewport. */
 html {
@@ -48,17 +76,8 @@ body.page-people {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f6f7f9;
-  color: #1a1a1a;
-}
-body.page-search {
   background: #fff;
-}
-body.page-people {
-  background: #fff;
-}
-body.page-about {
-  background: #fff;
+  color: var(--ink);
 }
 body.page-search .site-page,
 body.page-about .site-page,
@@ -88,9 +107,9 @@ body.page-search .site-page {
   display: flex;
   align-items: center;
   padding: 0 14px;
-  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+  background: var(--panel-bg);
   border-bottom: 1px solid var(--border-panel);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--shadow-sm);
   /* position + z-index so fixed UI in main (#name-search, #thumb-preview) stacks predictably */
   position: relative;
   z-index: 200;
@@ -106,17 +125,13 @@ body.site-nav-open .site-header {
   gap: 6px 16px;
   flex-wrap: nowrap;
   width: 100%;
-  font:
-    14px/1.2 system-ui,
-    -apple-system,
-    Segoe UI,
-    sans-serif;
+  font: 14px/1.2 var(--font-ui);
 }
 .site-nav-brand {
   font-weight: 700;
   font-size: 1.25rem;
   line-height: 1.2;
-  color: #111;
+  color: var(--ink-strong);
   text-decoration: none;
   margin-right: 8px;
 }
@@ -135,11 +150,11 @@ body.site-nav-open .site-header {
   background: transparent;
   border-radius: var(--radius-4);
   cursor: pointer;
-  color: #1a1a1a;
+  color: var(--ink);
   -webkit-tap-highlight-color: transparent;
 }
 .site-nav-toggle:hover {
-  background: rgba(21, 101, 192, 0.08);
+  background: color-mix(in srgb, var(--border-focus) 8%, transparent);
 }
 .site-nav-toggle:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -166,14 +181,14 @@ body.site-nav-open .site-header {
   color: var(--site-accent);
 }
 .site-nav-link {
-  color: #333;
+  color: var(--ink-soft);
   text-decoration: none;
   padding: 6px 4px;
   border-radius: var(--radius-4);
 }
 .site-nav-link:hover {
   color: var(--site-accent);
-  background: rgba(21, 101, 192, 0.08);
+  background: color-mix(in srgb, var(--border-focus) 8%, transparent);
 }
 .site-nav-active {
   color: var(--site-accent);
@@ -200,10 +215,8 @@ body.site-nav-open {
 }
 .site-footer-note {
   margin: 0;
-  font:
-    13px/1.5 system-ui,
-    sans-serif;
-  color: #555;
+  font: 13px/1.5 var(--font-ui);
+  color: var(--ink-muted);
   text-align: center;
 }
 .site-footer-note a {
@@ -218,23 +231,17 @@ body.site-nav-open {
 }
 .site-page-title {
   margin: 0 0 12px;
-  font:
-    700 1.75rem/1.2 system-ui,
-    sans-serif;
-  color: #111;
+  font: 700 1.75rem/1.2 var(--font-ui);
+  color: var(--ink-strong);
 }
 .site-page-lead {
   margin: 0;
-  font:
-    16px/1.5 system-ui,
-    sans-serif;
-  color: #444;
+  font: 16px/1.5 var(--font-ui);
+  color: var(--ink-medium);
 }
 .site-prose {
-  font:
-    16px/1.65 system-ui,
-    sans-serif;
-  color: #333;
+  font: 16px/1.65 var(--font-ui);
+  color: var(--ink-soft);
 }
 .site-prose p {
   margin: 0 0 1rem;
@@ -279,11 +286,11 @@ body.site-nav-open {
 .label-layer .node-label-line2 {
   font-family: sans-serif;
   font-size: 5.75px;
-  fill: #111;
+  fill: var(--ink-strong);
   dominant-baseline: hanging;
 }
 .label-layer .node-label-line2 {
-  fill: #333;
+  fill: var(--ink-soft);
   font-size: 4.6px;
 }
 #thumb-preview {
@@ -294,10 +301,10 @@ body.site-nav-open {
   z-index: 220;
   width: var(--sidebar-width);
   max-width: calc(100vw - 24px);
-  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+  background: var(--panel-bg);
   border: 1px solid var(--border-panel);
-  border-radius: var(--radius-0);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+  border-radius: 0;
+  box-shadow: var(--shadow-md);
   padding: 14px 14px 16px;
   display: block;
   pointer-events: auto;
@@ -314,7 +321,7 @@ body.page-home #thumb-preview {
   border-left: none;
   border-bottom: none;
   /* Directional shadow so it does not bloom upward into the header area. */
-  box-shadow: 10px 24px 24px -16px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-sidebar);
 }
 #thumb-preview.visible {
   display: block;
@@ -347,8 +354,8 @@ body.page-home #thumb-preview {
   padding: 8px 10px;
   border: 1px solid var(--border-panel);
   border-radius: var(--radius-8);
-  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.15);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
   box-sizing: border-box;
 }
 #thumb-collapsed-title {
@@ -357,8 +364,8 @@ body.page-home #thumb-preview {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font: 700 18px/1.15 sans-serif;
-  color: #222;
+  font: 700 18px/1.15 var(--font-ui);
+  color: var(--ink-body);
 }
 #thumb-open-btn:not([hidden]) {
   display: inline-flex;
@@ -369,7 +376,7 @@ body.page-home #thumb-preview {
   padding: 0;
   border: 1px solid var(--border-neutral);
   background: #fff;
-  color: #222;
+  color: var(--ink-body);
   border-radius: var(--radius-4);
   cursor: pointer;
   flex: 0 0 auto;
@@ -393,8 +400,8 @@ body.page-home #thumb-preview {
   align-items: center;
   gap: 6px;
   margin: 4px 0 6px;
-  font: 13px sans-serif;
-  color: #444;
+  font: 13px var(--font-ui);
+  color: var(--ink-medium);
 }
 .thumb-meta-swatch {
   width: 12px;
@@ -413,12 +420,12 @@ body.page-home #thumb-preview {
 }
 .thumb-total {
   margin: 0 0 6px;
-  font: 13px sans-serif;
-  color: #666;
+  font: 13px var(--font-ui);
+  color: var(--ink-subtle);
 }
 #thumb-preview .thumb-title {
-  font: 700 18px/1.15 sans-serif;
-  color: #222;
+  font: 700 18px/1.15 var(--font-ui);
+  color: var(--ink-body);
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -461,7 +468,7 @@ body.page-home #thumb-preview {
   display: none;
   pointer-events: none;
   border: 2px solid rgba(0, 189, 0, 0.95);
-  border-radius: var(--radius-0);
+  border-radius: 0;
   box-sizing: border-box;
 }
 .thumb-bbox.thumb-bbox-b {
@@ -478,9 +485,9 @@ body.page-home #thumb-preview {
   pointer-events: auto;
   padding: 12px;
   border-radius: 0 0 0 var(--radius-12);
-  background: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
+  background: var(--panel-bg);
   border: 1px solid var(--border-panel);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+  box-shadow: var(--shadow-md);
   box-sizing: border-box;
 }
 /* Graph page: pull away from header + corner so it doesn’t collide with the nav bar. */
@@ -495,9 +502,9 @@ body.page-home #name-search {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-0);
+  border-radius: 0;
   padding: 9px 16px 9px 12px;
-  font: 13px/1.2 sans-serif;
+  font: 13px/1.2 var(--font-ui);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: none;
   outline: none;
@@ -512,14 +519,14 @@ body.page-home #name-search {
 }
 #name-search-input:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(21, 101, 192, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
 }
 #name-search-results {
   margin-top: 6px;
   border: 1px solid var(--border-input);
   border-radius: var(--radius-12);
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 .name-search-result {
@@ -528,16 +535,18 @@ body.page-home #name-search {
   background: none;
   text-align: left;
   padding: 10px 12px;
-  font: 13px/1.2 sans-serif;
-  color: #222;
+  font: 13px/1.2 var(--font-ui);
+  color: var(--ink-body);
   cursor: pointer;
 }
 .name-search-result:hover,
 .name-search-result.active,
 .name-search-result-enter-default {
-  background: rgba(21, 101, 192, 0.1);
+  background: color-mix(in srgb, var(--border-focus) 10%, transparent);
 }
 .name-search-result:focus-visible {
+  /* Inset (negative) offset because the row sits flush against the dropdown's rounded
+   * border; an outset ring would visually jump outside the dropdown. */
   outline: 2px solid var(--border-focus);
   outline-offset: -2px;
 }
@@ -553,7 +562,7 @@ body.page-home #name-search {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  color: #222;
+  color: var(--ink-body);
   pointer-events: none;
 }
 #thumb-empty {
@@ -564,7 +573,7 @@ body.page-home #name-search {
   border: 1px solid var(--border-input);
   padding: 18px 12px;
   color: #243447;
-  font: 700 13px/1.3 sans-serif;
+  font: 700 13px/1.3 var(--font-ui);
   text-align: center;
   text-transform: uppercase;
   box-sizing: border-box;
@@ -589,7 +598,7 @@ body.page-home #name-search {
   align-items: center;
   gap: 6px;
   width: 100%;
-  font: 13px sans-serif;
+  font: 13px var(--font-ui);
   color: var(--site-accent);
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -631,9 +640,9 @@ body.page-home #name-search {
   padding-top: 0;
 }
 #thumb-top-neighbors .neighbors-title {
-  font: 13px sans-serif;
+  font: 13px var(--font-ui);
   font-weight: 600;
-  color: #222;
+  color: var(--ink-body);
   margin-bottom: 6px;
 }
 #thumb-top-neighbors .neighbors-list {
@@ -646,8 +655,8 @@ body.page-home #name-search {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  font: 13px sans-serif;
-  color: #222;
+  font: 13px var(--font-ui);
+  color: var(--ink-body);
   width: 100%;
   background: none;
   border: 0;
@@ -657,7 +666,7 @@ body.page-home #name-search {
   user-select: none;
 }
 #thumb-top-neighbors .neighbor-row:hover .neighbor-name {
-  background: rgba(21, 101, 192, 0.14);
+  background: color-mix(in srgb, var(--border-focus) 14%, transparent);
 }
 #thumb-top-neighbors .neighbor-row:focus-visible {
   outline: 2px solid var(--border-focus);
@@ -673,8 +682,8 @@ body.page-home #name-search {
   min-height: 0;
 }
 #thumb-default .thumb-default-body {
-  font: 13px/1.55 sans-serif;
-  color: #3f3f3f;
+  font: 13px/1.55 var(--font-ui);
+  color: var(--ink-medium);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -701,8 +710,8 @@ body.page-home #name-search {
   min-height: 0;
 }
 #thumb-default .legend-section-title {
-  font: 700 13px/1.2 sans-serif;
-  color: #333;
+  font: 700 13px/1.2 var(--font-ui);
+  color: var(--ink-soft);
   margin: 12px 0 8px;
 }
 #thumb-default .legend-colors + .legend-section-title {
@@ -713,30 +722,29 @@ body.page-home #name-search {
   grid-template-columns: 1fr 1fr;
   gap: 8px 12px;
 }
-/* Each legend color row is a clickable toggle that hides/shows nodes (and their incident
- * edges) of that category on the home graph. Built as <div role="button"> rather than
- * <button> in JS so user-agent form-control font styling doesn't drift from the rest of
- * the sidebar text. The category color is plumbed in via the `--swatch-color` custom
- * property (set inline by JS) so the swatch rule below can render both states from a
- * single declaration. */
-#thumb-default .legend-color-row {
+/* Legend color rows are clickable toggles that hide/show nodes (home) or points (explore)
+ * of a category. Built as <div role="button"> rather than <button> in JS so user-agent
+ * form-control styling doesn't drift from the rest of the sidebar text. The category
+ * color is plumbed in via the `--swatch-color` custom property (set inline by JS), so a
+ * single rule can render both filled (on) and hollow stroked (off) states.
+ * Intentionally natural-height (~18 px): accepts the Lighthouse `target-size` hit for a
+ * denser legend. The rows are toggles, not primary CTAs. */
+.legend-color-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font: 12.5px/1.25 sans-serif;
-  color: #222;
+  font: 12.5px/1.25 var(--font-ui);
+  color: var(--ink-body);
   min-width: 0;
   cursor: pointer;
   user-select: none;
-  /* Intentionally natural-height (~18 px): accepts the Lighthouse `target-size`
-     hit for a denser legend. The rows are toggles, not primary CTAs. */
 }
-#thumb-default .legend-color-row:focus-visible {
-  outline: 2px solid #4a90e2;
+.legend-color-row:focus-visible {
+  outline: 2px solid var(--focus-ring-subtle);
   outline-offset: 1px;
   border-radius: 3px;
 }
-#thumb-default .legend-swatch {
+.legend-swatch {
   width: 12px;
   height: 12px;
   border-radius: var(--radius-4);
@@ -745,14 +753,13 @@ body.page-home #name-search {
   flex: 0 0 auto;
   box-sizing: border-box;
 }
-/* Off state: hollow swatch stroked in the category color; the row also stays clickable
- * to toggle it back on. `box-sizing: border-box` keeps the swatch the same 12×12 visual
- * size when the border thickens from 1px to 2px. */
-#thumb-default .legend-color-row.is-off .legend-swatch {
+/* `box-sizing: border-box` keeps the swatch the same 12×12 visual size when the border
+ * thickens from 1px to 2px in the off state. */
+.legend-color-row.is-off .legend-swatch {
   background: transparent;
   border: 2px solid var(--swatch-color);
 }
-#thumb-default .legend-color-label {
+.legend-color-label {
   flex: 1 1 auto;
   min-width: 0;
   white-space: nowrap;
@@ -777,8 +784,8 @@ body.page-home #name-search {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  font: 12.5px/1.2 sans-serif;
-  color: #222;
+  font: 12.5px/1.2 var(--font-ui);
+  color: var(--ink-body);
 }
 #thumb-default .legend-size-svg {
   width: 56px;
@@ -790,12 +797,12 @@ body.page-home #name-search {
   flex-direction: column;
   align-items: center;
   line-height: 1.1;
-  color: #444;
-  font: 11px sans-serif;
+  color: var(--ink-medium);
+  font: 11px var(--font-ui);
 }
 #thumb-default .legend-size-label .legend-size-count {
-  font: 12px sans-serif;
-  color: #222;
+  font: 12px var(--font-ui);
+  color: var(--ink-body);
   font-weight: 600;
 }
 #thumb-top-neighbors .neighbor-name {
@@ -810,8 +817,8 @@ body.page-home #name-search {
 }
 #thumb-top-neighbors .neighbor-weight {
   flex: 0 0 auto;
-  font: 13px sans-serif;
-  color: #222;
+  font: 13px var(--font-ui);
+  color: var(--ink-body);
 }
 #thumb-preview .thumb-actions {
   margin-top: 8px;
@@ -819,7 +826,7 @@ body.page-home #name-search {
   justify-content: flex-end;
 }
 #thumb-preview .thumb-actions a {
-  font: 12px sans-serif;
+  font: 12px var(--font-ui);
   color: var(--site-accent);
   text-decoration: none;
   background: #e3f2fd;
@@ -838,11 +845,7 @@ body.page-home #name-search {
     --site-header-height: 56px;
   }
   .site-nav {
-    font:
-      16px/1.25 system-ui,
-      -apple-system,
-      Segoe UI,
-      sans-serif;
+    font: 16px/1.25 var(--font-ui);
     gap: 8px 12px;
     justify-content: space-between;
   }
@@ -871,7 +874,7 @@ body.page-home #name-search {
     box-sizing: border-box;
     background: rgba(var(--panel-bg-rgb), 0.98);
     border-bottom: 1px solid var(--border-panel);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-md);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -989,7 +992,7 @@ body.page-home #name-search {
     padding: 0;
     border: 1px solid var(--border-neutral);
     background: #fff;
-    color: #222;
+    color: var(--ink-body);
     border-radius: var(--radius-4);
     cursor: pointer;
     flex: 0 0 auto;
@@ -1013,12 +1016,8 @@ body.page-home #name-search {
 
 /* ----- Search page (/search): autocomplete + justified photo rows ----- */
 .search-page {
-  --search-panel-bg: rgba(var(--panel-bg-rgb), var(--panel-bg-alpha));
-  --search-panel-border: var(--border-panel);
+  /* Local-only because the surface sits inline in the page (lighter than --shadow-md). */
   --search-panel-shadow: 0 8px 24px rgba(18, 33, 58, 0.08);
-  --search-radius: var(--radius-12);
-  --search-radius-pill: var(--radius-pill);
-  --search-focus: #5a79b8;
   --search-text-muted: #5c6470;
 }
 /* Tabs sit above the card; panel body is the bordered “sheet” below. */
@@ -1040,20 +1039,18 @@ body.page-home #name-search {
   padding: 0;
   position: relative;
   z-index: 2;
-  border-bottom: 1px solid var(--search-panel-border);
+  border-bottom: 1px solid var(--border-panel);
 }
 /* Tabs: intrinsic width; min-width avoids divider jump on hover weight change */
 .search-tab {
   position: relative;
   flex: 0 0 auto;
   box-sizing: border-box;
-  font:
-    14px/1.2 system-ui,
-    sans-serif;
+  font: 14px/1.2 var(--font-ui);
   font-weight: 500;
   padding: 10px 20px;
   margin: 0 0 -1px -1px;
-  border: 1px solid var(--search-panel-border);
+  border: 1px solid var(--border-panel);
   border-radius: 0;
   cursor: pointer;
   transition:
@@ -1090,10 +1087,10 @@ body.page-home #name-search {
 .search-tab[aria-selected="true"] {
   z-index: 3;
   margin-bottom: -1px;
-  background: var(--search-panel-bg);
+  background: var(--panel-bg);
   color: var(--site-accent);
   font-weight: 600;
-  border-bottom: 1px solid var(--search-panel-bg);
+  border-bottom: 1px solid var(--panel-bg);
   box-shadow: none;
 }
 .search-page .search-toolbar {
@@ -1102,10 +1099,10 @@ body.page-home #name-search {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--search-panel-border);
+  border: 1px solid var(--border-panel);
   border-top: none;
   border-radius: 0;
-  background: var(--search-panel-bg);
+  background: var(--panel-bg);
   box-shadow: none;
 }
 .search-tab-panel {
@@ -1118,9 +1115,7 @@ body.page-home #name-search {
 }
 .search-document-validation {
   margin: 0 0 8px;
-  font:
-    13px/1.45 system-ui,
-    sans-serif;
+  font: 13px/1.45 var(--font-ui);
   font-weight: 600;
   color: #b71c1c;
   max-width: 100%;
@@ -1133,9 +1128,7 @@ body.page-home #name-search {
 }
 .search-document-hint {
   margin: 0 0 6px;
-  font:
-    13px/1.45 system-ui,
-    sans-serif;
+  font: 13px/1.45 var(--font-ui);
   color: var(--search-text-muted);
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -1143,9 +1136,7 @@ body.page-home #name-search {
 }
 .search-label {
   display: block;
-  font:
-    12px/1.2 system-ui,
-    sans-serif;
+  font: 12px/1.2 var(--font-ui);
   font-weight: 600;
   color: var(--search-text-muted);
   margin-bottom: 6px;
@@ -1163,11 +1154,9 @@ body.page-home #name-search {
   width: 100%;
   box-sizing: border-box;
   padding: 10px 13px;
-  font:
-    15px/1.3 system-ui,
-    sans-serif;
+  font: 15px/1.3 var(--font-ui);
   border: 1px solid var(--border-input);
-  border-radius: var(--radius-0);
+  border-radius: 0;
   background: #fdfefe;
   color: #1f2430;
   transition:
@@ -1178,7 +1167,7 @@ body.page-home #name-search {
 .search-input:focus {
   outline: none;
   border-color: var(--search-focus);
-  box-shadow: 0 0 0 3px rgba(90, 121, 184, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--search-focus) 18%, transparent);
   background: #fff;
 }
 .search-people-results {
@@ -1199,17 +1188,15 @@ body.page-home #name-search {
 }
 .search-people-option {
   padding: 8px 12px;
-  font:
-    14px/1.35 system-ui,
-    sans-serif;
-  color: #222;
+  font: 14px/1.35 var(--font-ui);
+  color: var(--ink-body);
   cursor: pointer;
 }
 /* enter-default: first row when Enter will apply to it (activeIndex −1); removed when another row is keyboard- or pointer-highlighted */
 .search-people-option:hover,
 .search-people-option-active,
 .search-people-option-enter-default {
-  background: rgba(90, 121, 184, 0.14);
+  background: color-mix(in srgb, var(--search-focus) 14%, transparent);
 }
 .search-selected {
   display: flex;
@@ -1225,16 +1212,14 @@ body.page-home #name-search {
   padding: 6px 9px 6px 12px;
   /* border/background/color set in JS to match face box accent (yellow, light green, pink, …) */
   border-radius: var(--radius-pill);
-  font:
-    13px/1.2 system-ui,
-    sans-serif;
+  font: 13px/1.2 var(--font-ui);
   box-sizing: border-box;
   box-shadow: 0 1px 2px rgba(21, 25, 35, 0.08);
 }
 .search-chip-remove {
   border: 1px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.82);
-  color: #333;
+  color: var(--ink-soft);
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1259,13 +1244,11 @@ body.page-home #name-search {
 }
 .search-graph-btn {
   margin-right: auto;
-  font:
-    14px/1.2 system-ui,
-    sans-serif;
+  font: 14px/1.2 var(--font-ui);
   font-weight: 700;
   letter-spacing: 0.01em;
   padding: 10px 14px;
-  border-radius: var(--radius-0);
+  border-radius: 0;
   border: 1px solid var(--border-panel-strong);
   background: linear-gradient(180deg, #f7f9fc 0%, #e8edf5 100%);
   color: #2b3442;
@@ -1289,13 +1272,11 @@ body.page-home #name-search {
   box-shadow: none;
 }
 .search-submit-btn {
-  font:
-    14px/1.2 system-ui,
-    sans-serif;
+  font: 14px/1.2 var(--font-ui);
   font-weight: 700;
   letter-spacing: 0.01em;
   padding: 10px 18px;
-  border-radius: var(--radius-0);
+  border-radius: 0;
   border: 1px solid var(--border-accent);
   background: var(--site-accent);
   color: #fff;
@@ -1319,9 +1300,7 @@ body.page-home #name-search {
   box-shadow: none;
 }
 .search-status {
-  font:
-    14px/1.4 system-ui,
-    sans-serif;
+  font: 14px/1.4 var(--font-ui);
   color: var(--search-text-muted);
   margin: 0 0 16px;
   min-height: 1.4em;
@@ -1335,9 +1314,7 @@ body.page-home #name-search {
   text-decoration: underline;
 }
 .search-results-heading {
-  font:
-    700 1.1rem/1.2 system-ui,
-    sans-serif;
+  font: 700 1.1rem/1.2 var(--font-ui);
   margin: 0 0 14px;
   color: #1c2633;
 }
@@ -1347,9 +1324,7 @@ body.page-home #name-search {
   justify-content: center;
 }
 .search-results-loading {
-  font:
-    15px/1.4 system-ui,
-    sans-serif;
+  font: 15px/1.4 var(--font-ui);
   color: var(--search-text-muted);
   min-height: 100px;
   box-sizing: border-box;
@@ -1607,8 +1582,8 @@ body.page-people .site-page.people-page {
 }
 .people-filter-wrap .people-filter-input:focus {
   outline: none;
-  border-color: #5a79b8;
-  box-shadow: 0 0 0 4px rgba(90, 121, 184, 0.32);
+  border-color: var(--search-focus);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--search-focus) 32%, transparent);
   background: #fff;
 }
 
@@ -1618,12 +1593,8 @@ body.page-people .site-page.people-page {
   flex-wrap: wrap;
   gap: 6px 12px;
   margin: 0;
-  font:
-    700 1.75rem/1.2 system-ui,
-    -apple-system,
-    Segoe UI,
-    sans-serif;
-  color: #111;
+  font: 700 1.75rem/1.2 var(--font-ui);
+  color: var(--ink-strong);
 }
 
 .people-title-count {
@@ -1632,15 +1603,13 @@ body.page-people .site-page.people-page {
   max-width: 100%;
   font-weight: 400;
   font-size: 1rem;
-  color: #666;
+  color: var(--ink-subtle);
 }
 
 .people-status {
   margin: 0 0 16px;
-  font:
-    15px/1.45 system-ui,
-    sans-serif;
-  color: #555;
+  font: 15px/1.45 var(--font-ui);
+  color: var(--ink-muted);
 }
 .people-status[hidden] {
   display: none;
@@ -1718,17 +1687,13 @@ body.page-people .site-page.people-page {
 
 .people-tile-name {
   display: block;
-  font:
-    600 13px/1.25 system-ui,
-    sans-serif;
+  font: 600 13px/1.25 var(--font-ui);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .people-tile-photos {
   display: block;
   margin-top: 3px;
-  font:
-    400 12px/1.25 system-ui,
-    sans-serif;
+  font: 400 12px/1.25 var(--font-ui);
   opacity: 0.95;
 }

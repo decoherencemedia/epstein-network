@@ -184,10 +184,8 @@
     align-items: center;
     width: fit-content;
     text-decoration: none;
-    color: #1f5fbf;
-    font:
-      500 13px/1.25 system-ui,
-      sans-serif;
+    color: var(--link);
+    font: 500 13px/1.25 var(--font-ui);
   }
   .search-person-metadata-link-icon {
     width: 20px;
@@ -294,9 +292,7 @@
     position: absolute;
     z-index: 1;
     padding: 1px 6px;
-    font:
-      700 12px/1.15 system-ui,
-      sans-serif;
+    font: 700 12px/1.15 var(--font-ui);
     color: #000;
     border-radius: 0;
     white-space: nowrap;
@@ -313,7 +309,7 @@
     line-height: 1.08;
     max-width: 160px;
   }
-  @media (max-width: 800px) {
+  @media (max-width: 768px) {
     .search-face-label {
       font-size: 10px;
       max-width: 150px;
@@ -326,7 +322,7 @@
   .search-lightbox--zoomed .search-lightbox-bboxes .search-face-label {
     font-size: 12px;
   }
-  @media (max-width: 800px) {
+  @media (max-width: 768px) {
     .search-lightbox--zoomed .search-lightbox-bboxes .search-face-label {
       font-size: 10px;
     }
@@ -421,10 +417,8 @@
     text-overflow: ellipsis;
   }
   .search-lightbox-pdf-link {
-    color: #9ad0ff;
-    font:
-      12px/1.2 system-ui,
-      sans-serif;
+    color: var(--link-on-dark);
+    font: 12px/1.2 var(--font-ui);
     text-decoration: underline;
   }
   .search-lightbox-pdf-link[hidden] {
@@ -457,7 +451,7 @@
     top: 0;
     pointer-events: none;
   }
-  @media (max-width: 800px) {
+  @media (max-width: 768px) {
     .search-lightbox {
       padding: 10px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
