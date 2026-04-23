@@ -113,7 +113,8 @@ if [[ -d "$SITE/images" ]]; then
   cp -r "$SITE/images" "$DIST/"
 fi
 
-# Local dev: atlas from pipeline output (``network/images/``, see FACES_IMAGE_DIR), else in-repo copy.
+# Local dev: atlas from the sibling ``network/images/`` produced by epstein-pipeline
+# (``FACES_IMAGE_DIR``), falling back to the in-repo copy in prod / fresh clones.
 ATLAS_PIPELINE="$ROOT/../images/atlas.webp"
 if [[ -f "$ATLAS_PIPELINE" ]]; then
   mkdir -p "$DIST/images"

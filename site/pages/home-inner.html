@@ -122,12 +122,9 @@
     options = {
       linkStrokeWidth: (l) => 0.15 * l.weight ** 0.75,
       linkStroke: "#999",
-      nodeStrokeOpacity: 1,
       linkStrokeOpacity: 1,
-      linkStrokeLinecap: "butt",
       nodeFill: "#000",
       // Sigma-style: no node stroke at rest.
-      nodeStrokeWidth: 0,
       nodeStroke: "none",
     };
 
@@ -135,11 +132,7 @@
   const linkSource = (d) => d.source;
   const linkTarget = (d) => d.target;
 
-  const IS_LOCAL_DEV =
-    typeof window !== "undefined" &&
-    (window.location.protocol === "file:" ||
-      window.location.hostname === "localhost" ||
-      window.location.hostname === "0.0.0.0");
+  const IS_LOCAL_DEV = SiteShared.isLocalDev();
   // Central place for user-tweakable visualization constants.
   const TWEAK = {
     nodeScaling: 2.75,
@@ -861,30 +854,8 @@
         });
       }
 
-      function openInNewTab(url) {
-        const s = String(url || "").trim();
-        if (!s) return;
-        if (window.SiteShared && typeof window.SiteShared.openInNewTab === "function") {
-          window.SiteShared.openInNewTab(s);
-        } else {
-          window.open(s, "_blank", "noopener,noreferrer");
-        }
-      }
-
-      function peopleUrlForPersonIds(personIds) {
-        if (window.SiteShared && typeof window.SiteShared.peopleUrlForPersonIds === "function") {
-          return window.SiteShared.peopleUrlForPersonIds(personIds);
-        }
-        const ids = Array.isArray(personIds)
-          ? personIds.map((x) => String(x || "").trim()).filter(Boolean)
-          : [];
-        if (!ids.length) return null;
-        const sorted = ids.slice().sort();
-        return `/search/people/${sorted.join("-")}/`;
-      }
-
       function peopleUrlForPersonIdsWithPhoto(personIds, photoFilename) {
-        const base = peopleUrlForPersonIds(personIds);
+        const base = SiteShared.peopleUrlForPersonIds(personIds);
         if (!base) return null;
         const photo = String(photoFilename || "").trim();
         if (!photo || isFacesBucketFilename(photo)) return base;
@@ -941,11 +912,11 @@
       }
 
       function openOriginalImage(filename) {
-        openInNewTab(SiteShared.cdnImagesUrl(filename));
+        SiteShared.openInNewTab(SiteShared.cdnImagesUrl(filename));
       }
 
       function openPeopleForPersonIds(personIds) {
-        openInNewTab(peopleUrlForPersonIds(personIds));
+        SiteShared.openInNewTab(SiteShared.peopleUrlForPersonIds(personIds));
       }
 
       function personIdForNode(nodeObj) {

@@ -85,6 +85,13 @@
     window.open(s, "_blank", "noopener,noreferrer");
   }
 
+  /** True when served from ``file://``, ``localhost``, or ``0.0.0.0`` — used to prefer local assets. */
+  function isLocalDev() {
+    if (typeof window === "undefined") return false;
+    var loc = window.location;
+    return loc.protocol === "file:" || loc.hostname === "localhost" || loc.hostname === "0.0.0.0";
+  }
+
   /**
    * Canonical people search URL: ``/search/people/<sorted-person_id>-…/`` (matches static generator).
    */
@@ -194,6 +201,7 @@
 
   window.SiteShared = Object.freeze({
     openInNewTab: openInNewTab,
+    isLocalDev: isLocalDev,
     peopleUrlForPersonIds: peopleUrlForPersonIds,
     personColorPalette: personColorPalette,
     hexToRgb: hexToRgb,

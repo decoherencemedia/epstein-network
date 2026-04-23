@@ -575,7 +575,6 @@
     const lightboxNextBtn = document.getElementById("search-lightbox-next");
 
     const PERSON_COLOR_PALETTE = SiteShared.personColorPalette;
-    const hexToRgb = SiteShared.hexToRgb;
     const rgbaWithAlpha = SiteShared.rgbaWithAlpha;
 
     const DOCUMENT_ID_FORMAT_MESSAGE =
@@ -619,12 +618,6 @@
       if (!norm) return null;
       if (!SiteShared.isValidPartialDocumentQueryNormalized(norm)) return null;
       return norm;
-    }
-
-    function chipBackgroundTint(hex) {
-      const rgb = hexToRgb(hex);
-      if (!rgb) return "rgba(0, 0, 0, 0.06)";
-      return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + ",0.2)";
     }
 
     /** Matches API ``ignored`` (people on Ignored sheet: ``include_in_network === -1``). */
@@ -3025,7 +3018,7 @@
         card.setAttribute("data-person-id", p.person_id);
         const accent = PERSON_COLOR_PALETTE[i % PERSON_COLOR_PALETTE.length];
         card.style.border = "2px solid " + accent;
-        card.style.background = chipBackgroundTint(accent);
+        card.style.background = rgbaWithAlpha(accent, 0.2);
         card.style.color = "#1a1a1a";
         const label = document.createElement("span");
         label.className = "search-chip-label";
