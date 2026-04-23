@@ -1,21 +1,13 @@
-# Generated / vendored assets — same spirit as .gitignore, enumerated explicitly
-# because Prettier does NOT read .gitignore by default for the CLI target `.`.
 dist/
 viz_data/
 node_modules/
 
-# Vendored JS fetched by site/build.sh — keep as-is so upstream diffs are trivial.
 site/js/imagesloaded.pkgd.min.js
 site/js/latinize.js
 
-# Large machine-maintained data files.
 package-lock.json
 sitemap-lastmod-state.json
 
-# HTML fragments that open a document but never close it — `<!DOCTYPE html>` +
-# `<html>` + `<head>` + `<body class="...">`. Prettier would auto-close with
-# `</body></html>`, which breaks site/build.sh's concatenation. close.html is
-# the matching "just closing tags" fragment. The balanced partials (nav.html,
-# footer.html) and the `*-inner.html` pages are fine to format.
+# Unbalanced HTML fragments — Prettier would auto-close and break build.sh.
 site/partials/head-*.html
 site/partials/close.html
