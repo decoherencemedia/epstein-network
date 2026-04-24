@@ -2114,33 +2114,13 @@
     }
 
     function applyUrlForCurrentTab() {
-      const params = new URLSearchParams(window.location.search);
-      params.delete("photo");
       if (activeSearchTab === "people") {
         syncPeopleQueryToUrl();
         return;
-      } else {
-        params.set("tab", "document");
-        params.delete("person_ids");
-        const docNorm = documentInputEl && normalizeDocumentPrefixForApi(documentInputEl.value);
-        if (docNorm) {
-          params.set("document", docNorm);
-        } else {
-          const raw = documentInputEl && String(documentInputEl.value || "").trim();
-          if (raw) {
-            params.set("document", raw);
-          } else {
-            params.delete("document");
-          }
-        }
       }
-      const qs = params.toString();
-      let path = window.location.pathname;
-      if (activeSearchTab === "document" && /\/search\/people\//.test(path)) {
-        path = "/search/";
-      }
-      const nextUrl = path + (qs ? "?" + qs : "") + window.location.hash;
-      window.history.replaceState(null, "", nextUrl);
+      const docNorm = documentInputEl && normalizeDocumentPrefixForApi(documentInputEl.value);
+      const docRaw = documentInputEl && String(documentInputEl.value || "").trim();
+      syncDocumentQueryToUrl(docNorm || docRaw || "");
     }
 
     /**
@@ -3205,6 +3185,17 @@
       return found.slice();
     }
 
+    function parseDocumentIdFromPath() {
+      const path = window.location.pathname || "";
+      const m = path.match(/\/search\/document\/([^/]+)\/?$/i);
+      if (!m) return "";
+      try {
+        return decodeURIComponent(m[1]);
+      } catch (_) {
+        return m[1];
+      }
+    }
+
     function syncPeopleQueryToUrl() {
       const ids = getSelectedPersonIds().slice().sort();
       if (!ids.length) {
@@ -3278,22 +3269,14 @@
     }
 
     function syncDocumentQueryToUrl(prefix) {
-      const params = new URLSearchParams(window.location.search);
-      params.set("tab", "document");
-      params.delete("person_ids");
       const doc = String(prefix || "").trim();
-      if (doc) {
-        params.set("document", doc);
-      } else {
-        params.delete("document");
-      }
+      const path = doc ? "/search/document/" + doc + "/" : "/search/";
+      const params = new URLSearchParams(window.location.search);
+      params.delete("tab");
+      params.delete("document");
+      params.delete("person_ids");
       const qs = params.toString();
-      let path = window.location.pathname || "";
-      if (/\/search\/people\//.test(path)) {
-        path = "/search/";
-      }
-      const nextUrl = path + (qs ? "?" + qs : "") + window.location.hash;
-      window.history.replaceState(null, "", nextUrl);
+      window.history.replaceState(null, "", path + (qs ? "?" + qs : "") + window.location.hash);
     }
 
     function syncPhotoQueryToUrl(photoFilename) {
@@ -3301,16 +3284,22 @@
       let path = window.location.pathname || "";
       if (/\/search\/people\//.test(path) && activeSearchTab !== "document") {
         const params = new URLSearchParams();
-        if (photo) {
-          params.set("photo", photo);
-        }
+        if (photo) params.set("photo", photo);
+        const qs = params.toString();
+        window.history.replaceState(null, "", path + (qs ? "?" + qs : "") + window.location.hash);
+        return;
+      }
+      if (/\/search\/document\//.test(path) && activeSearchTab === "document") {
+        const params = new URLSearchParams();
+        if (photo) params.set("photo", photo);
         const qs = params.toString();
         window.history.replaceState(null, "", path + (qs ? "?" + qs : "") + window.location.hash);
         return;
       }
       const params = new URLSearchParams(window.location.search);
       params.delete("person_ids");
-      params.set("tab", activeSearchTab === "document" ? "document" : "people");
+      params.delete("tab");
+      params.delete("document");
       if (photo) {
         params.set("photo", photo);
       } else {
@@ -3718,7 +3707,7 @@
     async function initFromQueryString() {
       const params = new URLSearchParams(window.location.search);
       const tabParam = (params.get("tab") || "").toLowerCase();
-      const docRaw = String(params.get("document") || "").trim();
+      const docRaw = String(params.get("document") || "").trim() || parseDocumentIdFromPath();
       const photoFromQuery = String(params.get("photo") || "").trim();
       const personIdsRaw = params.get("person_ids");
 

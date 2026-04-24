@@ -11,5 +11,9 @@ workers_dev = false
 pattern = "epstein.photos/search/people/*"
 zone_name = "epstein.photos"
 
+[[routes]]
+pattern = "epstein.photos/search/document/*"
+zone_name = "epstein.photos"
+
 [vars]
 SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com"
