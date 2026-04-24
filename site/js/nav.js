@@ -92,11 +92,7 @@
       if (!isMobile()) close();
     }
 
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", onViewportChange);
-    } else if (typeof mq.addListener === "function") {
-      mq.addListener(onViewportChange);
-    }
+    mq.addEventListener("change", onViewportChange);
     window.addEventListener("resize", onViewportChange);
   }
 

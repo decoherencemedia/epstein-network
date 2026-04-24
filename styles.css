@@ -48,6 +48,15 @@
   --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.06); /* subtle elevation (header) */
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.15); /* floating panel (preview, name-search, results, mobile sheet) */
   --shadow-sidebar: 10px 24px 24px -16px rgba(0, 0, 0, 0.22); /* directional, no upward bloom into header */
+
+  /* Misc */
+  --img-placeholder-bg: #e8eaed; /* unloaded / loading image fill */
+  --input-bg: #fdfefe; /* text input background */
+  --input-ink: #1f2430; /* text input foreground */
+  --search-ink-dark: #1c2633; /* search results heading */
+  --search-btn-ink: #2b3442; /* sort / filter button text */
+  --tab-idle-ink: #6b6b6b; /* inactive tab text */
+  --tab-idle-ink-hover: #5a6575; /* inactive tab hover text */
 }
 /* Needed so body.page-home height: 100% and flex graph column resolve to the real viewport. */
 html {
@@ -70,18 +79,14 @@ body.page-home {
   display: flex;
   flex-direction: column;
 }
-body.page-search,
-body.page-about,
-body.page-people {
+body.page-content {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: #fff;
   color: var(--ink);
 }
-body.page-search .site-page,
-body.page-about .site-page,
-body.page-people .site-page {
+body.page-content .site-page {
   flex: 1 0 auto;
 }
 
@@ -221,8 +226,8 @@ body.site-nav-open {
   flex: 1 1 auto;
   position: relative;
   width: 100%;
-  /* At least full viewport minus the 48px header, so the graph fills the screen even before flex resolves. */
-  min-height: calc(100vh - 48px);
+  /* At least full viewport minus the header, so the graph fills the screen even before flex resolves. */
+  min-height: calc(100vh - var(--site-header-height));
 }
 
 .site-footer {
@@ -414,12 +419,14 @@ body.page-home #thumb-preview {
   stroke-linejoin: round;
 }
 .thumb-meta {
-  display: flex;
   align-items: center;
   gap: 6px;
   margin: 4px 0 6px;
   font: 13px var(--font-ui);
   color: var(--ink-medium);
+}
+.thumb-meta:not([hidden]) {
+  display: flex;
 }
 .thumb-meta-swatch {
   width: 12px;
@@ -453,10 +460,12 @@ body.page-home #thumb-preview {
   min-width: 0;
 }
 #thumb-img-link {
-  display: block;
   width: 100%;
   text-decoration: none;
   border-radius: var(--radius-8);
+}
+#thumb-img-link:not([hidden]) {
+  display: block;
 }
 #thumb-img-link:focus {
   outline: 2px solid var(--border-focus);
@@ -703,7 +712,7 @@ body.page-home #name-search {
 #thumb-default {
   margin-top: 10px;
   border-top: none;
-  padding-top: 0px;
+  padding-top: 0;
   display: flex;
   flex-direction: column;
   /* Avoid forcing overflow/scrollbar on desktop. */
@@ -739,9 +748,11 @@ body.page-home #name-search {
   border-top: 1px solid var(--border-panel-strong);
   padding-top: 14px;
   flex: 1 1 auto;
-  display: flex;
   flex-direction: column;
   min-height: 0;
+}
+#thumb-default .thumb-legend:not([hidden]) {
+  display: flex;
 }
 #thumb-default .legend-section-title {
   font: 700 13px/1.2 var(--font-ui);
@@ -875,7 +886,7 @@ body.page-home #name-search {
 /* Mobile / narrow: keep in sync with TWEAK.mediaSmallViewport in home-inner.html */
 @media (pointer: coarse), (max-width: 768px) {
   :root {
-    --sidebar-width: 0px;
+    --sidebar-width: 0;
     --site-header-height: 56px;
   }
   .site-nav {
@@ -910,7 +921,6 @@ body.page-home #name-search {
     border-bottom: 1px solid var(--border-panel);
     box-shadow: var(--shadow-md);
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
   .site-header.site-nav-open .site-nav-backdrop {
     display: block;
@@ -1053,7 +1063,7 @@ body.page-home #name-search {
   }
   #thumb-default {
     margin-top: 4px;
-    padding-top: 0px;
+    padding-top: 0;
   }
   #thumb-collapse-btn:not([hidden]) {
     display: inline-flex;
@@ -1148,12 +1158,12 @@ body.page-home #name-search {
 /* Inactive tab — muted vs selected */
 .search-tab[aria-selected="false"] {
   background: rgba(218, 224, 232, 0.55);
-  color: #6b6b6b;
+  color: var(--tab-idle-ink);
   font-weight: 500;
 }
 .search-tab[aria-selected="false"]:hover {
   background: rgba(228, 233, 240, 0.85);
-  color: #5a6575;
+  color: var(--tab-idle-ink-hover);
   font-weight: 600;
 }
 .search-tab[aria-selected="true"] {
@@ -1229,8 +1239,8 @@ body.page-home #name-search {
   font: 15px/1.3 var(--font-ui);
   border: 1px solid var(--border-input);
   border-radius: 0;
-  background: #fdfefe;
-  color: #1f2430;
+  background: var(--input-bg);
+  color: var(--input-ink);
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease,
@@ -1323,7 +1333,7 @@ body.page-home #name-search {
   border-radius: 0;
   border: 1px solid var(--border-panel-strong);
   background: linear-gradient(180deg, #f7f9fc 0%, #e8edf5 100%);
-  color: #2b3442;
+  color: var(--search-btn-ink);
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(24, 34, 48, 0.16);
   transition:
@@ -1388,7 +1398,7 @@ body.page-home #name-search {
 .search-results-heading {
   font: 700 1.1rem/1.2 var(--font-ui);
   margin: 0 0 14px;
-  color: #1c2633;
+  color: var(--search-ink-dark);
 }
 .search-results-loading:not([hidden]) {
   display: flex;
@@ -1547,7 +1557,7 @@ body.page-home #name-search {
   display: block;
   border-radius: 0;
   border: none;
-  background: #e8eaed;
+  background: var(--img-placeholder-bg);
   box-shadow: none;
   box-sizing: border-box;
 }
@@ -1559,9 +1569,6 @@ body.page-home #name-search {
 @media (pointer: coarse), (max-width: 768px) {
   .site-page {
     padding: 20px 16px 36px;
-  }
-  .site-page-title {
-    font-size: 1.75rem;
   }
   .site-page-lead,
   .site-prose {
@@ -1711,7 +1718,7 @@ body.page-people .site-page.people-page {
   aspect-ratio: 1 / 1;
   border-radius: 0;
   overflow: hidden;
-  background: #e8eaed;
+  background: var(--img-placeholder-bg);
   text-decoration: none;
   color: #fff;
   box-shadow: none;
@@ -1736,7 +1743,7 @@ body.page-people .site-page.people-page {
   display: block;
   border-radius: 0;
   border: none;
-  background: #e8eaed;
+  background: var(--img-placeholder-bg);
   box-shadow: none;
   box-sizing: border-box;
 }
@@ -1873,5 +1880,292 @@ body.disclaimer-open {
   }
   .disclaimer-actions {
     justify-content: stretch;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   Explore page — interactive UMAP scatter of photos.
+   Styles scoped to .page-explore-main so they don't affect other pages.
+   The sidebar reuses global class/id names (.thumb-default-body, .thumb-legend,
+   .thumb-meta*, .thumb-img-wrapper, #thumb-img) so those inherit from above.
+   Only the container layout and the .thumb-title rule (scoped to #thumb-preview
+   in the global section) are redeclared here.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.page-explore-main {
+  /* Narrower than home's --sidebar-width so the 128px thumbnail isn't blown up to the
+   * point where its low resolution becomes visible. Local override; doesn't touch home. */
+  --explore-sidebar-width: 300px;
+  display: grid;
+  grid-template-columns: var(--explore-sidebar-width) 1fr;
+  /* `100vh` includes the area under the mobile browser's URL bar (it tracks the
+   * *largest* viewport). On real phones that leaves #canvas-wrap a hundred-ish pixels
+   * taller than what the user can actually see, so the cluster's vertical center
+   * sits below the fold. `100dvh` tracks the current visible area and updates as
+   * the URL bar hides/shows. Chrome 108+ / Safari 15.4+ — falls back to vh for older. */
+  height: calc(100vh - var(--site-header-height));
+  height: calc(100dvh - var(--site-header-height));
+  background: #f6f7f9;
+  color: var(--ink);
+  overflow: hidden;
+}
+.page-explore-main #canvas-wrap {
+  position: relative;
+}
+.page-explore-main #canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+.page-explore-main #canvas:active {
+  cursor: grabbing;
+}
+.page-explore-main #sidebar {
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border-panel);
+  padding: 14px 14px 16px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-sidebar);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* Default styling is the page title ("Epstein Photo Atlas") — bold, prominent — mirroring
+ * the home-inner panel header. `.is-filename` is added by JS while a dot is pinned/hovered
+ * so the long, lowercase image filenames don't dominate the sidebar. */
+.page-explore-main .thumb-title {
+  font: 700 17px/1.2 var(--font-ui);
+  color: var(--ink-body);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.page-explore-main .thumb-title.is-filename {
+  font: 600 15px/1.25 var(--font-ui);
+  color: var(--ink-medium);
+}
+/* Each panel gets its own header so the grid-overlay below can factor the title into
+ * both panels' natural heights. 6px bottom gap matches the home-inner preview header. */
+.page-explore-main #sidebar-top .thumb-header {
+  margin: 0 0 6px;
+}
+/*
+ * Both the default (description) and active (preview) panels share a single grid cell
+ * in #sidebar-top, so the cell's intrinsic height is max(description, preview) and the
+ * legend below never shifts as the user hovers in/out of points. We toggle visibility
+ * with the `hidden` attribute, overriding its UA `display: none` so the inactive panel
+ * still contributes to the cell's layout.
+ */
+.page-explore-main #sidebar-top {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+.page-explore-main #sidebar-top > * {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.page-explore-main #thumb-default[hidden],
+.page-explore-main #thumb-preview-active[hidden] {
+  display: block;
+  visibility: hidden;
+}
+/* Reset the home-inner #thumb-default { margin-top: 10px } since we render it as the
+ * first thing inside #sidebar (no "above" content to separate from). */
+.page-explore-main #thumb-default {
+  margin-top: 0;
+}
+/* Preview panel: title → image → top-people. `gap` provides consistent spacing without
+ * relying on each child's default margins. Header & neighbors both get their margins
+ * zeroed so the container's gap alone drives spacing — otherwise they stack on top.
+ * The mobile block below overrides `display` to grid for a two-column layout; `gap` works
+ * the same way there, so the zeroed margins keep doing their job. */
+.page-explore-main #thumb-preview-active {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.page-explore-main #thumb-preview-active .thumb-header,
+.page-explore-main #thumb-preview-active #thumb-top-neighbors {
+  margin: 0;
+}
+/* Stats line tucked under the description prose. Medium weight + subtle color keeps it
+ * visually distinct from the description body text (which is ink-medium / weight 400). */
+.page-explore-main .sidebar-stats {
+  font: 500 12px var(--font-ui);
+  color: var(--ink-subtle);
+  font-variant-numeric: tabular-nums;
+}
+/*
+ * Legend lives outside #thumb-default so it stays visible when a point is hovered, which
+ * means the global "#thumb-default .legend-*" rules don't apply — restate them here as a
+ * single column (better readability + no wrap issues at our narrower width than home's).
+ */
+.page-explore-main #explore-legend-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-panel-strong);
+  flex: 0 0 auto;
+}
+.page-explore-main .legend-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font: 700 13px/1.2 var(--font-ui);
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+}
+.page-explore-main .legend-section-title-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.page-explore-main .legend-section-title-count {
+  flex: 0 0 auto;
+}
+.page-explore-main #legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* Per-row photo count — right-aligned, tabular digits so the column stacks cleanly. */
+.page-explore-main .legend-color-count {
+  flex: 0 0 auto;
+  color: var(--ink-body);
+  font-variant-numeric: tabular-nums;
+}
+/* `.legend-color-row`, `.legend-swatch`, `.legend-color-label`, and the off-state
+ * variant are defined unscoped in styles.css and shared with home-inner. */
+
+/* <a class="neighbor-row"> needs the anchor defaults stripped; the global button-shaped
+ * rule leaves text-decoration/color alone because it targets .neighbor-row without an
+ * element selector. */
+.page-explore-main #thumb-top-neighbors .neighbor-row {
+  text-decoration: none;
+  color: var(--ink-body);
+}
+.page-explore-main #error {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 235, 235, 0.95);
+  color: #a00000;
+  padding: 24px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  display: none;
+  overflow: auto;
+  z-index: 10;
+}
+
+/*
+ * Mobile / coarse-pointer layout — mirrors home-inner's bottom-sheet pattern:
+ *   - Sidebar is a floating bottom sheet, visible by default (shows description).
+ *   - Tapping a dot pins its preview; tapping empty canvas restores the description.
+ *   - A chevron-down button in the sheet collapses it to a thin #thumb-collapsed-bar
+ *     at the bottom; chevron-up on that bar re-expands the sheet.
+ *   - The sheet is a fixed 40vh; the legend lives below the description/preview and
+ *     becomes scroll content when the combined height exceeds 40vh.
+ */
+@media (pointer: coarse), (max-width: 768px) {
+  .page-explore-main {
+    grid-template-columns: 1fr;
+    position: relative;
+  }
+  .page-explore-main #sidebar {
+    /* `fixed` (not `absolute`) so the sheet anchors to the visual viewport, not to
+     * .page-explore-main — whose height is `calc(100vh - header)` and extends under
+     * the mobile URL bar on real iOS/Android. With overflow:hidden on main, an
+     * absolutely-positioned sheet at bottom: 10px renders *below* the fold and is
+     * unreachable on actual devices (the emulator doesn't reproduce this quirk). */
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    top: auto;
+    /* Fixed (not max-) height: keeps the sheet a consistent 40vh across interactions
+     * so the map above doesn't reflow when switching between dots whose "People in
+     * this photo" lists have different lengths. Extra rows simply become scroll
+     * content — the sheet itself never grows or shrinks. */
+    height: 40vh;
+    padding: 12px;
+    border: 1px solid var(--border-panel);
+    border-radius: var(--radius-8);
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+    overflow-y: auto;
+  }
+  /* Filename-variant title: bump from 15 to 16 on mobile — still fits the long
+   * ij-####-####_####.webp strings, just less cramped next to the 14 px surroundings. */
+  .page-explore-main .thumb-title.is-filename {
+    font-size: 16px;
+  }
+  /* Match the body-text bump so the stat line reads alongside the description. */
+  .page-explore-main .sidebar-stats {
+    font-size: 14px;
+  }
+  /* JS toggles `.is-collapsed` on the sidebar when the user clicks the collapse
+   * button — only respected on mobile so a stale class from a resized-down session
+   * can't leave the desktop sidebar invisible. */
+  .page-explore-main #sidebar.is-collapsed {
+    display: none;
+  }
+  /* Disable the desktop grid-overlay trick that lets both panels reserve the same
+   * cell: on mobile only the active panel should contribute height, otherwise the
+   * shorter preview sits "below" an invisible-but-still-occupying description and
+   * appears as empty space at the top of the sheet. */
+  .page-explore-main #sidebar-top {
+    display: block;
+  }
+  .page-explore-main #thumb-default[hidden],
+  .page-explore-main #thumb-preview-active[hidden] {
+    display: none;
+    visibility: visible;
+  }
+  /* Two-column layout for the active preview, matching home-inner's bottom-sheet pattern:
+   * image in col 1, "People in this photo" in col 2, title spans both. The default panel
+   * (description + legend) stays a single column because it lives in a sibling element. */
+  .page-explore-main #thumb-preview-active {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 0;
+    align-content: start;
+  }
+  .page-explore-main #thumb-preview-active .thumb-header {
+    grid-column: 1 / -1;
+    margin-bottom: 6px;
+  }
+  .page-explore-main #thumb-preview-active #thumb-img-link {
+    grid-column: 1;
+    align-self: start;
+    width: 130px;
+  }
+  .page-explore-main #thumb-preview-active #thumb-top-neighbors {
+    grid-column: 2;
+  }
+  .page-explore-main .thumb-img-wrapper {
+    width: 130px;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    margin: 0;
+  }
+  /* Collapse button: float in the top-right of the sheet (the global rule positions
+   * it as a flex item for home; explore wants it overlaying the scrolling content). */
+  .page-explore-main #thumb-collapse-btn:not([hidden]) {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 1;
+  }
+  /* Title can't slide under the absolutely-positioned collapse button. */
+  .page-explore-main #sidebar-top .thumb-header {
+    padding-right: 36px;
+  }
+  /* Smaller/lighter collapsed-bar title than home's 18 px — explore often shows a long
+   * lowercase filename where home shows a short person name. Other styling is global. */
+  .page-explore-main #thumb-collapsed-title {
+    font: 600 16px/1.2 var(--font-ui);
   }
 }

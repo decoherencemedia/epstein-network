@@ -12,7 +12,7 @@
         placeholder="Search names"
         autocomplete="off"
         spellcheck="false" />
-      <div id="name-search-results" role="listbox" aria-label="Search results" style="display: none"></div>
+      <div id="name-search-results" role="listbox" aria-label="Search results" hidden></div>
     </div>
     <div id="thumb-preview" aria-hidden="true">
       <div class="thumb-header">
@@ -23,12 +23,12 @@
           </svg>
         </button>
       </div>
-      <div class="thumb-meta" id="thumb-meta" style="display: none">
+      <div class="thumb-meta" id="thumb-meta" hidden>
         <span class="thumb-meta-swatch" id="thumb-category-swatch"></span>
         <span class="thumb-meta-text" id="thumb-category-text"></span>
       </div>
-      <div class="thumb-total" id="thumb-total" style="display: none"></div>
-      <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" style="display: none">
+      <div class="thumb-total" id="thumb-total" hidden></div>
+      <a id="thumb-img-link" href="#" target="_blank" rel="noopener noreferrer" hidden>
         <span class="thumb-img-wrapper">
           <img id="thumb-img" alt="" />
           <div id="thumb-bbox" class="thumb-bbox"></div>
@@ -51,12 +51,12 @@
           </span>
         </span>
       </a>
-      <div id="thumb-empty" style="display: none">
+      <div id="thumb-empty" hidden>
         <a href="/about#content" target="_blank" rel="noopener noreferrer">No images can be displayed</a>
       </div>
-      <div id="thumb-node-links" style="display: none"></div>
-      <div id="thumb-top-neighbors" style="display: none"></div>
-      <div id="thumb-default" style="display: none">
+      <div id="thumb-node-links" hidden></div>
+      <div id="thumb-top-neighbors" hidden></div>
+      <div id="thumb-default" hidden>
         <div class="thumb-default-body">
           <div>
             This is a visualization of the people whose faces are in the
@@ -100,7 +100,7 @@
             <a href="https://github.com/decoherencemedia/epstein-network">GitHub</a>.
           </div>
         </div>
-        <div class="thumb-legend" id="thumb-legend" style="display: none"></div>
+        <div class="thumb-legend" id="thumb-legend" hidden></div>
       </div>
     </div>
     <div id="thumb-collapsed-bar" hidden aria-hidden="true">
@@ -488,19 +488,19 @@
       function showDefaultPanel() {
         previewTitleEl.textContent = isSmallViewport() ? "Epstein Photo Network" : "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = isSmallViewport() ? "flex" : "none";
-        previewMetaEl.style.display = "none";
+        previewMetaEl.hidden = true;
         previewCategoryTextEl.textContent = "";
-        previewTotalEl.style.display = "none";
+        previewTotalEl.hidden = true;
         previewTotalEl.textContent = "";
-        previewImgLinkEl.style.display = "none";
+        previewImgLinkEl.hidden = true;
         previewImgLinkEl.removeAttribute("href");
         previewImgEl.src = "";
         previewImgEl.alt = "";
         previewImgEl.style.removeProperty("object-position");
-        previewEmptyEl.style.display = "none";
-        previewNodeLinksEl.style.display = "none";
+        previewEmptyEl.hidden = true;
+        previewNodeLinksEl.hidden = true;
         previewNodeLinksEl.innerHTML = "";
-        previewNeighborsEl.style.display = "none";
+        previewNeighborsEl.hidden = true;
         previewNeighborsEl.innerHTML = "";
         currentBboxes = [];
         if (previewBboxEl) {
@@ -511,7 +511,7 @@
           previewBboxBEl.style.display = "none";
           previewBboxBEl.style.borderColor = "";
         }
-        previewDefaultEl.style.display = "block";
+        previewDefaultEl.hidden = false;
         previewEl.classList.remove("is-edge-preview");
         applyPreviewVisibility();
       }
@@ -647,7 +647,7 @@
         sizesCenter.appendChild(sizesWrap);
         previewLegendEl.appendChild(sizesCenter);
 
-        previewLegendEl.style.display = "block";
+        previewLegendEl.hidden = false;
       }
 
       function setTopNeighbors(
@@ -657,11 +657,11 @@
         onNavigateToNeighbor,
       ) {
         if (!neighbors || !neighbors.length) {
-          previewNeighborsEl.style.display = "none";
+          previewNeighborsEl.hidden = true;
           previewNeighborsEl.innerHTML = "";
           return;
         }
-        previewNeighborsEl.style.display = "block";
+        previewNeighborsEl.hidden = false;
         previewNeighborsEl.innerHTML = "";
         const title = document.createElement("div");
         title.className = "neighbors-title";
@@ -729,30 +729,30 @@
           (isFacesBucketFilename(filename)
             ? SiteShared.cdnFacesUrl(filename)
             : SiteShared.cdnImagesUrl(filename));
-        previewDefaultEl.style.display = "none";
+        previewDefaultEl.hidden = true;
         previewTitleEl.textContent = title || "";
         if (thumbHeaderEl) thumbHeaderEl.style.display = title ? "flex" : "none";
         if (categoryLabel) {
-          previewMetaEl.style.display = "flex";
+          previewMetaEl.hidden = false;
           previewCategoryTextEl.textContent = categoryLabel;
           previewCategorySwatchEl.style.backgroundColor = categoryColor || "#ccc";
         } else {
-          previewMetaEl.style.display = "none";
+          previewMetaEl.hidden = true;
           previewCategoryTextEl.textContent = "";
         }
         if (typeof totalPhotos === "number" && !Number.isNaN(totalPhotos)) {
-          previewTotalEl.style.display = "block";
+          previewTotalEl.hidden = false;
           previewTotalEl.textContent = `${totalLabel || "Photos"}: ${totalPhotos}`;
         } else {
-          previewTotalEl.style.display = "none";
+          previewTotalEl.hidden = true;
           previewTotalEl.textContent = "";
         }
         currentBboxes = src && Array.isArray(bboxes) && bboxes.length ? bboxes : [];
         if (previewBboxEl) previewBboxEl.style.display = "none";
         if (previewBboxBEl) previewBboxBEl.style.display = "none";
         if (src) {
-          previewEmptyEl.style.display = "none";
-          previewImgLinkEl.style.display = "block";
+          previewEmptyEl.hidden = true;
+          previewImgLinkEl.hidden = false;
           if (origUrl) {
             previewImgLinkEl.href = origUrl;
           } else {
@@ -765,14 +765,14 @@
             updateBboxOverlay();
           }
         } else {
-          previewImgLinkEl.style.display = "none";
+          previewImgLinkEl.hidden = true;
           previewImgLinkEl.removeAttribute("href");
           previewImgEl.src = "";
           previewImgEl.alt = "";
           previewImgEl.style.removeProperty("object-position");
-          previewEmptyEl.style.display = "block";
+          previewEmptyEl.hidden = false;
         }
-        previewNodeLinksEl.style.display = "none";
+        previewNodeLinksEl.hidden = true;
         previewNodeLinksEl.innerHTML = "";
         if (nodeLinkMeta && typeof nodeLinkMeta === "object") {
           const infoLink =
@@ -1117,7 +1117,7 @@
           nameSearchInputEl.value = "";
         }
         if (nameSearchResultsEl) {
-          nameSearchResultsEl.style.display = "none";
+          nameSearchResultsEl.hidden = true;
           nameSearchResultsEl.innerHTML = "";
           nameSearchResultsEl.setAttribute("aria-hidden", "true");
         }
@@ -1405,7 +1405,7 @@
 
       function clearNameSearchResults(searchState) {
         searchState.resultsEl.innerHTML = "";
-        searchState.resultsEl.style.display = "none";
+        searchState.resultsEl.hidden = true;
         searchState.resultsEl.setAttribute("aria-hidden", "true");
         searchState.activeIndex = -1;
         searchState.pointerOptionIndex = null;
@@ -1438,11 +1438,11 @@
         searchState.activeIndex = -1;
         searchState.resultsEl.innerHTML = "";
         if (!items.length) {
-          searchState.resultsEl.style.display = "none";
+          searchState.resultsEl.hidden = true;
           searchState.resultsEl.setAttribute("aria-hidden", "true");
           return;
         }
-        searchState.resultsEl.style.display = "block";
+        searchState.resultsEl.hidden = false;
         searchState.resultsEl.setAttribute("aria-hidden", "false");
         items.forEach((item) => {
           const btn = document.createElement("button");

@@ -2,17 +2,16 @@
   "use strict";
 
   /** DigitalOcean Spaces CDN origin (no trailing slash). */
-  var SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
+  const SPACES_CDN_BASE = "https://epstein.sfo3.cdn.digitaloceanspaces.com";
 
   /** Epstein API origin (no trailing slash). Change here for local dev (e.g. http://127.0.0.1:5000). */
-  var API_BASE = "https://api.epstein.photos";
-  //   var API_BASE = "http://localhost:5000";
+  const API_BASE = "https://api.epstein.photos";
 
   /**
    * Canonical uppercase stems before numeric suffix (document / image id search).
    * Comparison is case-insensitive via `.toUpperCase()`.
    */
-  var DOCUMENT_ID_PREFIXES = Object.freeze(["EFTA", "HOUSE_OVERSIGHT_"]);
+  const DOCUMENT_ID_PREFIXES = Object.freeze(["EFTA", "HOUSE_OVERSIGHT_"]);
 
   /**
    * Uppercase query with file extensions and punctuation removed for search/API:
@@ -20,14 +19,13 @@
    * ``.`` + letters while typing an extension, hyphens between image indices, and stray hyphens/periods.
    */
   function stripDocumentSearchTerm(s) {
-    var t = String(s || "").trim();
+    let t = String(s || "").trim();
     if (!t) return "";
-    var u = t.toUpperCase();
-    var i;
-    for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
-      var P = DOCUMENT_ID_PREFIXES[i];
+    let u = t.toUpperCase();
+    for (let i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
+      const P = DOCUMENT_ID_PREFIXES[i];
       if (u.startsWith(P)) {
-        var rest = u.slice(P.length);
+        let rest = u.slice(P.length);
         rest = rest.replace(/\.[A-Z]*$/i, "");
         rest = rest.replace(/[-.]/g, "");
         return P + rest;
@@ -39,14 +37,13 @@
   }
 
   function isValidPartialDocumentQueryNormalized(u) {
-    var U = String(u || "").trim();
+    const U = String(u || "").trim();
     if (!U) return true;
-    var i;
-    for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
-      var P = DOCUMENT_ID_PREFIXES[i];
+    for (let i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
+      const P = DOCUMENT_ID_PREFIXES[i];
       if (P.startsWith(U)) return true;
       if (U.startsWith(P)) {
-        var rest = U.slice(P.length);
+        const rest = U.slice(P.length);
         if (/^\d*$/.test(rest)) return true;
         return false;
       }
@@ -60,17 +57,16 @@
    * Allows pasted filenames (``EFTA….pdf``, ``….webp``) and image indices with hyphens before stripping.
    */
   function isValidPartialDocumentQuery(s) {
-    var t = String(s || "").trim();
+    const t = String(s || "").trim();
     if (!t) return true;
-    var stripped = stripDocumentSearchTerm(t);
+    const stripped = stripDocumentSearchTerm(t);
     if (isValidPartialDocumentQueryNormalized(stripped)) return true;
-    var u = t.toUpperCase();
-    var i;
-    for (i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
-      var P = DOCUMENT_ID_PREFIXES[i];
+    const u = t.toUpperCase();
+    for (let i = 0; i < DOCUMENT_ID_PREFIXES.length; i++) {
+      const P = DOCUMENT_ID_PREFIXES[i];
       if (P.startsWith(u)) return true;
       if (u.startsWith(P)) {
-        var rest = u.slice(P.length);
+        const rest = u.slice(P.length);
         if (/^\d*$/.test(rest)) return true;
         if (/^(\d+)(-\d+)*(\.[A-Z]{0,4})?$/.test(rest)) return true;
         return false;
@@ -88,7 +84,7 @@
   /** True when served from ``file://``, ``localhost``, or ``0.0.0.0`` — used to prefer local assets. */
   function isLocalDev() {
     if (typeof window === "undefined") return false;
-    var loc = window.location;
+    const loc = window.location;
     return loc.protocol === "file:" || loc.hostname === "localhost" || loc.hostname === "0.0.0.0";
   }
 
@@ -110,7 +106,7 @@
   }
 
   /** Same order as Search page chips: first selected = index 0, … */
-  var personColorPalette = Object.freeze([
+  const personColorPalette = Object.freeze([
     "#00bd00",
     "#ff42cc",
     "#ff6300",
@@ -124,21 +120,21 @@
   ]);
 
   function hexToRgb(hex) {
-    var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
+    const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
     if (!m) return null;
     return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
   }
 
   function rgbaWithAlpha(hex, alpha) {
-    var rgb = hexToRgb(hex);
+    const rgb = hexToRgb(hex);
     if (!rgb) return "rgba(0, 0, 0, " + alpha + ")";
     return "rgba(" + rgb.r + "," + rgb.g + "," + rgb.b + "," + alpha + ")";
   }
 
   function lastPathSegment(path) {
-    var s = String(path || "").trim();
+    const s = String(path || "").trim();
     if (!s) return "";
-    var i = s.lastIndexOf("/");
+    const i = s.lastIndexOf("/");
     return i >= 0 ? s.slice(i + 1) : s;
   }
 
@@ -148,27 +144,27 @@
    */
   function cdnAssetUrl(path) {
     if (!path) return null;
-    var s = String(path).trim();
+    const s = String(path).trim();
     if (/^https?:\/\//i.test(s)) return s;
-    var normalized = s.replace(/^\/+/, "");
+    const normalized = s.replace(/^\/+/, "");
     return SPACES_CDN_BASE.replace(/\/$/, "") + "/" + normalized;
   }
 
   function cdnFacesUrl(pathOrBasename) {
-    var base = lastPathSegment(pathOrBasename);
+    const base = lastPathSegment(pathOrBasename);
     if (!base) return null;
     return SPACES_CDN_BASE.replace(/\/$/, "") + "/faces/" + encodeURIComponent(base);
   }
 
   function cdnThumbnailWebpUrl(pathOrFilename) {
-    var base = lastPathSegment(pathOrFilename);
+    const base = lastPathSegment(pathOrFilename);
     if (!base) return null;
-    var stem = base.replace(/\.[^.]+$/, "");
+    const stem = base.replace(/\.[^.]+$/, "");
     return SPACES_CDN_BASE.replace(/\/$/, "") + "/thumbnails/" + encodeURIComponent(stem) + ".webp";
   }
 
   function cdnImagesUrl(pathOrBasename) {
-    var base = lastPathSegment(pathOrBasename);
+    const base = lastPathSegment(pathOrBasename);
     if (!base) return null;
     return SPACES_CDN_BASE.replace(/\/$/, "") + "/images/" + encodeURIComponent(base);
   }
@@ -179,7 +175,7 @@
 
   /** If ``person_id`` matches ``person_<digits>``, return the numeric part; else ``null``. */
   function personStubNumber(personId) {
-    var m = /^person_(\d+)$/i.exec(String(personId || "").trim());
+    const m = /^person_(\d+)$/i.exec(String(personId || "").trim());
     return m ? Number(m[1]) : null;
   }
 
@@ -189,9 +185,9 @@
    * Callers own the source lookup (sheets / API / etc.); this only owns the fallback chain.
    */
   function personDisplayName(personId, name, stubLabel) {
-    var s = name != null ? String(name).trim() : "";
+    const s = name != null ? String(name).trim() : "";
     if (s) return s;
-    var n = personStubNumber(personId);
+    const n = personStubNumber(personId);
     if (n != null) return typeof stubLabel === "function" ? stubLabel(n) : stubLabel;
     return String(personId || "");
   }
@@ -202,9 +198,9 @@
    * (see ``site/build.sh``); if ``latinize`` is missing, falls back to lowercase only.
    */
   function normalizePersonSearchKey(s) {
-    var t = String(s || "").trim();
+    let t = String(s || "").trim();
     if (!t) return "";
-    t = t.replace(/\u2019/g, "'").replace(/\u2018/g, "'");
+    t = t.replace(/’/g, "'").replace(/‘/g, "'");
     t = t.toLowerCase();
     if (typeof window !== "undefined" && typeof window.latinize === "function") {
       t = window.latinize(t);

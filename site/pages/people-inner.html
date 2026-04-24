@@ -27,7 +27,7 @@
 <script src="/js/latinize.js"></script>
 <script src="/js/shared.js"></script>
 <script>
-  (function () {
+  (async function () {
     function displayName(row) {
       return SiteShared.personDisplayName(row.person_id, row.name, (n) => "Person " + n);
     }
@@ -138,27 +138,23 @@
       updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length);
     }
 
-    fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" })
-      .then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.json();
-      })
-      .then(function (body) {
-        allRows = body && body.data ? body.data : [];
-        countEl.textContent = allRows.length ? allRows.length + " people" : "";
-        statusEl.textContent = "";
-        statusEl.hidden = true;
-        gridEl.hidden = false;
-        renderGrid(allRows);
-        if (filterInputEl) {
-          filterInputEl.disabled = false;
-          filterInputEl.addEventListener("input", applyFilter);
-        }
-      })
-      .catch(function (err) {
-        statusEl.textContent =
-          "Could not load people (" + (err && err.message ? err.message : "error") + ").";
-        gridEl.hidden = true;
-      });
+    try {
+      const res = await fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const body = await res.json();
+      allRows = body && body.data ? body.data : [];
+      countEl.textContent = allRows.length ? allRows.length + " people" : "";
+      statusEl.textContent = "";
+      statusEl.hidden = true;
+      gridEl.hidden = false;
+      renderGrid(allRows);
+      if (filterInputEl) {
+        filterInputEl.disabled = false;
+        filterInputEl.addEventListener("input", applyFilter);
+      }
+    } catch (err) {
+      statusEl.textContent = "Could not load people (" + (err && err.message ? err.message : "error") + ").";
+      gridEl.hidden = true;
+    }
   })();
 </script>
