@@ -1,0 +1,59 @@
+{
+  "shared": {
+    "site_origin": "https://epstein.photos",
+    "spaces_cdn_base": "https://epstein.sfo3.cdn.digitaloceanspaces.com",
+    "og_site_name": "epstein.photos",
+    "og_locale": "en_US",
+    "og_image_type": "image/webp",
+    "og_image_width": 1200,
+    "og_image_height": 630,
+    "twitter_card": "summary_large_image"
+  },
+  "pages": [
+    {
+      "out": "head-root.html",
+      "url_path": "/",
+      "body_class": "page-home",
+      "title": "Epstein Network",
+      "description": "Interactive network visualization of people who appear in the Epstein documents, with node and edge exploration.",
+      "og_image_filename": "home.webp",
+      "og_image_alt": "Network graph of people who appear in photos from the Epstein documents"
+    },
+    {
+      "out": "head-search.html",
+      "url_path": "/search/",
+      "body_class": "page-search",
+      "title": "Search · Epstein Network",
+      "description": "Search photos from the Epstein documents by person name or document ID.",
+      "og_image_filename": "search.webp",
+      "og_image_alt": "Search photos from the Epstein documents by name or document ID"
+    },
+    {
+      "out": "head-people.html",
+      "url_path": "/people/",
+      "body_class": "page-people",
+      "title": "People · Epstein Network",
+      "description": "View the faces and names of people who appear in photos from the Epstein documents.",
+      "og_image_filename": "people.webp",
+      "og_image_alt": "Grid of faces of people who appear in photos from the Epstein documents"
+    },
+    {
+      "out": "head-explore.html",
+      "url_path": "/explore/",
+      "body_class": "page-explore",
+      "title": "Explore · Epstein Network",
+      "description": "Interactive 2D map of photos from the Epstein documents, grouped by visual similarity.",
+      "og_image_filename": "explore.webp",
+      "og_image_alt": "2D scatter plot of Epstein photos grouped by visual similarity"
+    },
+    {
+      "out": "head-about.html",
+      "url_path": "/about/",
+      "body_class": "page-about",
+      "title": "About · Epstein Network",
+      "description": "About epstein.photos: the methodology, content policy, and where to learn more about Jeffrey Epstein and his network.",
+      "og_image_filename": "about.webp",
+      "og_image_alt": "Network graph behind the title epstein.photos, with the project label About"
+    }
+  ]
+}

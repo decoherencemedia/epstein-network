@@ -20,6 +20,10 @@ fi
 rm -rf "$DIST"
 mkdir -p "$DIST/people" "$DIST/search" "$DIST/about" "$DIST/explore"
 
+# Regenerate per-page <head> partials from site/site_metadata.json (single source
+# of truth for OG/Twitter/canonical tags shared across pages). Pure stdlib Python.
+python3 "$ROOT/scripts/render_head_partials.py"
+
 # Shared header + nav for every page. nav.js adds `site-nav-active` /
 # aria-current="page" based on location.pathname, so no per-page partial needed.
 NAV="$SITE/partials/nav.html"

@@ -86,17 +86,33 @@ def fetch_sqlite_db(db_path: Path, url: str) -> None:
 
 DIST_DIR = EPSTEIN_WEB_ROOT / "dist"
 SITE_PARTIALS_DIR = EPSTEIN_WEB_ROOT / "site" / "partials"
+SITE_METADATA_PATH = EPSTEIN_WEB_ROOT / "site" / "site_metadata.json"
 
 MAX_K = 3
-SITE_ORIGIN = "https://epstein.photos"
 DRY_RUN = False
 
-OG_SITE_NAME = (os.environ.get("EPSTEIN_OG_SITE_NAME", "Epstein Network") or "Epstein Network").strip()
-OG_LOCALE = (os.environ.get("EPSTEIN_OG_LOCALE", "en_US") or "en_US").strip()
+# Shared OG/site defaults live in site/site_metadata.json (also consumed by
+# scripts/render_head_partials.py to generate the per-page <head> partials).
+# EPSTEIN_* env vars still override at deploy time.
+_SITE_METADATA_SHARED = json.loads(SITE_METADATA_PATH.read_text(encoding="utf8"))["shared"]
 
+SITE_ORIGIN = _SITE_METADATA_SHARED["site_origin"]
+OG_SITE_NAME = (
+    os.environ.get("EPSTEIN_OG_SITE_NAME", _SITE_METADATA_SHARED["og_site_name"])
+    or _SITE_METADATA_SHARED["og_site_name"]
+).strip()
+OG_LOCALE = (
+    os.environ.get("EPSTEIN_OG_LOCALE", _SITE_METADATA_SHARED["og_locale"])
+    or _SITE_METADATA_SHARED["og_locale"]
+).strip()
 SPACES_CDN_BASE = os.environ.get(
-    "EPSTEIN_SPACES_CDN_BASE", "https://epstein.sfo3.cdn.digitaloceanspaces.com"
+    "EPSTEIN_SPACES_CDN_BASE", _SITE_METADATA_SHARED["spaces_cdn_base"]
 ).rstrip("/")
+
+# Fallback social-card image used when a search result has no per-result image to advertise
+# (matches the bare /search/ og:image set in site/partials/head-search.html). Per-result
+# overrides from `og_image_url(...)` still take priority — see `build_page_html`.
+DEFAULT_SEARCH_OG_IMAGE_URL = f"{SPACES_CDN_BASE}/og/search.webp"
 
 PEI_TABLE = "person_eligible_images"
 
@@ -420,17 +436,15 @@ def render_head(
     c = html.escape(canonical_url, quote=True)
     sn = html.escape(OG_SITE_NAME, quote=True)
     loc = html.escape(OG_LOCALE, quote=True)
-    og_block = ""
-    if og_image_url:
-        ogi = html.escape(og_image_url, quote=True)
-        og_block = (
-            f'  <meta property="og:image" content="{ogi}" />\n'
-            f'  <meta property="og:image:secure_url" content="{ogi}" />\n'
-            '  <meta name="twitter:card" content="summary_large_image" />\n'
-            f'  <meta name="twitter:image" content="{ogi}" />\n'
-        )
-    else:
-        og_block = '  <meta name="twitter:card" content="summary" />\n'
+    # Per-result override (face crop / first photo) wins; otherwise share the same default
+    # image as the bare /search/ page so social cards always have a 1.91:1 image to render.
+    ogi = html.escape(og_image_url or DEFAULT_SEARCH_OG_IMAGE_URL, quote=True)
+    og_block = (
+        f'  <meta property="og:image" content="{ogi}" />\n'
+        f'  <meta property="og:image:secure_url" content="{ogi}" />\n'
+        '  <meta name="twitter:card" content="summary_large_image" />\n'
+        f'  <meta name="twitter:image" content="{ogi}" />\n'
+    )
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
