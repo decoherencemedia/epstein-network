@@ -734,6 +734,10 @@ body.page-home #name-search {
   /* Avoid forcing overflow/scrollbar on desktop. */
   min-height: 0;
 }
+/* ID+flex can win over [hidden] in some browsers; home JS toggles hidden for preview vs default. */
+body.page-home #thumb-default[hidden] {
+  display: none !important;
+}
 #thumb-default .thumb-default-body {
   font: 13px/1.55 var(--font-ui);
   color: var(--ink-medium);
