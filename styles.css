@@ -90,13 +90,29 @@ body.page-content .site-page {
   flex: 1 0 auto;
 }
 
+/* Pages with header + main + footer: flex column so .site-footer margin-top: auto pins the footer. */
+body.page-search,
+body.page-about,
+body.page-people {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  color: var(--ink);
+}
+
 /* Search page (/search): full-width slot + capped max so title/lead length can’t shrink the column. */
 body.page-search .site-page {
+  flex: 1 0 auto;
   width: 100%;
   min-width: 0;
   max-width: min(100%, 52rem);
   margin-left: auto;
   margin-right: auto;
+}
+body.page-about .site-page,
+body.page-people .site-page {
+  flex: 1 0 auto;
 }
 @media (min-width: 900px) {
   body.page-search .site-page {

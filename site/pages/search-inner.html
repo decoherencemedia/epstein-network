@@ -683,11 +683,23 @@
 
     const DEFAULT_RESULTS_HEADING = "Photos";
     const DEFAULT_PAGE_HEADING = "Search";
+    const DOCUMENT_TITLE_SUFFIX = " · Epstein Network";
+    /** Max chars for the tab title before DOCUMENT_TITLE_SUFFIX (in-page <h1> can be longer). */
+    const DOCUMENT_TITLE_TAB_MAX = 55;
 
-    function setPageHeadingFromResultsHeading(nextHeadingText) {
-      if (!pageTitleEl) return;
+    /**
+     * @param {string} [tabTitleBase] If set, used for document.title only; nextHeadingText remains the <h1>.
+     */
+    function setPageHeadingFromResultsHeading(nextHeadingText, tabTitleBase) {
       const next = String(nextHeadingText || "").trim();
-      pageTitleEl.textContent = next || DEFAULT_PAGE_HEADING;
+      const heading = next || DEFAULT_PAGE_HEADING;
+      if (pageTitleEl) pageTitleEl.textContent = heading;
+      let tabBase =
+        tabTitleBase != null && String(tabTitleBase).trim() ? String(tabTitleBase).trim() : heading;
+      if (tabBase.length > DOCUMENT_TITLE_TAB_MAX) {
+        tabBase = tabBase.slice(0, DOCUMENT_TITLE_TAB_MAX - 1) + "…";
+      }
+      document.title = tabBase + DOCUMENT_TITLE_SUFFIX;
     }
 
     function resetResultsHeading() {
@@ -730,7 +742,8 @@
         resetResultsHeading();
         return;
       }
-      setPageHeadingFromResultsHeading('Photos from documents matching "' + display + '"');
+      const h1 = 'Photos from documents matching "' + display + '"';
+      setPageHeadingFromResultsHeading(h1, display);
     }
 
     /**
