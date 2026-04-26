@@ -201,7 +201,8 @@
   .search-lightbox {
     position: fixed;
     inset: 0;
-    z-index: 10000;
+    /* Keep in sync with :root --z-search-lightbox in styles.css; disclaimer uses +1000. */
+    z-index: var(--z-search-lightbox, 10000);
     background: rgba(0, 0, 0, 0.85);
     display: flex;
     align-items: center;

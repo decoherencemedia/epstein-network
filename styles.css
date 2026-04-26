@@ -49,6 +49,10 @@
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.15); /* floating panel (preview, name-search, results, mobile sheet) */
   --shadow-sidebar: 10px 24px 24px -16px rgba(0, 0, 0, 0.22); /* directional, no upward bloom into header */
 
+  /* Stacking (see also search-inner.html .search-lightbox). Highest site overlays only. */
+  --z-search-lightbox: 10000;
+  --z-disclaimer-modal: calc(var(--z-search-lightbox) + 1000);
+
   /* Misc */
   --img-placeholder-bg: #e8eaed; /* unloaded / loading image fill */
   --input-bg: #fdfefe; /* text input background */
@@ -1803,12 +1807,15 @@ body.page-people .site-page.people-page {
  *   .disclaimer-modal  — fixed full-viewport container, flex-centers the card
  *     .disclaimer-backdrop — semi-opaque scrim; absorbs clicks but does NOT dismiss
  *     .disclaimer-card     — the dialog surface with copy + Accept button
- * z-index sits above the header, name-search, sidebars, and mobile bottom sheet.
+ * z-index: var(--z-disclaimer-modal) — above everything else in this repo, including
+ * .search-lightbox (var(--z-search-lightbox)). Next-highest chrome: .site-header at 1200
+ * when nav open, then mobile .site-nav-links 300 / backdrop 299, #thumb-preview 220,
+ * #name-search 150, .search-people-results 50, explore mobile #sidebar 100.
  * body.disclaimer-open locks page scroll while the gate is up. */
 .disclaimer-modal:not([hidden]) {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-disclaimer-modal);
   display: flex;
   align-items: center;
   justify-content: center;
