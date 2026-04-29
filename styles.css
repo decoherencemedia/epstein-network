@@ -68,8 +68,9 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
-/* Search page: reserve scrollbar width so switching tabs doesn’t reflow centered content when the vertical scrollbar toggles. */
-html:has(body.page-search) {
+/* Reserve scrollbar width on centered layouts so load/hide phases do not reflow the toolbar. */
+html:has(body.page-search),
+html:has(body.page-people) {
   scrollbar-gutter: stable;
 }
 html,
