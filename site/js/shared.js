@@ -6,6 +6,7 @@
 
   /** Epstein API origin (no trailing slash). Change here for local dev (e.g. http://127.0.0.1:5000). */
   const API_BASE = "https://api.epstein.photos";
+// const API_BASE = "http://127.0.0.1:5000";
 
   /**
    * Canonical uppercase stems before numeric suffix (document / image id search).
