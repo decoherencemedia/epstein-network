@@ -64,6 +64,9 @@
   <p class="people-status" id="people-status" role="status" aria-live="polite">Loading…</p>
 
   <div class="people-grid" id="people-grid" hidden></div>
+  <div class="search-results-more" id="people-results-more" hidden>
+    <button type="button" class="search-submit-btn" id="people-load-more">Load more</button>
+  </div>
 </main>
 
 <script src="/js/latinize.js"></script>
@@ -84,12 +87,17 @@
     const gridEl = document.getElementById("people-grid");
     const countEl = document.getElementById("people-title-count");
     const filterInputEl = document.getElementById("people-filter-input");
+    const loadMoreWrap = document.getElementById("people-results-more");
+    const loadMoreBtn = document.getElementById("people-load-more");
     const classFilterBtn = document.getElementById("people-class-filter-btn");
     const classPanel = document.getElementById("people-class-panel");
     const CLASS_ORDER = ["named", "unknown", "unidentified", "ignored"];
     const DEFAULT_CLASSES = ["named", "unknown"];
+    const PEOPLE_PAGE_SIZE = 1000;
 
     let allRows = [];
+    let totalRows = 0;
+    let isLoadingMore = false;
 
     function arraysEqualAsSets(a, b) {
       if (a.length !== b.length) return false;
@@ -148,15 +156,28 @@
       history.replaceState(null, "", newUrl);
     }
 
-    function facesApiUrlForClasses(sel) {
+    function facesApiUrlForClasses(sel, limit, offset) {
       var base = SiteShared.API_BASE + "/faces";
+      var params = new URLSearchParams();
+      params.set("limit", String(limit));
+      params.set("offset", String(offset));
       if (sel.length === 0) {
-        return base + "?classes=";
+        params.set("classes", "");
+        return base + "?" + params.toString();
       }
       if (arraysEqualAsSets(sel, DEFAULT_CLASSES)) {
-        return base;
+        return base + "?" + params.toString();
       }
-      return base + "?classes=" + encodeURIComponent(sel.slice().sort().join(","));
+      params.set("classes", sel.slice().sort().join(","));
+      return base + "?" + params.toString();
+    }
+
+    function updateLoadMoreVisibility() {
+      if (!loadMoreWrap || !loadMoreBtn) return;
+      var hasMore = allRows.length < totalRows;
+      loadMoreWrap.hidden = !hasMore;
+      loadMoreBtn.disabled = isLoadingMore;
+      loadMoreBtn.textContent = isLoadingMore ? "Loading more…" : "Load more";
     }
 
     function setClassPanelOpen(open) {
@@ -225,21 +246,21 @@
       });
     }
 
-    function updateSubtitle(query, shownCount, total) {
+    function updateSubtitle(query, shownCount, loaded, total) {
       const q = String(query || "").trim();
       if (!total) {
         countEl.textContent = "";
         return;
       }
       if (!q) {
-        countEl.textContent = total + " people";
+        countEl.textContent = loaded < total ? loaded + " of " + total + " people" : total + " people";
         return;
       }
       if (shownCount === 0) {
         countEl.textContent = "No matches";
         return;
       }
-      countEl.textContent = shownCount + " of " + total + " people";
+      countEl.textContent = shownCount + " of " + loaded + " loaded (" + total + " total)";
     }
 
     function applyFilter() {
@@ -255,18 +276,27 @@
         });
       }
       renderGrid(filtered);
-      updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length);
+      updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length, totalRows);
     }
 
-    async function loadPeopleFromApi() {
+    async function loadPeopleFromApi(reset) {
       var sel = selectedClassesFromUi();
-      syncUrlFromClasses(sel);
-      statusEl.textContent = "Loading…";
-      statusEl.hidden = false;
-      gridEl.hidden = true;
-      if (filterInputEl) filterInputEl.disabled = true;
+      if (reset) {
+        syncUrlFromClasses(sel);
+        statusEl.textContent = "Loading…";
+        statusEl.hidden = false;
+        gridEl.hidden = true;
+        allRows = [];
+        totalRows = 0;
+        updateLoadMoreVisibility();
+        if (filterInputEl) filterInputEl.disabled = true;
+      } else {
+        isLoadingMore = true;
+        updateLoadMoreVisibility();
+      }
       try {
-        var res = await fetch(facesApiUrlForClasses(sel), { credentials: "omit" });
+        var offset = reset ? 0 : allRows.length;
+        var res = await fetch(facesApiUrlForClasses(sel, PEOPLE_PAGE_SIZE, offset), { credentials: "omit" });
         if (!res.ok) {
           var errMsg = "HTTP " + res.status;
           try {
@@ -276,18 +306,24 @@
           throw new Error(errMsg);
         }
         var body = await res.json();
-        allRows = body && body.data ? body.data : [];
-        countEl.textContent = allRows.length ? allRows.length + " people" : "";
+        var pageRows = body && body.data ? body.data : [];
+        totalRows = body && typeof body.total === "number" ? body.total : pageRows.length;
+        allRows = reset ? pageRows : allRows.concat(pageRows);
         statusEl.textContent = "";
         statusEl.hidden = true;
         gridEl.hidden = false;
         renderGrid(allRows);
         applyFilter();
+        updateLoadMoreVisibility();
         if (filterInputEl) filterInputEl.disabled = false;
       } catch (err) {
         statusEl.textContent =
           "Could not load people (" + (err && err.message ? err.message : "error") + ").";
         gridEl.hidden = true;
+        updateLoadMoreVisibility();
+      } finally {
+        isLoadingMore = false;
+        updateLoadMoreVisibility();
       }
     }
 
@@ -297,7 +333,7 @@
       var el = document.getElementById("people-class-" + k);
       if (el) {
         el.addEventListener("change", function () {
-          loadPeopleFromApi();
+          loadPeopleFromApi(true);
         });
       }
     });
@@ -318,7 +354,14 @@
       });
     }
 
-    await loadPeopleFromApi();
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener("click", function () {
+        if (isLoadingMore) return;
+        loadPeopleFromApi(false);
+      });
+    }
+
+    await loadPeopleFromApi(true);
     if (filterInputEl) {
       filterInputEl.addEventListener("input", applyFilter);
     }

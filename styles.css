@@ -1406,6 +1406,14 @@ body.page-home #thumb-default[hidden] {
   cursor: not-allowed;
   box-shadow: none;
 }
+.search-results-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+.search-results-more[hidden] {
+  display: none;
+}
 .search-status {
   font: 14px/1.4 var(--font-ui);
   color: var(--search-text-muted);
