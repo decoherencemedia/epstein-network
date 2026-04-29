@@ -6,16 +6,58 @@
         <span class="people-title-count" id="people-title-count"></span>
       </h1>
     </header>
-    <div class="people-filter-wrap">
-      <input
-        type="search"
-        id="people-filter-input"
-        class="search-input people-filter-input"
-        placeholder="Filter by name…"
-        autocomplete="off"
-        spellcheck="false"
-        aria-label="Filter people by name"
-        disabled />
+    <div class="people-toolbar">
+      <div class="people-filter-wrap">
+        <input
+          type="search"
+          id="people-filter-input"
+          class="search-input people-filter-input"
+          placeholder="Search by name…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search people by name"
+          disabled />
+      </div>
+      <div class="people-class-dropdown">
+        <button
+          type="button"
+          id="people-class-filter-btn"
+          class="people-class-filter-btn"
+          aria-expanded="false"
+          aria-haspopup="true"
+          aria-controls="people-class-panel"
+          aria-label="Choose which categories of people to include"
+          title="Categories">
+          <span class="people-class-filter-btn-icon" aria-hidden="true">
+            <img src="/images/icons/filter-icon.svg" width="28" height="28" alt="" decoding="async" />
+          </span>
+        </button>
+        <div
+          id="people-class-panel"
+          class="people-class-panel"
+          hidden
+          role="dialog"
+          aria-label="Categories to include">
+          <div class="people-class-panel-inner" role="group" aria-label="Include people from">
+            <label class="people-class-option">
+              <input type="checkbox" id="people-class-named" value="named" checked />
+              <span>Named</span>
+            </label>
+            <label class="people-class-option">
+              <input type="checkbox" id="people-class-unknown" value="unknown" checked />
+              <span>Unknown</span>
+            </label>
+            <label class="people-class-option">
+              <input type="checkbox" id="people-class-unidentified" value="unidentified" />
+              <span>Unidentified</span>
+            </label>
+            <label class="people-class-option">
+              <input type="checkbox" id="people-class-ignored" value="ignored" />
+              <span>Ignored</span>
+            </label>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -42,8 +84,86 @@
     const gridEl = document.getElementById("people-grid");
     const countEl = document.getElementById("people-title-count");
     const filterInputEl = document.getElementById("people-filter-input");
+    const classFilterBtn = document.getElementById("people-class-filter-btn");
+    const classPanel = document.getElementById("people-class-panel");
+    const CLASS_ORDER = ["named", "unknown", "unidentified", "ignored"];
+    const DEFAULT_CLASSES = ["named", "unknown"];
 
     let allRows = [];
+
+    function arraysEqualAsSets(a, b) {
+      if (a.length !== b.length) return false;
+      var x = a.slice().sort().join("\0");
+      var y = b.slice().sort().join("\0");
+      return x === y;
+    }
+
+    function parseClassesFromUrl() {
+      var params = new URLSearchParams(window.location.search);
+      if (!params.has("classes")) {
+        return DEFAULT_CLASSES.slice();
+      }
+      var raw = params.get("classes");
+      if (raw === null || String(raw).trim() === "") {
+        return [];
+      }
+      return String(raw)
+        .split(",")
+        .map(function (s) {
+          return s.trim().toLowerCase();
+        })
+        .filter(Boolean);
+    }
+
+    function applyClassesToCheckboxes(selected) {
+      var set = {};
+      selected.forEach(function (k) {
+        set[k] = true;
+      });
+      CLASS_ORDER.forEach(function (k) {
+        var el = document.getElementById("people-class-" + k);
+        if (el) el.checked = !!set[k];
+      });
+    }
+
+    function selectedClassesFromUi() {
+      return CLASS_ORDER.filter(function (k) {
+        var el = document.getElementById("people-class-" + k);
+        return el && el.checked;
+      });
+    }
+
+    function syncUrlFromClasses(sel) {
+      var params = new URLSearchParams(window.location.search);
+      if (sel.length === 0) {
+        params.set("classes", "");
+      } else if (arraysEqualAsSets(sel, DEFAULT_CLASSES)) {
+        params.delete("classes");
+      } else {
+        params.set("classes", sel.slice().sort().join(","));
+      }
+      var q = params.toString();
+      var path = window.location.pathname || "/people/";
+      var newUrl = path + (q ? "?" + q : "") + window.location.hash;
+      history.replaceState(null, "", newUrl);
+    }
+
+    function facesApiUrlForClasses(sel) {
+      var base = SiteShared.API_BASE + "/faces";
+      if (sel.length === 0) {
+        return base + "?classes=";
+      }
+      if (arraysEqualAsSets(sel, DEFAULT_CLASSES)) {
+        return base;
+      }
+      return base + "?classes=" + encodeURIComponent(sel.slice().sort().join(","));
+    }
+
+    function setClassPanelOpen(open) {
+      if (!classPanel || !classFilterBtn) return;
+      classPanel.hidden = !open;
+      classFilterBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
 
     function placeholderEl() {
       const d = document.createElement("div");
@@ -138,23 +258,69 @@
       updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length);
     }
 
-    try {
-      const res = await fetch(SiteShared.API_BASE + "/faces", { credentials: "omit" });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const body = await res.json();
-      allRows = body && body.data ? body.data : [];
-      countEl.textContent = allRows.length ? allRows.length + " people" : "";
-      statusEl.textContent = "";
-      statusEl.hidden = true;
-      gridEl.hidden = false;
-      renderGrid(allRows);
-      if (filterInputEl) {
-        filterInputEl.disabled = false;
-        filterInputEl.addEventListener("input", applyFilter);
-      }
-    } catch (err) {
-      statusEl.textContent = "Could not load people (" + (err && err.message ? err.message : "error") + ").";
+    async function loadPeopleFromApi() {
+      var sel = selectedClassesFromUi();
+      syncUrlFromClasses(sel);
+      statusEl.textContent = "Loading…";
+      statusEl.hidden = false;
       gridEl.hidden = true;
+      if (filterInputEl) filterInputEl.disabled = true;
+      try {
+        var res = await fetch(facesApiUrlForClasses(sel), { credentials: "omit" });
+        if (!res.ok) {
+          var errMsg = "HTTP " + res.status;
+          try {
+            var errBody = await res.json();
+            if (errBody && errBody.message) errMsg = String(errBody.message);
+          } catch (_e1) {}
+          throw new Error(errMsg);
+        }
+        var body = await res.json();
+        allRows = body && body.data ? body.data : [];
+        countEl.textContent = allRows.length ? allRows.length + " people" : "";
+        statusEl.textContent = "";
+        statusEl.hidden = true;
+        gridEl.hidden = false;
+        renderGrid(allRows);
+        applyFilter();
+        if (filterInputEl) filterInputEl.disabled = false;
+      } catch (err) {
+        statusEl.textContent =
+          "Could not load people (" + (err && err.message ? err.message : "error") + ").";
+        gridEl.hidden = true;
+      }
+    }
+
+    applyClassesToCheckboxes(parseClassesFromUrl());
+
+    CLASS_ORDER.forEach(function (k) {
+      var el = document.getElementById("people-class-" + k);
+      if (el) {
+        el.addEventListener("change", function () {
+          loadPeopleFromApi();
+        });
+      }
+    });
+
+    if (classFilterBtn && classPanel) {
+      classFilterBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        setClassPanelOpen(classPanel.hidden);
+      });
+      document.addEventListener("click", function () {
+        setClassPanelOpen(false);
+      });
+      classPanel.addEventListener("click", function (e) {
+        e.stopPropagation();
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") setClassPanelOpen(false);
+      });
+    }
+
+    await loadPeopleFromApi();
+    if (filterInputEl) {
+      filterInputEl.addEventListener("input", applyFilter);
     }
   })();
 </script>

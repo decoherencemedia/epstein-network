@@ -1628,6 +1628,17 @@ body.page-people .site-page.people-page {
 
 /* Heading + filter: stacked on small screens; side-by-side on desktop with a fixed gap so the count can wrap */
 .people-top {
+  /* Shared by .people-toolbar (inherited) and .people-heading max-width on desktop */
+  --people-toolbar-row-gap: 10px;
+  --people-toolbar-btn-square: 2.25rem;
+  --people-toolbar-pad: 12px;
+  /* ~70% of the 520px name-search width — centered people toolbar, slightly narrower. */
+  --people-toolbar-search-desktop: 400px;
+  --people-toolbar-total: calc(
+    2 * var(--people-toolbar-pad) + var(--people-toolbar-search-desktop) + var(--people-toolbar-row-gap) +
+      var(--people-toolbar-btn-square)
+  );
+
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1644,49 +1655,196 @@ body.page-people .site-page.people-page {
 .people-heading .people-title {
   margin: 0;
 }
-.people-filter-wrap {
+/* Search + categories (/people): panel matches #name-search / .search-toolbar; inner controls like #name-search-input */
+.people-toolbar {
+  /* --people-toolbar-* and --people-toolbar-total inherited from .people-top */
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--people-toolbar-row-gap);
   width: 100%;
-  max-width: min(28rem, 100%);
-  align-self: flex-start;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: var(--people-toolbar-pad);
+  background: var(--panel-bg);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-12);
+  box-shadow: none;
+}
+
+.people-class-dropdown {
+  position: relative;
+  flex: 0 0 var(--people-toolbar-btn-square);
+  width: var(--people-toolbar-btn-square);
+  align-self: center;
+}
+
+.people-class-filter-btn {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--people-toolbar-btn-square);
+  height: var(--people-toolbar-btn-square);
+  min-width: var(--people-toolbar-btn-square);
+  min-height: var(--people-toolbar-btn-square);
+  padding: 0;
+  font: 600 14px/1.2 var(--font-ui);
+  color: var(--ink-strong);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-input);
+  border-radius: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+  box-shadow: none;
+}
+
+.people-class-filter-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.people-class-filter-btn-icon img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.people-class-filter-btn:hover {
+  border-color: color-mix(in srgb, var(--border-focus) 35%, var(--border-input));
+}
+
+.people-class-filter-btn:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
+}
+
+.people-class-panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  min-width: min(14rem, calc(100vw - 32px));
+  padding: 8px 0;
+  background: #fff;
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-12);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+}
+
+.people-class-panel[hidden] {
+  display: none !important;
+}
+
+.people-class-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 6px;
+}
+
+.people-class-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  font: 14px/1.35 var(--font-ui);
+  color: var(--ink-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.people-class-option:hover {
+  background: color-mix(in srgb, var(--border-panel) 65%, transparent);
+}
+
+.people-class-option input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: #00646f;
+}
+
+.people-filter-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  align-self: center;
 }
 @media (min-width: 769px) {
-  .people-top {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: flex-start;
-    gap: 20px 28px;
-  }
   /*
-   * Title column sizes to content (not a huge fixed ch width); max-width caps long count lines
-   * and keeps the field from being pushed off narrow rows. Subtitle edits may nudge width slightly.
+   * Fixed toolbar width on desktop so the search actually grows (max-width alone does not
+   * expand a flex item). min(100%, …) keeps narrow viewports from overflowing.
    */
+  .people-toolbar {
+    flex: 0 0 auto;
+    grid-column: 2;
+    /* Explicit width: min(100%, …) against the grid cell was cyclic and collapsed the panel. */
+    width: var(--people-toolbar-total);
+    max-width: min(var(--people-toolbar-total), calc(100vw - 48px));
+    justify-self: center;
+  }
+
+  /*
+   * Three columns: equal flexible sides + fixed-width toolbar in the middle → panel centered
+   * on the page; heading stays in the left column (count length does not shift the panel).
+   */
+  .people-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+    grid-template-rows: auto;
+    column-gap: 0;
+    row-gap: 0;
+    align-items: center;
+    flex-direction: unset;
+    flex-wrap: unset;
+    justify-content: unset;
+    gap: 0;
+  }
+
   .people-heading {
-    flex: 0 1 auto;
+    grid-column: 1;
+    justify-self: start;
     box-sizing: border-box;
     min-width: 0;
-    max-width: min(36ch, calc(100% - 288px));
-    width: min(max-content, min(36ch, calc(100% - 288px)));
-    padding-right: 0;
-  }
-  .people-filter-wrap {
-    flex: 0 0 260px;
-    width: 260px;
-    min-width: 260px;
-    max-width: 260px;
-    align-self: flex-start;
+    max-width: 100%;
+    width: 100%;
+    padding-right: clamp(8px, 2vw, 16px);
+    overflow-wrap: break-word;
   }
 }
-.people-filter-wrap .people-filter-input {
+.people-toolbar .people-filter-wrap .people-filter-input {
   width: 100%;
   margin: 0;
-  border-width: 2px;
-  border-color: var(--border-panel-strong);
-}
-.people-filter-wrap .people-filter-input:focus {
+  box-sizing: border-box;
+  border: 1px solid var(--border-input);
+  border-radius: 0;
+  padding: 9px 16px 9px 12px;
+  font: 13px/1.2 var(--font-ui);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink-body);
+  box-shadow: none;
   outline: none;
-  border-color: var(--search-focus);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--search-focus) 32%, transparent);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
+}
+.people-toolbar .people-filter-wrap .people-filter-input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
   background: #fff;
 }
 
