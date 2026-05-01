@@ -649,22 +649,22 @@
           : facesForContext
             ? ignoredPersonIdSetFromFaces(facesForContext)
             : null;
-      if (ign && ign.has(pid)) return "Ignored";
+      if (ign && ign.has(pid)) return "Excluded";
       const selectedMatch = selected.find((p) => p.person_id === personId);
       const name = (selectedMatch && selectedMatch.name) || namesById[personId];
-      return SiteShared.personDisplayName(personId, name, "Unidentified");
+      return SiteShared.personDisplayName(personId, name, "Unreviewed");
     }
 
     /**
      * Tooltip for face box / label click (opens people tab for this person_id).
-     * Unidentified stubs use raw ``person_id`` in the title so hover is not generic "Unidentified".
+     * Unreviewed stubs use raw ``person_id`` in the title so hover is not generic "Unreviewed".
      * @param {Set<string>|null|undefined} ignoredSet
      */
     function allPhotosFromPersonTitle(personId, ignoredSet) {
       const pid = String(personId || "").trim();
       if (!pid) return "";
       if (ignoredSet && ignoredSet.has(pid)) {
-        return "All photos from " + pid + " (Ignored)";
+        return "All photos from " + pid + " (Excluded)";
       }
       const selectedMatch = selected.find(function (p) {
         return p.person_id === personId;
