@@ -246,10 +246,10 @@
       });
     }
 
-    function updateSubtitle(query, shownCount, loaded, total) {
+    function updateSubtitle(query, shownCount, loaded, total, hasSelectedClasses) {
       const q = String(query || "").trim();
       if (!total) {
-        countEl.textContent = "";
+        countEl.textContent = hasSelectedClasses ? "" : "0 people";
         return;
       }
       if (!q) {
@@ -266,6 +266,14 @@
     function applyFilter() {
       const q = SiteShared.normalizePersonSearchKey(filterInputEl ? filterInputEl.value : "");
       if (!allRows.length) {
+        renderGrid([]);
+        updateSubtitle(
+          filterInputEl ? filterInputEl.value : "",
+          0,
+          allRows.length,
+          totalRows,
+          selectedClassesFromUi().length > 0,
+        );
         return;
       }
       let filtered = allRows;
@@ -276,7 +284,13 @@
         });
       }
       renderGrid(filtered);
-      updateSubtitle(filterInputEl ? filterInputEl.value : "", filtered.length, allRows.length, totalRows);
+      updateSubtitle(
+        filterInputEl ? filterInputEl.value : "",
+        filtered.length,
+        allRows.length,
+        totalRows,
+        selectedClassesFromUi().length > 0,
+      );
     }
 
     async function loadPeopleFromApi(reset) {
