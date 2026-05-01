@@ -57,6 +57,11 @@
   --img-placeholder-bg: #e8eaed; /* unloaded / loading image fill */
   --input-bg: #fdfefe; /* text input background */
   --input-ink: #1f2430; /* text input foreground */
+  /* Home name search, Search page, People toolbar — keep height identical everywhere */
+  --search-field-pad-block: 10px;
+  --search-field-pad-inline: 13px;
+  --search-field-font-size: 15px;
+  --search-field-line-height: 1.3;
   --search-ink-dark: #1c2633; /* search results heading */
   --search-btn-ink: #2b3442; /* sort / filter button text */
   --tab-idle-ink: #6b6b6b; /* inactive tab text */
@@ -551,15 +556,20 @@ body.page-home #name-search {
   box-sizing: border-box;
   border: 1px solid var(--border-input);
   border-radius: 0;
-  padding: 9px 16px 9px 12px;
-  font: 13px/1.2 var(--font-ui);
+  padding: var(--search-field-pad-block) var(--search-field-pad-inline);
+  font: var(--search-field-font-size) / var(--search-field-line-height) var(--font-ui);
+  color: var(--ink-body);
   background: rgba(255, 255, 255, 0.9);
   box-shadow: none;
   outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background 120ms ease;
 }
 /* Native search clear — same larger control + hitbox on graph name search and /people filter */
 #name-search-input::-webkit-search-cancel-button,
-.people-filter-wrap .people-filter-input::-webkit-search-cancel-button {
+.people-toolbar input[type="search"].search-input::-webkit-search-cancel-button {
   cursor: pointer;
   transform: scale(1.35);
   transform-origin: center;
@@ -913,6 +923,11 @@ body.page-home #thumb-default[hidden] {
   :root {
     --sidebar-width: 0;
     --site-header-height: 56px;
+    /* 16px text avoids iOS Safari input zoom; height comes from padding — not font size */
+    --search-field-pad-block: 9px;
+    --search-field-pad-inline: 12px;
+    --search-field-font-size: 16px;
+    --search-field-line-height: 1.25;
   }
   .site-nav {
     font: 16px/1.25 var(--font-ui);
@@ -971,10 +986,6 @@ body.page-home #thumb-default[hidden] {
   }
   .label-layer .node-label-line2 {
     font-size: 6.8px;
-  }
-  #name-search-input {
-    font-size: 16px;
-    line-height: 1.25;
   }
   .name-search-result {
     font-size: 15px;
@@ -1260,8 +1271,8 @@ body.page-home #thumb-default[hidden] {
 .search-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 13px;
-  font: 15px/1.3 var(--font-ui);
+  padding: var(--search-field-pad-block) var(--search-field-pad-inline);
+  font: var(--search-field-font-size) / var(--search-field-line-height) var(--font-ui);
   border: 1px solid var(--border-input);
   border-radius: 0;
   background: var(--input-bg);
@@ -1610,10 +1621,6 @@ body.page-home #thumb-default[hidden] {
   .search-label {
     font-size: 14px;
   }
-  .search-input {
-    font-size: 16px;
-    padding: 12px;
-  }
   .search-people-option {
     font-size: 15px;
     padding: 10px 12px;
@@ -1664,7 +1671,7 @@ body.page-people .site-page.people-page {
 .people-heading .people-title {
   margin: 0;
 }
-/* Search + categories (/people): panel matches #name-search / .search-toolbar; inner controls like #name-search-input */
+/* Search + categories (/people): toolbar shell; name filter uses same .search-input as /search */
 .people-toolbar {
   /* --people-toolbar-* and --people-toolbar-total inherited from .people-top */
   display: flex;
@@ -1784,12 +1791,13 @@ body.page-people .site-page.people-page {
   accent-color: #00646f;
 }
 
-.people-filter-wrap {
+.people-toolbar .search-autocomplete-wrap {
   flex: 1 1 auto;
   min-width: 0;
   width: auto;
   max-width: none;
   align-self: center;
+  margin-bottom: 0;
 }
 @media (min-width: 769px) {
   /*
@@ -1833,30 +1841,6 @@ body.page-people .site-page.people-page {
     overflow-wrap: break-word;
   }
 }
-.people-toolbar .people-filter-wrap .people-filter-input {
-  width: 100%;
-  margin: 0;
-  box-sizing: border-box;
-  border: 1px solid var(--border-input);
-  border-radius: 0;
-  padding: 9px 16px 9px 12px;
-  font: 13px/1.2 var(--font-ui);
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--ink-body);
-  box-shadow: none;
-  outline: none;
-  transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease,
-    background 120ms ease;
-}
-.people-toolbar .people-filter-wrap .people-filter-input:focus {
-  outline: none;
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 18%, transparent);
-  background: #fff;
-}
-
 .people-title {
   display: flex;
   align-items: center;
